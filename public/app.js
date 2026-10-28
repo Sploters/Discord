@@ -376,7 +376,9 @@ function renderSide() {
       S.collapsed.has(c.id) && kids(c.id).filter(k => k.id === S.view.cid || S.unread[k.id]).map(chRow));
     list = h('div#side-list', kids(null).map(chRow), cats.map(catRow));
   }
-  side.replaceChildren(head, list, voicePanel(), userbar());
+  const area = h('div#user-area', voicePanel(), userbar());
+  side.replaceChildren(head, list, area);
+  $('#app').style.setProperty('--ua-h', area.offsetHeight + 'px'); // rail e lista reservam espaço pro painel flutuante
   list.scrollTop = keepScroll;
 }
 const lastActivity = (dm) => { const l = S.messages.get(dm.id); return l?.length ? l[l.length - 1].id : dm.id; };
