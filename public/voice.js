@@ -16,11 +16,11 @@ export const NOISE_MODES = {
 };
 export const SCREEN_PRESETS = {
   res: { 720: '720p', 1080: '1080p', 1440: '1440p', source: 'Fonte (original)' },
-  fps: { 15: '15 fps', 30: '30 fps', 60: '60 fps' },
+  fps: { 15: '15 fps', 30: '30 fps', 60: '60 fps', 120: '120 fps' },
 };
 const bitrateFor = (res, fps) => {
   const base = { 720: 2.5, 1080: 5, 1440: 9, source: 10 }[res] || 5;
-  return Math.round(base * (fps >= 60 ? 1.6 : fps <= 15 ? .6 : 1) * 1e6);
+  return Math.round(base * (fps >= 120 ? 2.4 : fps >= 60 ? 1.6 : fps <= 15 ? .6 : 1) * 1e6);
 };
 
 async function ensureModule(ctx, name) {
@@ -67,7 +67,14 @@ export async function createMic(prefs, ctx) {
   const analyser = ctx.createAnalyser(); analyser.fftSize = 512; g.connect(analyser); nodes.push(analyser);
   const dest = ctx.createMediaStreamDestination(); g.connect(dest); nodes.push(dest);
   out.stream = dest.stream; out.analyser = analyser; out.gain = g;
-  out.setLoopback = (on) => { try { on ? g.connect(ctx.destination) : g.disconnect(ctx.destination); } catch { } };
+  // Escuta própria: força mono -> mesmo sinal nos dois canais (alguns nós de redução de ruído só preenchem o esquerdo)
+  const mono = ctx.createGain(); mono.channelCount = 1; mono.channelCountMode = 'explicit'; mono.channelInterpretation = 'speakers';
+  const merger = ctx.createChannelMerger(2); mono.connect(merger, 0, 0); mono.connect(merger, 0, 1); nodes.push(mono, merger);
+  let looping = false;
+  out.setLoopback = (on) => {
+    if (on === looping) return; looping = on;
+    try { if (on) { g.connect(mono); merger.connect(ctx.destination); } else { g.disconnect(mono); merger.disconnect(ctx.destination); } } catch { }
+  };
   out.dispose = () => {
     out.setLoopback(false);
     for (const n of nodes) { try { n.port?.postMessage('destroy'); } catch { } try { n.disconnect(); } catch { } }
@@ -81,7 +88,7 @@ export class Voice {
   constructor({ send, ice, myId, onUpdate, prefs }) {
     this.send = send; this.ice = ice; this.myId = myId; this.onUpdate = onUpdate; this.prefs = prefs;
     this.channelId = null; this.peers = new Map(); this.micGraph = null; this.mic = null; this.cam = null; this.screen = null;
-    this.muted = false; this.deafened = false; this.ptt = false; this.speaking = new Set(); this.volumes = {}; this.streamVolumes = {};
+    this.muted = false; this.deafened = false; this.ptt = false; this.speaking = new Set(); this.sbActive = new Set(); this.volumes = {}; this.streamVolumes = {};
     this.ctx = null; this.analysers = new Map(); this.timer = null; this.screenOpts = null;
   }
   get active() { return !!this.channelId; }
@@ -113,7 +120,9 @@ export class Voice {
     if (this.channelId) this.leave();
     this.error = null;
     try {
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microfone indisponível: abra o app via HTTPS ou use o aplicativo desktop.');
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error(location.protocol === 'http:' && !isSecureContext
+        ? `Microfone indisponível: abra https://${location.hostname}:3443 (aceite o aviso do certificado) ou use o aplicativo desktop.`
+        : 'Microfone indisponível neste navegador.');
       await this.buildMic();
     } catch (e) { this.mic = null; this.error = e.message || 'Não foi possível acessar o microfone (entrando como ouvinte).'; }
     this.channelId = channelId;

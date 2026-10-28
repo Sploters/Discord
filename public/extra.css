@@ -71,3 +71,8 @@ button.capturing { outline: 2px solid var(--yellow); }
 
 label.f > .seg { display: flex; width: fit-content; }
 input[type=range] { height: 18px; }
+
+/* efeito sonoro tocando: mesmo anel do "falando", em roxo */
+.avatar.sbplay { box-shadow: 0 0 0 2px #a855f7; }
+.tile.sbplay { box-shadow: 0 0 0 3px #a855f7; border-color: #a855f7; }
+.tile .avatar.sbplay { box-shadow: none; }
