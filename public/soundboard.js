@@ -27,7 +27,13 @@ export function playLocal(url, volumePct = 100) {
 // recebido do servidor (alguém na sala tocou)
 export function onIncoming(msg, voice) {
   if (S.prefs.sbMuted || voice?.deafened) return;
-  playLocal(msg.url, msg.volume);
+  const a = playLocal(msg.url, msg.volume), uid = msg.user_id;
+  if (uid && voice) { // anel roxo no avatar enquanto o som toca
+    voice.sbActive.add(uid); voice.onUpdate?.(true);
+    let t; const end = () => { clearTimeout(t); voice.sbActive.delete(uid); voice.onUpdate?.(true); };
+    t = setTimeout(end, 3000);
+    if (a) { a.addEventListener('loadedmetadata', () => { clearTimeout(t); t = setTimeout(end, Math.min(15, a.duration || 3) * 1000 + 100); }); a.addEventListener('ended', end); }
+  }
   const stage = document.getElementById('stage');
   if (stage) {
     const who = S.users.get(msg.user_id)?.display_name || 'alguém';

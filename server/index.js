@@ -920,10 +920,19 @@ function loadTls() {
   if (!fs.existsSync(keyP) || !fs.existsSync(certP)) {
     const ips = Object.values(os.networkInterfaces()).flat().filter(i => i && i.family === 'IPv4').map(i => `IP:${i.address}`);
     const san = ['DNS:localhost', `DNS:${os.hostname()}`, ...ips, ...(process.env.TLS_SAN ? process.env.TLS_SAN.split(',') : [])].join(',');
-    try {
-      execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyP, '-out', certP, '-days', '3650', '-subj', '/CN=LocalCord', '-addext', `subjectAltName=${san}`], { stdio: 'ignore' });
-      console.log('  Certificado HTTPS autoassinado gerado em', DATA_DIR);
-    } catch { console.log('  (openssl não encontrado: HTTPS desativado. Instale openssl ou forneça TLS_KEY/TLS_CERT)'); return null; }
+    // No Windows o openssl costuma não estar no PATH; tenta também o que acompanha o Git
+    const gitDirs = ['C:\\Program Files\\Git', 'C:\\Program Files (x86)\\Git'];
+    const bins = ['openssl', ...(process.platform === 'win32' ? gitDirs.flatMap(d => [`${d}\\usr\\bin\\openssl.exe`, `${d}\\mingw64\\bin\\openssl.exe`]) : [])];
+    let done = false;
+    for (const bin of bins) {
+      if (bin !== 'openssl' && !fs.existsSync(bin)) continue;
+      try {
+        execFileSync(bin, ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyP, '-out', certP, '-days', '3650', '-subj', '/CN=LocalCord', '-addext', `subjectAltName=${san}`], { stdio: 'ignore' });
+        console.log('  Certificado HTTPS autoassinado gerado em', DATA_DIR);
+        done = true; break;
+      } catch { /* tenta o próximo */ }
+    }
+    if (!done) { console.log('  (openssl não encontrado: HTTPS desativado. Instale openssl ou forneça TLS_KEY/TLS_CERT)'); return null; }
   }
   return { key: fs.readFileSync(keyP), cert: fs.readFileSync(certP) };
 }

@@ -386,7 +386,7 @@ const lastActivity = (dm) => { const l = S.messages.get(dm.id); return l?.length
 function vuserRow(g, v) {
   const u = user(v.user_id);
   return h('div.vuser', { 'data-uid': v.user_id, oncontextmenu: (e) => userMenu(e, v.user_id, g.id), onclick: (e) => profile(e.currentTarget, v.user_id, g.id) },
-    (() => { const a = avatar(u, 24, { status: false }); if (voice?.speaking.has(v.user_id)) a.classList.add('speaking'); a.dataset.uid = v.user_id; return a; })(),
+    (() => { const a = avatar(u, 24, { status: false }); if (voice?.speaking.has(v.user_id)) a.classList.add('speaking'); if (voice?.sbActive.has(v.user_id)) a.classList.add('sbplay'); a.dataset.uid = v.user_id; return a; })(),
     h('span.nm', nameOf(v.user_id, g.id)), v.screen && h('span.live', 'Ao vivo'),
     h('span.ico', v.video && icon('video', 14), v.mute && icon('micoff', 14), v.deaf && icon('headoff', 14)));
 }
@@ -881,6 +881,7 @@ function videoFor(key, stream, muted = true) {
 function renderVoiceUI(speakOnly) {
   if (speakOnly) {
     document.querySelectorAll('.tile[data-uid],.avatar[data-uid]').forEach(e => e.classList.toggle('speaking', voice.speaking.has(e.dataset.uid)));
+    document.querySelectorAll('.tile[data-uid],.avatar[data-uid]').forEach(e => e.classList.toggle('sbplay', voice.sbActive.has(e.dataset.uid)));
     document.getElementById('vp-ping') && updatePing();
     return;
   }
@@ -906,7 +907,7 @@ function renderVoiceUI(speakOnly) {
     }
     const ckey = 'c:' + uid;
     if (cam && v.video) live.add(ckey);
-    tiles.push(h('div.tile' + (voice.speaking.has(uid) ? '.speaking' : ''), { 'data-uid': uid, 'data-key': ckey, oncontextmenu: (e) => userMenu(e, uid, gid), onclick: () => { if (cam && v.video) { S.focus = S.focus === ckey ? null : ckey; renderVoiceUI(); } } },
+    tiles.push(h('div.tile' + (voice.speaking.has(uid) ? '.speaking' : '') + (voice.sbActive.has(uid) ? '.sbplay' : ''), { 'data-uid': uid, 'data-key': ckey, oncontextmenu: (e) => userMenu(e, uid, gid), onclick: () => { if (cam && v.video) { S.focus = S.focus === ckey ? null : ckey; renderVoiceUI(); } } },
       cam && v.video ? videoFor(ckey, cam) : avatar(user(uid), dm ? 110 : 96, { status: false }),
       h('div.label', v.mute && icon('micoff', 14), v.deaf && icon('headoff', 14), nm(uid))));
   }
