@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>LocalCord</title>
+<style>
+  * { box-sizing: border-box; } html, body { margin: 0; height: 100%; font-family: "Segoe UI", "Noto Sans", sans-serif; color: #dbdee1; }
+  body { background: radial-gradient(circle at 20% 20%, #5865f2 0, #3b4299 35%, #1e1f22 80%); display: flex; align-items: center; justify-content: center; }
+  .card { background: #313338; border-radius: 8px; padding: 32px; width: 460px; max-width: 94vw; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
+  h1 { margin: 0 0 6px; text-align: center; color: #f2f3f5; font-size: 24px; } p.sub { text-align: center; color: #b5bac1; margin: 0 0 22px; }
+  label { display: block; font-size: 12px; font-weight: 700; text-transform: uppercase; color: #b5bac1; margin-bottom: 8px; }
+  input { width: 100%; padding: 12px; background: #1e1f22; border: 0; border-radius: 4px; color: inherit; font-size: 16px; outline: none; } input:focus { outline: 1px solid #5865f2; }
+  button { width: 100%; margin-top: 16px; padding: 12px; background: #5865f2; color: #fff; border: 0; border-radius: 4px; font-size: 16px; cursor: pointer; } button:hover { background: #4752c4; } button:disabled { opacity: .5; }
+  .msg { min-height: 22px; margin-top: 12px; font-size: 14px; } .err { color: #f23f43; } .ok { color: #23a559; } small { color: #949ba4; display: block; margin-top: 8px; line-height: 1.4; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>LocalCord</h1>
+  <p class="sub">Conecte-se ao seu servidor</p>
+  <label for="addr">Endereço do servidor</label>
+  <input id="addr" placeholder="ex.: 100.105.3.128 ou meu-servidor.tailnet.ts.net" autofocus>
+  <small>Use o IP/nome do servidor na sua VPN (Tailscale, Hamachi, Radmin). A porta e o HTTPS são detectados automaticamente.</small>
+  <button id="go">Conectar</button>
+  <div class="msg" id="msg"></div>
+</div>
+<script>
+  const q = new URLSearchParams(location.search), addr = document.getElementById('addr'), msg = document.getElementById('msg'), btn = document.getElementById('go');
+  addr.value = q.get('current') || '';
+  if (q.get('error')) { msg.textContent = q.get('error'); msg.className = 'msg err'; }
+  async function connect() {
+    btn.disabled = true; msg.className = 'msg'; msg.textContent = 'Procurando servidor…';
+    const r = await lcDesktop.testServer(addr.value);
+    if (!r) { msg.className = 'msg err'; msg.textContent = 'Servidor não encontrado. Verifique o endereço e se a VPN está conectada.'; btn.disabled = false; return; }
+    msg.className = 'msg ok'; msg.textContent = `Conectando a ${r.url}…`;
+    await lcDesktop.saveServer(r.url);
+  }
+  btn.addEventListener('click', connect);
+  addr.addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); }); // não devolver false: isso bloquearia digitar/colar
+</script>
+</body>
+</html>

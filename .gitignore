@@ -1,0 +1,8 @@
+node_modules
+data
+.testdata
+.testlog.txt
+desktop/node_modules
+desktop/dist
+.testshots
+.testdata*

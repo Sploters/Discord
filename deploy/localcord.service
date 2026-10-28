@@ -1,0 +1,19 @@
+[Unit]
+Description=LocalCord (chat/voz auto-hospedado)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=localcord
+WorkingDirectory=/opt/localcord
+Environment=PORT=3000
+Environment=HTTPS_PORT=3443
+Environment=DATA_DIR=/var/lib/localcord
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+RestartSec=3
+StateDirectory=localcord
+
+[Install]
+WantedBy=multi-user.target

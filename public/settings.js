@@ -1,0 +1,409 @@
+import { h, icon, avatar } from './util.js';
+import { S, api, tryApi, savePrefs, user, guild, can, PERM, PERM_LABELS, toast, confirmBox, promptBox, modal, nameOf, desktop, applyTheme, emojiPicker, channelById } from './state.js';
+import { createMic, newAudioContext, NOISE_MODES } from './voice.js';
+import { profileCard } from './card.js';
+import { seg, toggle, row, section, slider, qualityPanel, captureKey, comboToAccel } from './ui.js';
+import { playSound, SOUND_DEFS, soundCfg } from './sounds.js';
+import { soundSources, mySounds, addSound, editSound, playLocal, soundVol } from './soundboard.js';
+import { applyOutput } from './quick.js';
+
+const SWATCHES = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55d', '#faa61a', '#9b59b6', '#1abc9c', '#e67e22', '#3498db', '#95a5a6', '#2c2f33', '#ffffff'];
+const THEMES = { dark: 'Escuro', darker: 'Preto (AMOLED)', midnight: 'Meia-noite', light: 'Claro' };
+const save = () => savePrefs();
+
+async function uploadFile(accept = 'image/*', maxMB = 12) {
+  return new Promise(res => {
+    const i = h('input', { type: 'file', accept, onchange: async () => {
+      const f = i.files[0]; if (!f) return res(null);
+      if (f.size > maxMB * 1048576) { toast(`Arquivo muito grande (máx. ${maxMB} MB)`, true); return res(null); }
+      try { res({ ...(await api('POST', `/upload?name=${encodeURIComponent(f.name)}`, f)), file: f }); } catch (e) { toast(e.message, true); res(null); }
+    } });
+    i.click();
+  });
+}
+const uploadImage = () => uploadFile('image/*', 12);
+const swatches = (cur, onPick) => {
+  const box = h('div.swatches');
+  const draw = (c) => box.replaceChildren(...SWATCHES.map(s => h('i' + (s === c ? '.sel' : ''), { style: { background: s }, onclick: () => { onPick(s); draw(s); } })),
+    h('input', { type: 'color', value: /^#[0-9a-f]{6}$/i.test(c) ? c : '#5865f2', oninput: (e) => { onPick(e.target.value); draw(e.target.value); }, title: 'Cor personalizada', style: { width: '32px', height: '32px', border: 0, background: 'none', padding: 0, cursor: 'pointer' } }));
+  draw(cur); return box;
+};
+const card = (...k) => h('div.card2', ...k);
+const hint = (t) => h('div.hintline', t);
+
+// ============================ shell ============================
+const USER_GROUPS = [
+  ['Configurações do usuário', [['account', 'Minha conta', 'senha usuário nome excluir'], ['profile', 'Perfil', 'avatar banner bio status pronomes'], ['privacy', 'Privacidade e segurança', 'amizade sessões dispositivos links']]],
+  ['Configurações do aplicativo', [['appearance', 'Aparência', 'tema cor fonte compacto hora'], ['accessibility', 'Acessibilidade', 'movimento contraste saturação'], ['voice', 'Voz e vídeo', 'microfone ruído eco câmera dispositivo bitrate'], ['stream', 'Transmissão', 'tela resolução fps qualidade'], ['sounds', 'Sons', 'efeitos silenciar ensurdecer entrar sair'], ['soundboard', 'Soundboard', 'sons pad meme'], ['notifications', 'Notificações', 'avisos menção silenciar servidor'], ['keys', 'Atalhos', 'teclas push-to-talk mutar'], ['advanced', 'Avançado', 'desenvolvedor exportar importar redefinir']]],
+];
+const SERVER_PAGES = [['overview', 'Visão geral', 'nome ícone banner dono'], ['channels', 'Canais', 'ordem renomear'], ['roles', 'Cargos', 'permissões'], ['emojis', 'Emojis', ''], ['sounds', 'Soundboard do servidor', 'sons áudio'], ['members', 'Membros', 'expulsar'], ['invites', 'Convites', 'link']];
+
+export function openSettings(kind, ctx) {
+  document.getElementById('settings')?.remove();
+  const root = h('div#settings'), pane = h('div.pane'), nav = h('div.nav'), content = h('div.content', pane);
+  const cleanups = []; const reg = (f) => cleanups.push(f);
+  const close = () => { cleanups.forEach(f => f()); cleanups.length = 0; root.remove(); document.removeEventListener('keydown', esc); };
+  const esc = (e) => { if (e.key === 'Escape' && !document.querySelector('.backdrop') && !pane.querySelector('.capturing') && !document.querySelector('.popout,.menu,.emoji-picker')) close(); };
+  const isServer = kind === 'server', gid = ctx?.gid;
+  const R = {
+    account: () => accountPage(close), profile: () => profilePage(), privacy: (r) => privacyPage(r), appearance: () => appearancePage(), accessibility: () => accessibilityPage(),
+    voice: (r) => voicePage(ctx, r), stream: () => streamPage(), sounds: () => soundsPage(), soundboard: () => soundboardPage(), notifications: () => notificationsPage(), keys: () => keysPage(), advanced: () => advancedPage(ctx), app: () => appPage(),
+    overview: () => overviewPage(gid), channels: () => channelsPage(gid), roles: () => rolesPage(gid), emojis: () => emojisPage(gid), sounds_srv: () => serverSoundsPage(gid), members: () => membersPage(gid), invites: () => invitesPage(gid),
+  };
+  const sKey = (k) => (isServer && k === 'sounds' ? 'sounds_srv' : k);
+  let current;
+  const show = (key) => { cleanups.forEach(f => f()); cleanups.length = 0; current = key; pane.replaceChildren(R[sKey(key)](reg)); nav.querySelectorAll('.ni').forEach(n => n.classList.toggle('active', n.dataset.k === key)); content.scrollTop = 0; };
+  const search = h('input.nsearch', { placeholder: 'Buscar configuração…', oninput: () => drawNav() });
+  const groups = isServer ? [[guild(gid)?.name || 'Servidor', SERVER_PAGES]] : USER_GROUPS.map(([t, l]) => [t, desktop && t.includes('aplicativo') ? [...l, ['app', 'Aplicativo (desktop)', 'iniciar bandeja hardware']] : l]);
+  const drawNav = () => {
+    const q = search.value.trim().toLowerCase();
+    nav.replaceChildren(h('div.ninner', search, ...groups.flatMap(([title, items]) => {
+      const list = items.filter(([k, l, kw]) => !q || (l + ' ' + kw).toLowerCase().includes(q));
+      return list.length ? [h('h6', title), ...list.map(([k, l]) => h('div.ni' + (k === current ? '.active' : ''), { 'data-k': k, onclick: () => show(k) }, l))] : [];
+    }), !isServer && h('div', { style: { height: '1px', background: 'var(--divider)', margin: '10px 8px' } }),
+    !isServer && h('div.ni.danger', { onclick: async () => { if (await confirmBox('Sair', 'Deseja sair da sua conta?', 'Sair')) ctx.logout(); } }, 'Sair'),
+    h('div.nfoot', 'LocalCord' + (desktop ? ' Desktop' : ' Web'))));
+  };
+  root.append(nav, content, h('button.close', { onclick: close, title: 'Fechar (Esc)' }, icon('x', 20), h('small', 'ESC')));
+  document.getElementById('layer').append(root); document.addEventListener('keydown', esc);
+  const first = isServer ? 'overview' : (['account', 'profile', 'privacy', 'appearance', 'accessibility', 'voice', 'stream', 'sounds', 'soundboard', 'notifications', 'keys', 'advanced', 'app'].includes(kind) ? kind : 'account');
+  current = first; drawNav(); show(first);
+}
+
+// ============================ Conta ============================
+function accountPage(close) {
+  const me = S.me;
+  return h('div', h('h2', 'Minha conta'),
+    card(h('div.accrow', avatar(me, 80), h('div', h('div.big', me.display_name), h('div.mut', '@' + me.username))),
+      row('Nome de usuário', '@' + me.username, h('button.btn.grey', { onclick: usernameDialog }, 'Alterar')),
+      row('Nome de exibição', me.display_name, h('button.btn.grey', { onclick: async () => { const n = await promptBox('Nome de exibição', 'Como você aparece para os outros', me.display_name, 'Salvar'); if (n) { await tryApi('PATCH', '/me', { display_name: n }); toast('Nome atualizado'); } } }, 'Editar'))),
+    section('Senha'), card(passwordForm()),
+    section('Remoção da conta'), card(hint('Excluir apaga seu perfil, suas mensagens, seus servidores (como dono) e remove você de todos os outros. Não dá para desfazer.'), h('button.btn.red', { onclick: () => deleteDialog(close) }, 'Excluir conta')));
+}
+function passwordForm() {
+  const o = h('input', { type: 'password', autocomplete: 'current-password' }), n = h('input', { type: 'password', autocomplete: 'new-password' }), n2 = h('input', { type: 'password', autocomplete: 'new-password' });
+  return h('div', h('label.f', 'Senha atual', o), h('label.f', 'Nova senha', n), h('label.f', 'Confirmar nova senha', n2),
+    h('button.btn', { onclick: async () => { if (n.value !== n2.value) return toast('As senhas não coincidem', true); if (await tryApi('POST', '/me/password', { old: o.value, new: n.value })) { toast('Senha alterada!'); o.value = n.value = n2.value = ''; } } }, 'Alterar senha'));
+}
+function usernameDialog() {
+  const u = h('input', { value: S.me.username, maxLength: 32 }), p = h('input', { type: 'password' });
+  modal('Alterar nome de usuário', 'Seus amigos usam esse nome para te adicionar.', h('div', h('label.f', 'Novo nome de usuário', u), h('label.f', 'Senha atual', p)),
+    [{ label: 'Cancelar', cls: 'link' }, { label: 'Salvar', fn: async () => { if (await tryApi('POST', '/me/username', { username: u.value, password: p.value })) toast('Nome de usuário alterado'); else return false; } }]);
+}
+function deleteDialog(close) {
+  const p = h('input', { type: 'password' });
+  modal('Excluir conta', 'Digite sua senha para confirmar. Esta ação é permanente.', h('label.f', 'Senha', p),
+    [{ label: 'Cancelar', cls: 'link' }, { label: 'Excluir minha conta', cls: 'red', fn: async () => { if (await tryApi('POST', '/me/delete', { password: p.value })) { localStorage.removeItem('lc_token'); location.reload(); } else return false; } }]);
+}
+
+// ============================ Perfil ============================
+function profilePage() {
+  const me = S.me;
+  const base = () => ({ display_name: me.display_name, avatar: me.avatar, banner: me.banner, color: me.color, banner_color: me.banner_color || me.color, pronouns: me.pronouns || '', bio: me.bio || '', custom_status: me.custom_status || '', status_emoji: me.status_emoji || '' });
+  const d = base(), wrap = h('div.profile-ed'), prevBox = h('div.preview'), bar = h('div.savebar.hidden');
+  const draft = () => ({ ...me, ...d, status: me.status === 'invisible' ? 'invisible' : 'online' });
+  const redraw = () => { prevBox.replaceChildren(h('div.popout.static', profileCard(draft(), { accent: d.banner ? null : d.banner_color }))); };
+  const touch = () => { bar.classList.remove('hidden'); redraw(); };
+  const bind = (key, input) => { input.value = d[key]; input.oninput = () => { d[key] = input.value; touch(); }; return input; };
+  const emojiBtn = h('button.btn.grey', { style: { minWidth: '44px' }, title: 'Escolher emoji', onclick: (e) => emojiPicker(e.currentTarget, (em) => { d.status_emoji = em.startsWith('<:') ? '' : em; emojiBtn.textContent = d.status_emoji || '😀'; touch(); }, { noCustom: true }) }, d.status_emoji || '😀');
+  const left = h('div.col',
+    card(row('Avatar', 'PNG, JPG, GIF ou WebP até 12 MB', h('div.btns', h('button.btn', { onclick: async () => { const u = await uploadImage(); if (u) { d.avatar = u.url; touch(); } } }, 'Trocar'), h('button.btn.grey', { onclick: () => { d.avatar = null; touch(); } }, 'Remover'))),
+      row('Banner', 'Imagem de fundo do seu cartão', h('div.btns', h('button.btn', { onclick: async () => { const u = await uploadImage(); if (u) { d.banner = u.url; touch(); } } }, 'Enviar'), h('button.btn.grey', { onclick: () => { d.banner = null; touch(); } }, 'Remover')))),
+    card(h('label.f', 'Nome de exibição', bind('display_name', h('input', { maxLength: 32 }))), h('label.f', 'Pronomes', bind('pronouns', h('input', { maxLength: 40, placeholder: 'ele/dele, ela/dela, elu/delu…' }))),
+      h('label.f', 'Cor do avatar'), swatches(d.color, (c) => { d.color = c; touch(); }), h('label.f', { style: { marginTop: '16px' } }, 'Cor do banner / destaque'), swatches(d.banner_color, (c) => { d.banner_color = c; touch(); })),
+    card(h('label.f', 'Status personalizado'), h('div.btns', emojiBtn, bind('custom_status', h('input', { maxLength: 100, placeholder: 'O que você está fazendo?', style: { flex: 1, background: 'var(--bg-tert)', border: 0, borderRadius: '3px', padding: '10px', minWidth: 0 } }))),
+      h('label.f', { style: { marginTop: '16px' } }, 'Presença', seg({ online: 'Online', idle: 'Ausente', dnd: 'Não perturbe', invisible: 'Invisível' }, me.status, (v) => tryApi('PATCH', '/me', { status: v }))),
+      h('label.f', { style: { marginTop: '16px' } }, 'Sobre mim', bind('bio', h('textarea', { rows: 4, maxLength: 300 })))));
+  bar.append(h('span', 'Cuidado — você tem alterações não salvas!'), h('div.btns', h('button.btn.link', { onclick: () => { Object.assign(d, base()); bar.classList.add('hidden'); redraw(); wrap.replaceWith(profilePage()); } }, 'Redefinir'),
+    h('button.btn.green', { onclick: async () => { const r = await tryApi('PATCH', '/me', { display_name: d.display_name, avatar: d.avatar || '', banner: d.banner || '', color: d.color, banner_color: d.banner_color, pronouns: d.pronouns, bio: d.bio, custom_status: d.custom_status, status_emoji: d.status_emoji }); if (r) { toast('Perfil salvo!'); bar.classList.add('hidden'); } } }, 'Salvar alterações')));
+  wrap.append(h('h2', 'Perfil'), h('div.pgrid', left, h('div.col', h('div.fh', 'Prévia'), prevBox)), bar);
+  redraw(); return wrap;
+}
+
+// ============================ Privacidade ============================
+const agentName = (a) => {
+  const b = /Electron/.test(a) ? 'LocalCord Desktop' : /Edg\//.test(a) ? 'Edge' : /Firefox/.test(a) ? 'Firefox' : /Chrome/.test(a) ? 'Chrome' : /Safari/.test(a) ? 'Safari' : 'Navegador';
+  const o = /Windows/.test(a) ? 'Windows' : /Android/.test(a) ? 'Android' : /iPhone|iPad/.test(a) ? 'iOS' : /Mac/.test(a) ? 'macOS' : /Linux/.test(a) ? 'Linux' : '';
+  return `${b}${o ? ' em ' + o : ''}`;
+};
+function privacyPage(reg) {
+  const sessions = h('div');
+  const draw = async () => {
+    const list = await tryApi('GET', '/sessions') || [];
+    sessions.replaceChildren(...list.map(s => h('div.frow', { style: { cursor: 'default' } }, h('div.fn', h('b', agentName(s.agent)), h('small', `${s.current ? 'Este dispositivo • ' : ''}entrou em ${new Date(+s.created_at).toLocaleString('pt-BR')}`)),
+      !s.current && h('button.btn.red', { onclick: async () => { await tryApi('DELETE', `/sessions/${s.id}`); draw(); } }, 'Encerrar'))));
+  };
+  draw();
+  return h('div', h('h2', 'Privacidade e segurança'),
+    section('Pedidos de amizade'), card(seg({ all: 'Qualquer pessoa pode enviar', none: 'Ninguém pode enviar' }, S.friendPolicy || 'all', (v) => { S.friendPolicy = v; api('PUT', '/me/settings', { friend_policy: v }).catch(e => toast(e.message, true)); })),
+    section('Links'), card(row('Confirmar antes de abrir links externos', 'Mostra o endereço antes de abrir.', toggle(!!S.prefs.confirmLinks, v => { S.prefs.confirmLinks = v; save(); }))),
+    section('Dispositivos conectados'), card(hint('Encerre sessões que você não reconhece.'), sessions, h('button.btn.red', { style: { marginTop: '12px' }, onclick: async () => { if (await confirmBox('Sair de todos os outros dispositivos', 'Essas sessões precisarão entrar de novo.', 'Encerrar todas')) { await tryApi('DELETE', '/sessions'); draw(); } } }, 'Encerrar todas as outras sessões')));
+}
+
+// ============================ Aparência / acessibilidade ============================
+function appearancePage() {
+  const th = h('div.cards'), drawTh = () => th.replaceChildren(...Object.entries(THEMES).map(([k, l]) => h('div.ncard.theme-' + k + (S.prefs.theme === k ? '.on' : ''), { onclick: () => { S.prefs.theme = k; save(); applyTheme(); drawTh(); } }, h('b', l))));
+  drawTh();
+  const set = (k) => (v) => { S.prefs[k] = v; save(); applyTheme(); };
+  return h('div', h('h2', 'Aparência'), section('Tema'), card(th),
+    section('Cor de destaque'), card(swatches(S.prefs.accent, (c) => { S.prefs.accent = c; save(); applyTheme(); })),
+    section('Fonte'), card(h('label.f', 'Família da fonte', seg({ default: 'Padrão', rounded: 'Arredondada', serif: 'Serifada', mono: 'Monoespaçada', dyslexia: 'Legível (dislexia)' }, S.prefs.fontFamily, set('fontFamily'))),
+      h('label.f', 'Tamanho da interface', slider(80, 140, S.prefs.zoom, 5, set('zoom'), v => v + '%'))),
+    section('Mensagens'), card(row('Modo compacto', 'Mostra o autor em todas as mensagens.', toggle(S.prefs.compact, v => { S.prefs.compact = v; save(); })),
+      h('label.f', { style: { marginTop: '12px' } }, 'Espaço entre grupos de mensagens', slider(0, 32, S.prefs.msgGap, 1, set('msgGap'), v => v + 'px')),
+      h('label.f', 'Arredondamento dos cartões', slider(0, 20, S.prefs.radius, 1, set('radius'), v => v + 'px')),
+      h('label.f', 'Formato da hora', seg({ 0: '24 horas', 1: '12 horas (AM/PM)' }, S.prefs.hour12 ? 1 : 0, (v) => { S.prefs.hour12 = !!v; save(); applyTheme(); })),
+      row('Mostrar imagens de links no chat', 'Pré-visualiza links que terminam em .png/.jpg/.gif.', toggle(S.prefs.embedLinks !== false, v => { S.prefs.embedLinks = v; save(); })),
+      row('Cores dos cargos nos nomes', null, toggle(S.prefs.roleColors !== false, v => { S.prefs.roleColors = v; save(); }))));
+}
+function accessibilityPage() {
+  const set = (k) => (v) => { S.prefs[k] = v; save(); applyTheme(); };
+  return h('div', h('h2', 'Acessibilidade'),
+    card(row('Reduzir animações', 'Desliga transições e movimentos.', toggle(S.prefs.reduceMotion, set('reduceMotion'))), row('Alto contraste', 'Bordas e textos mais fortes.', toggle(S.prefs.highContrast, set('highContrast'))),
+      row('Sublinhar links', null, toggle(S.prefs.underlineLinks, set('underlineLinks'))), h('label.f', { style: { marginTop: '12px' } }, 'Saturação das cores', slider(0, 100, S.prefs.saturation, 5, set('saturation'), v => v + '%'))),
+    hint('Dica: em Aparência há uma fonte legível para dislexia e o tamanho da interface.'));
+}
+
+// ============================ Voz e vídeo ============================
+function voicePage(ctx, reg) {
+  const voice = ctx.voice;
+  const sel = (kind, key, label, after) => {
+    const s = h('select', { onchange: () => { S.prefs[key] = s.value; save(); after?.(); } }, h('option', { value: '' }, 'Padrão'));
+    navigator.mediaDevices?.enumerateDevices().then(ds => ds.filter(d => d.kind === kind).forEach(d => s.append(h('option', { value: d.deviceId, selected: S.prefs[key] === d.deviceId }, d.label || d.kind))));
+    return h('label.f', label, s);
+  };
+  const meterBar = h('i'), gateMark = h('b.gatemark'), meterWrap = h('div.meter.big', meterBar, gateMark);
+  const placeMark = () => { gateMark.style.left = Math.max(0, Math.min(100, (S.prefs.gateDb + 70) / 70 * 100)) + '%'; };
+  let test = null, raf = 0, loopback = false, testCtx;
+  const stopTest = () => { cancelAnimationFrame(raf); test?.dispose(); test = null; testCtx?.close(); testCtx = null; meterBar.style.width = '0'; testBtn.textContent = 'Testar microfone'; };
+  reg(stopTest);
+  const restartTest = async () => { if (test) { stopTest(); await startTest(); } if (voice.active) voice.rebuildMic(); };
+  const startTest = async () => {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error('Acesse via HTTPS ou use o app desktop para usar o microfone.');
+      testCtx = newAudioContext(); await testCtx.resume();
+      test = await createMic(S.prefs, testCtx); test.setLoopback(loopback);
+      if (test.error) toast(test.error, true);
+      const buf = new Uint8Array(test.analyser.fftSize);
+      const loop = () => { test.analyser.getByteTimeDomainData(buf); let p = 0; for (const v of buf) p = Math.max(p, Math.abs(v - 128)); const db = 20 * Math.log10(Math.max(p / 128, 1e-4)); meterBar.style.width = Math.max(0, Math.min(100, (db + 70) / 70 * 100)) + '%'; raf = requestAnimationFrame(loop); };
+      loop(); testBtn.textContent = 'Parar teste';
+    } catch (e) { toast(e.message || 'Falha ao acessar o microfone', true); stopTest(); }
+  };
+  const testBtn = h('button.btn', { onclick: () => (test ? stopTest() : startTest()) }, 'Testar microfone');
+  const noiseCards = h('div.cards'), drawNoise = () => noiseCards.replaceChildren(...Object.entries(NOISE_MODES).map(([k, l]) => h('div.ncard' + (S.prefs.noiseMode === k ? '.on' : ''), { onclick: () => { S.prefs.noiseMode = k; save(); drawNoise(); restartTest(); } },
+    h('b', l), h('small', { off: 'Sem processamento. Voz crua.', standard: 'Filtro do navegador; leve e simples.', rnnoise: 'Rede neural RNNoise: remove teclado, ventilador e ruído de fundo.', gtcrn: 'Modelo mais forte; melhor em ruídos difíceis, usa mais CPU.' }[k]))));
+  drawNoise(); setTimeout(placeMark, 0);
+  const gateLbl = h('span', S.prefs.gateDb + ' dB');
+  const gate = h('input', { type: 'range', min: -70, max: -10, value: S.prefs.gateDb, oninput: () => { S.prefs.gateDb = +gate.value; gateLbl.textContent = gate.value + ' dB'; placeMark(); }, onchange: () => { save(); restartTest(); } });
+  const pttBtn = captureKey(h('button.btn.grey'), S.prefs.pttKey, (c) => { S.prefs.pttKey = c; save(); }, { combo: false, label: 'Tecla de push-to-talk: ' });
+  const dev = (kind) => async () => { try { const s = await navigator.mediaDevices.getUserMedia(kind === 'cam' ? { video: true } : { audio: true }); s.getTracks().forEach(t => t.stop()); toast('Permissão concedida. Reabra a página para listar os nomes.'); } catch (e) { toast(e.message, true); } };
+  const camPrev = h('video', { autoplay: true, muted: true, playsInline: true, style: { width: '100%', borderRadius: '8px', background: '#000', display: 'none', marginTop: '12px' } });
+  let camStream; reg(() => camStream?.getTracks().forEach(t => t.stop()));
+  const camBtn = h('button.btn.grey', { onclick: async () => { if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; camPrev.style.display = 'none'; return; } try { camStream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: S.prefs.videoId ? { exact: S.prefs.videoId } : undefined, height: { ideal: S.prefs.camRes }, frameRate: { ideal: S.prefs.camFps } } }); camPrev.srcObject = camStream; camPrev.style.display = 'block'; } catch (e) { toast('Câmera: ' + e.message, true); } } }, 'Testar câmera');
+  return h('div', h('h2', 'Voz e vídeo'),
+    card(sel('audioinput', 'inputId', 'Dispositivo de entrada', restartTest), sel('audiooutput', 'outputId', 'Dispositivo de saída', () => applyOutput(voice)),
+      h('label.f', 'Volume do microfone', slider(0, 200, S.prefs.inputVolume, 5, v => { S.prefs.inputVolume = v; save(); if (test) test.gain.gain.value = v / 100; if (voice.micGraph) voice.micGraph.gain.gain.value = v / 100; }, v => v + '%')),
+      h('label.f', 'Volume geral da voz', slider(0, 100, S.prefs.volume, 5, v => { S.prefs.volume = v; save(); voice.peers.forEach((_, id) => voice.applyVolume(id)); }, v => v + '%')),
+      !navigator.mediaDevices?.enumerateDevices ? null : h('button.btn.grey', { onclick: dev('mic') }, 'Pedir permissão do microfone')),
+    section('Supressão de ruído'), card(noiseCards,
+      row('Porta de ruído', 'Silencia o microfone abaixo do limite. Útil com teclado mecânico e ventoinhas.', toggle(S.prefs.gate, v => { S.prefs.gate = v; save(); restartTest(); })),
+      h('label.f', { style: { marginTop: '12px' } }, 'Limite da porta: ', gateLbl, gate),
+      row('Cancelamento de eco', 'Evita retorno do som dos alto-falantes.', toggle(S.prefs.echo !== false, v => { S.prefs.echo = v; save(); restartTest(); })),
+      row('Ganho automático', 'Equaliza o volume da sua voz.', toggle(S.prefs.agc !== false, v => { S.prefs.agc = v; save(); restartTest(); }))),
+    section('Teste de microfone'), card(h('div.btns', testBtn, h('span', { style: { color: 'var(--text-muted)' } }, 'Ouvir a mim mesmo (use fones!)'), toggle(false, (v) => { loopback = v; test?.setLoopback(v); })), meterWrap),
+    section('Modo de entrada'), card(seg({ vad: 'Atividade de voz', ptt: 'Push-to-talk' }, S.prefs.inputMode, v => { S.prefs.inputMode = v; save(); voice.applyMute(); }), h('div', { style: { marginTop: '12px' } }, pttBtn), hint('O push-to-talk funciona com a janela do app em foco.')),
+    section('Qualidade da voz'), card(h('label.f', 'Taxa de bits do áudio', slider(8, 128, S.prefs.voiceBitrate, 8, v => { S.prefs.voiceBitrate = v; save(); voice.peers.forEach(p => voice.tuneAudio(p)); }, v => v + ' kbps')), hint('Mais kbps = voz mais fiel, usando mais rede. 64 kbps é um bom padrão.')),
+    section('Câmera'), card(sel('videoinput', 'videoId', 'Câmera'), h('label.f', 'Resolução', seg({ 360: '360p', 720: '720p', 1080: '1080p' }, S.prefs.camRes, v => { S.prefs.camRes = v; save(); })), h('label.f', 'Quadros por segundo', seg({ 15: '15', 30: '30', 60: '60' }, S.prefs.camFps, v => { S.prefs.camFps = v; save(); })), camBtn, camPrev),
+    section('Diagnóstico'), card(h('button.btn.grey', { onclick: async () => { const st = voice.active ? await voice.stats() : []; modal('Diagnóstico de voz', voice.active ? 'Conexões com os outros participantes' : 'Você não está em uma sala de voz', h('div', ...st.map(s => row(user(s.uid).display_name, `estado: ${s.state}`, h('b', s.rtt != null ? s.rtt + ' ms' : '—'))), !st.length && hint('Entre em uma sala de voz para ver os dados.')), [{ label: 'Fechar' }]); } }, 'Ver conexões agora'),
+      h('button.btn.grey', { style: { marginLeft: '8px' }, onclick: () => { voice.active ? voice.rebuildMic().then(() => toast('Áudio reiniciado')) : toast('Entre em uma sala primeiro', true); } }, 'Reiniciar áudio')),
+    !window.isSecureContext && card(hint('⚠️ Conexão não segura (HTTP): navegadores só liberam microfone/câmera/tela em HTTPS. Use https://…:3443 ou o aplicativo desktop.')));
+}
+
+// ============================ Transmissão ============================
+function streamPage() {
+  const o = { res: 1080, fps: 30, hint: 'motion', audio: true, ...S.prefs.screen };
+  const commit = () => { S.prefs.screen = { res: o.res, fps: o.fps, hint: o.hint, audio: o.audio }; save(); };
+  return h('div', h('h2', 'Transmissão de tela'), hint('Esses são os valores iniciais ao clicar em "Transmitir tela". Você ainda escolhe a tela/janela e pode mudar a qualidade durante a transmissão.'),
+    card(qualityPanel(o, commit), row('Compartilhar áudio do sistema por padrão', null, toggle(o.audio, v => { o.audio = v; commit(); }))));
+}
+
+// ============================ Sons do app ============================
+function soundsPage() {
+  const groups = { voz: 'Voz', transmissão: 'Transmissão', chat: 'Mensagens e chamadas' };
+  const rowFor = (name) => {
+    const [label] = SOUND_DEFS[name], cfg = soundCfg(name);
+    const status = h('small.mut', cfg.url ? 'Som personalizado' : 'Som padrão');
+    return h('div.srow', h('div.sl1', toggle(cfg.on, v => { cfg.on = v; save(); }), h('div', h('div.rt', label), status)),
+      h('div.sl2', slider(0, 100, cfg.vol, 5, v => { cfg.vol = v; save(); }, v => v + '%'),
+        h('button.btn.grey', { title: 'Testar', onclick: () => playSound(name, { force: true }) }, '▶'),
+        h('button.btn.grey', { title: 'Usar seu próprio áudio (até 1 MB, 5 s)', onclick: async () => { const u = await uploadFile('audio/*', 1); if (u) { cfg.url = u.url; save(); status.textContent = 'Som personalizado'; } } }, '♪'),
+        h('button.btn.link', { title: 'Voltar ao som padrão', onclick: () => { cfg.url = null; save(); status.textContent = 'Som padrão'; } }, '↺')));
+  };
+  return h('div', h('h2', 'Sons'), card(row('Silenciar todos os sons do app', null, toggle(!!S.prefs.soundsMuted, v => { S.prefs.soundsMuted = v; save(); })), h('label.f', { style: { marginTop: '12px' } }, 'Volume geral dos sons', slider(0, 100, S.prefs.soundVolume, 5, v => { S.prefs.soundVolume = v; save(); }, v => v + '%'))),
+    ...Object.entries(groups).flatMap(([g, title]) => [section(title), card(...Object.keys(SOUND_DEFS).filter(n => SOUND_DEFS[n][1] === g).map(rowFor))]),
+    hint('♪ troca o som pelo seu próprio arquivo de áudio; ↺ volta ao padrão. As configurações acompanham sua conta.'));
+}
+
+// ============================ Soundboard (gerenciar) ============================
+function soundboardPage() {
+  const box = h('div');
+  const draw = () => {
+    box.replaceChildren(...soundSources().map(src => card(
+      h('div.sbtitle', h('b', src.title), src.own ? h('button.btn', { onclick: () => addSound(null) }, '+ Novo som') : [h('small.mut', `${src.sounds.length} som(ns)`), h('span', { style: { flex: 1 } }),
+        h('label.sbmute', 'Usar neste servidor', toggle(!src.off, v => { (S.prefs.sbOffGuilds ||= {})[src.key] = !v; save(); }))]),
+      ...(src.sounds.length ? src.sounds.map(s => h('div.srow2', h('span.e', s.emoji || '🔊'), h('span.n', s.name), h('small.mut', soundVol(s) + '%'),
+        h('button.btn.grey', { onclick: () => playLocal(s.url, soundVol(s)) }, '▶'),
+        (src.own || (src.guild && can(src.guild.id, PERM.MANAGE_GUILD))) && h('button.btn.grey', { onclick: () => editSound(src, s) }, 'Editar'))) : [h('div.mut', 'Nenhum som ainda.')]))));
+  };
+  const onChange = () => document.body.contains(box) && draw();
+  document.addEventListener('sb-changed', onChange); draw();
+  return h('div', h('h2', 'Soundboard'), card(row('Silenciar sons do soundboard', 'Você deixa de ouvir os sons que os outros tocam.', toggle(!!S.prefs.sbMuted, v => { S.prefs.sbMuted = v; save(); })),
+    h('label.f', { style: { marginTop: '12px' } }, 'Volume dos sons que você ouve', slider(0, 100, S.prefs.sbVolume ?? 70, 5, v => { S.prefs.sbVolume = v; save(); }, v => v + '%'))),
+    hint('Abra o soundboard rapidamente pelo botão ♫ da barra do usuário ou da chamada. Clique direito num som: favoritar, atalho, prévia.'), box);
+}
+
+// ============================ Notificações ============================
+function notificationsPage() {
+  const list = [...S.guilds.values()].map(g => { const cfg = ((S.prefs.notifyCfg ||= {})[g.id] ||= { level: 'all', muted: false, noEveryone: false }); return card(h('div.sbtitle', h('b', g.name), h('span', { style: { flex: 1 } }), h('label.sbmute', 'Silenciar', toggle(cfg.muted, v => { cfg.muted = v; save(); }))), seg({ all: 'Todas', mentions: 'Só @menções', none: 'Nada' }, cfg.level, v => { cfg.level = v; save(); }), row('Suprimir @everyone e @here', null, toggle(cfg.noEveryone, v => { cfg.noEveryone = v; save(); }))); });
+  return h('div', h('h2', 'Notificações'),
+    card(row('Notificações da área de trabalho', 'Avisa de menções e mensagens diretas quando a janela não está em foco.', toggle(S.prefs.desktopNotif, v => { S.prefs.desktopNotif = v; save(); if (v && 'Notification' in window) Notification.requestPermission(); })),
+      row('Mostrar o texto da mensagem na notificação', 'Desligado: mostra só "Nova mensagem".', toggle(S.prefs.notifPreview !== false, v => { S.prefs.notifPreview = v; save(); })),
+      hint('Sons de notificação, de chamada e de voz ficam em "Sons".')),
+    section('Por servidor'), ...(list.length ? list : [hint('Você ainda não está em nenhum servidor.')]));
+}
+
+// ============================ Atalhos ============================
+function keysPage() {
+  const cap = (key, label, desktopKey) => captureKey(h('button.btn.grey', { style: { minWidth: '190px' } }), S.prefs[key], (c) => { S.prefs[key] = c; save(); if (desktop && desktopKey) desktop.setSettings({ [desktopKey]: comboToAccel(c) }); }, { combo: true });
+  const rows = [['Ctrl + K', 'Busca rápida'], ['↑ (campo vazio)', 'Editar sua última mensagem'], ['Esc', 'Cancelar resposta / fechar'], ['Shift + Enter', 'Quebra de linha']];
+  return h('div', h('h2', 'Atalhos'),
+    card(row('Silenciar / ativar microfone', desktop ? 'Funciona também com o app em segundo plano.' : 'Com a aba em foco.', cap('keyMute', '', 'hotkeyMute')),
+      row('Ensurdecer / ativar áudio', null, cap('keyDeafen', '', 'hotkeyDeafen')),
+      row('Push-to-talk', 'Segurar para falar (modo "Push-to-talk" em Voz e vídeo).', captureKey(h('button.btn.grey', { style: { minWidth: '190px' } }), S.prefs.pttKey, (c) => { S.prefs.pttKey = c; save(); }, { combo: false }))),
+    section('Fixos'), card(...rows.map(([k, d]) => row(d, null, h('kbd', k)))),
+    hint('Atalhos para tocar sons do soundboard: clique direito no som → "Definir atalho".'));
+}
+
+// ============================ Avançado ============================
+function advancedPage(ctx) {
+  const exportBtn = h('button.btn.grey', { onclick: () => { const p = { ...S.prefs }; ['inputId', 'outputId', 'videoId'].forEach(k => delete p[k]); const a = h('a', { href: URL.createObjectURL(new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' })), download: 'localcord-configuracoes.json' }); a.click(); } }, 'Exportar configurações');
+  const importBtn = h('button.btn.grey', { onclick: () => { const i = h('input', { type: 'file', accept: '.json', onchange: async () => { try { Object.assign(S.prefs, JSON.parse(await i.files[0].text())); save(); applyTheme(); toast('Configurações importadas'); } catch { toast('Arquivo inválido', true); } } }); i.click(); } }, 'Importar configurações');
+  const resetBtn = h('button.btn.red', { onclick: async () => { if (await confirmBox('Redefinir configurações', 'Volta tudo ao padrão (tema, voz, sons, atalhos…).', 'Redefinir')) { const keep = { inputId: S.prefs.inputId, outputId: S.prefs.outputId, videoId: S.prefs.videoId }; for (const k of Object.keys(S.prefs)) delete S.prefs[k]; localStorage.removeItem('lc_prefs'); S.prefs.inputId = keep.inputId; save(); location.reload(); } } }, 'Redefinir tudo');
+  const dsk = h('div'); if (desktop) desktop.getSettings().then(s => dsk.replaceChildren(
+    row('Aceleração de hardware', 'Usa a GPU para desenhar a interface. Reinicia o app.', toggle(s.hardwareAcceleration !== false, v => { desktop.setSettings({ hardwareAcceleration: v }); toast('Reinicie o app para aplicar'); })),
+    row('Limpar cache do app', 'Libera espaço; as configurações e a conta permanecem.', h('button.btn.grey', { onclick: async () => { await desktop.clearCache(); toast('Cache limpo'); } }, 'Limpar')),
+    row('Reiniciar o aplicativo', null, h('button.btn.grey', { onclick: () => desktop.relaunch() }, 'Reiniciar'))));
+  return h('div', h('h2', 'Avançado'),
+    card(row('Modo desenvolvedor', 'Mostra "Copiar ID" nos menus.', toggle(!!S.prefs.devMode, v => { S.prefs.devMode = v; save(); }))),
+    desktop && [section('Aplicativo'), card(dsk)],
+    section('Configurações'), card(h('div.btns', exportBtn, importBtn, resetBtn), hint('Suas preferências ficam salvas na conta e acompanham você em outros dispositivos (menos os dispositivos de áudio).')),
+    section('Informações'), card(row('Contexto seguro (HTTPS)', 'Necessário para microfone, câmera e tela.', h('b', window.isSecureContext ? 'Sim' : 'Não')), row('Servidores ICE', (S.ice || []).map(i => i.urls).join(', ') || '—', null), row('Navegador', navigator.userAgent.slice(0, 90), null)));
+}
+function appPage() {
+  const box = h('div.card2', 'Carregando…');
+  desktop.getSettings().then((s) => box.replaceChildren(
+    row('Iniciar com o Windows', 'Abre o LocalCord ao ligar o computador.', toggle(s.autoStart, v => desktop.setSettings({ autoStart: v }))),
+    row('Iniciar minimizado', null, toggle(s.startMinimized, v => desktop.setSettings({ startMinimized: v }))),
+    row('Fechar para a bandeja', 'Ao fechar a janela o app continua rodando (para ficar em chamada).', toggle(s.closeToTray, v => desktop.setSettings({ closeToTray: v }))),
+    row('Atalhos globais', 'Mutar/ensurdecer funcionam com o app em segundo plano (veja Atalhos).', toggle(s.globalHotkeys, v => desktop.setSettings({ globalHotkeys: v }))),
+    row('Servidor', s.server, h('button.btn.grey', { onclick: () => desktop.changeServer() }, 'Trocar servidor')),
+    row('Versão', `LocalCord Desktop ${s.version}`, null)));
+  return h('div', h('h2', 'Aplicativo (desktop)'), box);
+}
+
+// ============================ Servidor ============================
+function overviewPage(gid) {
+  const g = guild(gid), canEdit = can(gid, PERM.MANAGE_GUILD);
+  let icn = g.icon, ban = g.banner, accent = g.accent || '#5865f2';
+  const name = h('input', { value: g.name, maxLength: 100, disabled: !canEdit }), desc = h('textarea', { value: g.description || '', rows: 3, maxLength: 300, disabled: !canEdit, placeholder: 'Do que se trata este servidor?' });
+  const iconEl = h('div.rail-item', { style: { width: '88px', height: '88px', borderRadius: '50%', fontSize: '30px', cursor: canEdit ? 'pointer' : 'default' } }), bannerEl = h('div.srv-banner');
+  const draw = () => { iconEl.replaceChildren(icn ? h('img', { src: icn }) : g.name.split(/\s+/).map(w => w[0]).join('').slice(0, 3)); bannerEl.style.backgroundImage = ban ? `url("${ban}")` : ''; bannerEl.style.backgroundColor = accent; };
+  iconEl.onclick = async () => { if (!canEdit) return; const u = await uploadImage(); if (u) { icn = u.url; draw(); } };
+  draw();
+  const members = [...g.members.keys()].filter(id => id !== S.me.id);
+  return h('div', h('h2', 'Visão geral do servidor'), h('div.card2', { style: { padding: 0, overflow: 'hidden' } }, bannerEl, h('div', { style: { padding: '0 16px 16px', display: 'flex', gap: '16px', alignItems: 'flex-end', marginTop: '-44px', flexWrap: 'wrap' } }, iconEl,
+    canEdit && h('div.btns', h('button.btn', { onclick: async () => { const u = await uploadImage(); if (u) { ban = u.url; draw(); } } }, 'Banner'), h('button.btn.grey', { onclick: () => { ban = null; draw(); } }, 'Remover banner'), h('button.btn.grey', { onclick: () => { icn = null; draw(); } }, 'Remover ícone')))),
+  card(h('label.f', 'Nome do servidor', name), h('label.f', 'Descrição', desc), h('label.f', 'Cor de destaque'), swatches(accent, (c) => { accent = c; draw(); })),
+  canEdit && h('button.btn', { onclick: async () => { if (await tryApi('PATCH', `/guilds/${gid}`, { name: name.value, icon: icn || '', banner: ban || '', description: desc.value, accent })) toast('Servidor salvo!'); } }, 'Salvar alterações'),
+  g.owner_id === S.me.id && [section('Zona de perigo'), card(
+    row('Transferir propriedade', 'Escolha outro membro como dono.', h('button.btn.grey', { onclick: async () => { if (!members.length) return toast('Não há outros membros', true); const sel = h('select', ...members.map(id => h('option', { value: id }, nameOf(id, gid)))); modal('Transferir propriedade', 'O novo dono terá controle total.', h('label.f', 'Novo dono', sel), [{ label: 'Cancelar', cls: 'link' }, { label: 'Transferir', cls: 'red', fn: async () => { if (!(await tryApi('PATCH', `/guilds/${gid}`, { owner_id: sel.value }))) return false; toast('Propriedade transferida'); } }]); } }, 'Transferir')),
+    row('Excluir servidor', 'Apaga canais e mensagens para sempre.', h('button.btn.red', { onclick: async () => { if (await confirmBox(`Excluir ${g.name}`, 'Permanente: apaga canais e mensagens.', 'Excluir servidor')) { await tryApi('DELETE', `/guilds/${gid}`); document.getElementById('settings')?.remove(); } } }, 'Excluir')))]);
+}
+function channelsPage(gid) {
+  const g = guild(gid), box = h('div'), canEdit = can(gid, PERM.MANAGE_CHANNELS);
+  const draw = () => {
+    const cats = g.channels.filter(c => c.type === 4), kids = (pid) => g.channels.filter(c => c.type !== 4 && (c.parent_id || null) === pid);
+    const move = async (c, siblings, dir) => { const i = siblings.indexOf(c), j = i + dir; if (j < 0 || j >= siblings.length) return; const o = siblings[j]; const [a, b] = [c.position, o.position]; await tryApi('PATCH', `/channels/${c.id}`, { position: b === a ? b + dir : b }); await tryApi('PATCH', `/channels/${o.id}`, { position: a }); setTimeout(draw, 250); };
+    const line = (c, siblings) => h('div.chrow', h('span.ico', icon(c.type === 2 ? 'voice' : c.type === 4 ? 'caret' : 'hash', 16)), h('span.cn', c.name),
+      canEdit && h('div.btns', h('button.ibtn', { title: 'Subir', onclick: () => move(c, siblings, -1) }, '▲'), h('button.ibtn', { title: 'Descer', onclick: () => move(c, siblings, 1) }, '▼'),
+        h('button.btn.grey', { onclick: async () => { const n = await promptBox('Renomear canal', 'Nome', c.name); if (n) { await tryApi('PATCH', `/channels/${c.id}`, { name: n }); setTimeout(draw, 250); } } }, 'Renomear'),
+        h('button.btn.red', { onclick: async () => { if (await confirmBox('Excluir canal', `Excluir ${c.name}?`, 'Excluir')) { await tryApi('DELETE', `/channels/${c.id}`); setTimeout(draw, 250); } } }, 'Excluir')));
+    box.replaceChildren(...kids(null).map(c => line(c, kids(null))), ...cats.flatMap(cat => [line(cat, cats), h('div.chkids', ...kids(cat.id).map(c => line(c, kids(cat.id))))]));
+  };
+  draw();
+  const create = (type) => async () => { const n = await promptBox(type === 4 ? 'Nova categoria' : type === 2 ? 'Novo canal de voz' : 'Novo canal de texto', 'Nome', '', 'Criar'); if (n) { await tryApi('POST', `/guilds/${gid}/channels`, { name: n, type }); setTimeout(draw, 300); } };
+  return h('div', h('h2', 'Canais'), canEdit && h('div.btns', { style: { marginBottom: '16px' } }, h('button.btn', { onclick: create(0) }, '+ Texto'), h('button.btn', { onclick: create(2) }, '+ Voz'), h('button.btn.grey', { onclick: create(4) }, '+ Categoria')), card(box));
+}
+function emojisPage(gid) {
+  const g = guild(gid), canEdit = can(gid, PERM.MANAGE_GUILD), box = h('div.emoji-list');
+  const draw = () => { box.replaceChildren(...(g.emojis || []).map(e => h('div.emoji-item', h('img', { src: e.url }), h('span', ':' + e.name + ':'), canEdit && h('button.ibtn', { title: 'Excluir', onclick: async () => { await tryApi('DELETE', `/emojis/${e.id}`); setTimeout(draw, 250); } }, icon('trash', 16))))); if (!g.emojis?.length) box.append(hint('Nenhum emoji personalizado ainda.')); };
+  draw();
+  return h('div', h('h2', 'Emojis'), canEdit && card(hint('Envie imagens quadradas (PNG/GIF). Use no chat digitando :nome: ou pelo seletor de emojis.'), h('button.btn', { onclick: async () => {
+    const u = await uploadImage(); if (!u) return;
+    const nm = await promptBox('Nome do emoji', 'Nome (letras, números e _)', u.name.replace(/\.[^.]+$/, '').replace(/\W/g, '_').slice(0, 32), 'Adicionar'); if (!nm) return;
+    if (await tryApi('POST', `/guilds/${gid}/emojis`, { name: nm, url: u.url })) setTimeout(draw, 300);
+  } }, 'Enviar emoji')), box);
+}
+function serverSoundsPage(gid) {
+  const g = guild(gid), canEdit = can(gid, PERM.MANAGE_GUILD), box = h('div');
+  const draw = () => {
+    const src = { key: gid, title: g.name, guild: g, sounds: g.sounds || [] };
+    box.replaceChildren(...(src.sounds.length ? src.sounds.map(s => h('div.srow2', h('span.e', s.emoji || '🔊'), h('span.n', s.name), h('small.mut', soundVol(s) + '%'), h('button.btn.grey', { onclick: () => playLocal(s.url, soundVol(s)) }, '▶'), canEdit && h('button.btn.grey', { onclick: () => editSound(src, s) }, 'Editar'))) : [hint('Nenhum som neste servidor ainda.')]));
+  };
+  const onChange = () => document.body.contains(box) && draw(); document.addEventListener('sb-changed', onChange); draw();
+  return h('div', h('h2', 'Soundboard do servidor'), canEdit && card(hint('Sons curtos (até 15 s, 2 MB) que qualquer membro pode tocar na sala de voz, até 48 por servidor.'), h('button.btn', { onclick: () => addSound(gid) }, '+ Adicionar som')), card(box));
+}
+function invitesPage(gid) {
+  const box = h('div'), draw = async () => {
+    const list = await tryApi('GET', `/guilds/${gid}/invites`) || [];
+    box.replaceChildren(...list.map(i => h('div.frow', { style: { cursor: 'default' } }, h('div.fn', h('b', `${location.origin}/invite/${i.code}`), h('small', `${i.uses} uso(s) • por ${nameOf(i.creator_id, gid)}`)),
+      h('button.btn.grey', { onclick: () => { navigator.clipboard?.writeText(`${location.origin}/invite/${i.code}`); toast('Copiado!'); } }, 'Copiar'), h('button.btn.red', { onclick: async () => { await tryApi('DELETE', `/invites/${i.code}`); draw(); } }, 'Revogar'))));
+    if (!list.length) box.append(hint('Nenhum convite ativo.'));
+  };
+  draw();
+  return h('div', h('h2', 'Convites'), h('button.btn', { style: { marginBottom: '16px' }, onclick: async () => { await tryApi('POST', `/guilds/${gid}/invites`); draw(); } }, 'Criar convite'), box);
+}
+function rolesPage(gid) {
+  const g = guild(gid), box = h('div'), editor = h('div');
+  const draw = () => {
+    box.replaceChildren(...g.roles.map(r => h('div.role-row', { onclick: () => edit(r) }, h('i.dot', { style: { background: r.color } }), h('span', { style: { flex: 1 } }, r.name), h('small', { style: { color: 'var(--text-muted)' } }, `${[...g.members.values()].filter(m => m.roles.includes(r.id)).length} membros`))));
+    if (!g.roles.length) box.append(hint('Nenhum cargo ainda.'));
+  };
+  const edit = (r) => {
+    let color = r.color, perms = r.perms; const name = h('input', { value: r.name, maxLength: 50 });
+    editor.replaceChildren(card(h('h3', { style: { marginTop: 0, color: 'var(--header)' } }, 'Editar cargo'), h('label.f', 'Nome do cargo', name), h('label.f', 'Cor'), swatches(color, c => (color = c)),
+      h('div', { style: { marginTop: '16px' } }, PERM_LABELS.map(([bit, label, desc]) => row(label, desc, toggle(perms & bit, on => { perms = on ? perms | bit : perms & ~bit; })))),
+      h('div.btns', { style: { marginTop: '16px' } }, h('button.btn', { onclick: async () => { await tryApi('PATCH', `/roles/${r.id}`, { name: name.value, color, perms }); toast('Cargo salvo!'); setTimeout(draw, 200); } }, 'Salvar'),
+        h('button.btn.red', { onclick: async () => { if (await confirmBox('Excluir cargo', `Excluir ${r.name}?`, 'Excluir')) { await tryApi('DELETE', `/roles/${r.id}`); editor.replaceChildren(); setTimeout(draw, 200); } } }, 'Excluir'))));
+  };
+  draw();
+  return h('div', h('h2', 'Cargos'), can(gid, PERM.MANAGE_ROLES) && h('button.btn', { style: { marginBottom: '16px' }, onclick: async () => { await tryApi('POST', `/guilds/${gid}/roles`, { name: 'novo cargo' }); setTimeout(draw, 250); } }, 'Criar cargo'), box, editor);
+}
+function membersPage(gid) {
+  const g = guild(gid), box = h('div'), q = h('input.fsearch', { placeholder: 'Buscar membro', oninput: () => draw() });
+  const draw = () => {
+    box.replaceChildren(...[...g.members.values()].filter(m => nameOf(m.user_id, gid).toLowerCase().includes(q.value.toLowerCase())).map(m => {
+      const u = user(m.user_id);
+      return h('div.frow', { style: { cursor: 'default' } }, avatar(u, 36, { ring: 'var(--bg-pri)' }), h('div.fn', h('b', nameOf(m.user_id, gid)), h('small', '@' + u.username + (g.owner_id === u.id ? ' • Dono' : ''))),
+        can(gid, PERM.MANAGE_ROLES) && g.roles.length > 0 && h('button.btn.grey', { onclick: () => rolePicker(g, m) }, 'Cargos'),
+        can(gid, PERM.KICK) && u.id !== g.owner_id && u.id !== S.me.id && h('button.btn.red', { onclick: async () => { if (await confirmBox('Expulsar', `Expulsar ${u.display_name}?`, 'Expulsar')) { await tryApi('DELETE', `/guilds/${gid}/members/${u.id}`); setTimeout(draw, 300); } } }, 'Expulsar'));
+    }));
+  };
+  draw(); return h('div', h('h2', `Membros — ${g.members.size}`), q, box);
+}
+function rolePicker(g, m) {
+  const sel = new Set(m.roles);
+  modal(`Cargos de ${nameOf(m.user_id, g.id)}`, '', h('div', g.roles.map(r => row(r.name, null, toggle(sel.has(r.id), on => (on ? sel.add(r.id) : sel.delete(r.id)))))),
+    [{ label: 'Cancelar', cls: 'link' }, { label: 'Salvar', fn: () => tryApi('PATCH', `/guilds/${g.id}/members/${m.user_id}`, { roles: [...sel] }) }]);
+}
+void channelById;

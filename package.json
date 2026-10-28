@@ -1,0 +1,21 @@
+{
+  "name": "localcord",
+  "version": "1.0.0",
+  "description": "Servidor de chat/voz auto-hospedado com layout inspirado no Discord",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "@sapphi-red/web-noise-suppressor": "^0.4.1",
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.16.0"
+  }
+}

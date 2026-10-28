@@ -1,0 +1,47 @@
+{
+  "name": "localcord-desktop",
+  "version": "1.0.2",
+  "description": "LocalCord Desktop — cliente do seu servidor LocalCord",
+  "main": "main.js",
+  "author": "LocalCord",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "icon": "node make-icon.mjs",
+    "dist": "node make-icon.mjs && electron-builder --win"
+  },
+  "build": {
+    "appId": "br.local.localcord",
+    "productName": "LocalCord",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "connect.html",
+      "build/icon.png",
+      "build/tray.png"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "artifactName": "LocalCord-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "LocalCord-Portable-${version}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.1.0",
+    "electron-builder": "^26.18.0"
+  }
+}
