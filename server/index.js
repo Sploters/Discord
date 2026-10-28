@@ -848,6 +848,7 @@ wss.on('connection', (ws) => {
     const d = msg.d || {};
     try {
       switch (msg.t) {
+        case 'PING': send(ws, 'PONG', { n: d.n }); break; // medida de latência do cliente
         case 'TYPING': {
           const ch = get('SELECT * FROM channels WHERE id=?', String(d.channel_id));
           if (canAccessChannel(uid, ch)) dispatch(channelAudience(ch).filter(x => x !== uid), 'TYPING', { channel_id: ch.id, user_id: uid });

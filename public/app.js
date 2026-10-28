@@ -161,6 +161,7 @@ function onEvent(t, d) {
     case 'VOICE_PEER_LEFT': voice.onPeerLeft(d); break;
     case 'VOICE_SIGNAL': voice.onSignal(d); break;
     case 'SFU_RES': voice.onSfuRes(d); break;
+    case 'PONG': wsPings.get(d.n)?.(); break;
     case 'SFU_NEW_PRODUCER': voice.onSfuProducer(d); break;
     case 'SFU_CONSUMER_CLOSED': voice.onSfuConsumerClosed(d); break;
     case 'TYPING': {
@@ -980,10 +981,22 @@ function paintPing(el) {
   el.className = 'ping ' + pingLevel(p);
   el.title = p == null ? 'Medindo a conexão…' : `Ping: ${p} ms (clique para ver o gráfico)`;
 }
+// ida e volta pelo gateway: funciona mesmo sem transporte de mídia conectado (sem microfone, sozinho ouvindo)
+const wsPings = new Map(); let wsPingN = 0;
+function wsPing() {
+  return new Promise((resolve) => {
+    const n = ++wsPingN, t0 = performance.now();
+    const done = (v) => { wsPings.delete(n); resolve(v); };
+    wsPings.set(n, () => done(Math.round(performance.now() - t0)));
+    if (ws?.readyState !== 1) return done(null);
+    gwSend('PING', { n });
+    setTimeout(() => wsPings.has(n) && done(null), 5000);
+  });
+}
 function updatePing() {
   if (!voice.active) { pingHist.length = 0; return; }
   const cid = voice.channelId;
-  voice.ping().then(p => {
+  Promise.resolve().then(() => voice.ping()).catch(() => null).then(p => p ?? wsPing()).then(p => {
     if (voice.channelId !== cid) return;
     const now = Date.now();
     if (p != null) pingHist.push({ t: now, ms: p });
