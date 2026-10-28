@@ -1,6 +1,6 @@
 import { h, icon, EMOJIS, setHour12 } from './util.js';
 
-export const PERM = { ADMIN: 1, MANAGE_GUILD: 2, MANAGE_CHANNELS: 4, MANAGE_MESSAGES: 8, KICK: 16, CREATE_INVITE: 32, MANAGE_ROLES: 64 };
+export const PERM = { ADMIN: 1, MANAGE_GUILD: 2, MANAGE_CHANNELS: 4, MANAGE_MESSAGES: 8, KICK: 16, CREATE_INVITE: 32, MANAGE_ROLES: 64, BAN: 128, MODERATE: 256 };
 export const PERM_LABELS = [
   [PERM.ADMIN, 'Administrador', 'Todas as permissões; ignora qualquer restrição.'],
   [PERM.MANAGE_GUILD, 'Gerenciar servidor', 'Alterar nome e ícone do servidor.'],
@@ -9,6 +9,8 @@ export const PERM_LABELS = [
   [PERM.KICK, 'Expulsar membros', 'Remover membros do servidor.'],
   [PERM.CREATE_INVITE, 'Criar convite', 'Gerar links de convite.'],
   [PERM.MANAGE_ROLES, 'Gerenciar cargos', 'Criar cargos e atribuí-los a membros.'],
+  [PERM.BAN, 'Banir membros', 'Banir e desbanir membros do servidor.'],
+  [PERM.MODERATE, 'Castigar membros', 'Impedir temporariamente que alguém fale, reaja ou entre em voz.'],
 ];
 
 export const S = {

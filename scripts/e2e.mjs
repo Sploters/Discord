@@ -89,6 +89,27 @@ const sres = await call(ta, 'POST', `/guilds/${g.id}/sounds`, { name: 'Som', emo
 ok(!!sres.data.id, 'dono cria som do servidor'); const su = await gb.wait('SOUNDS_UPDATE'); ok(su.sounds.length === 1, 'membros recebem sons do servidor');
 gb.ws.close(); const left = await ga.wait('VOICE_PEER_LEFT'); ok(left.user_id === rb.user.id, 'saída de voz ao desconectar');
 
+// moderação: castigo, limite de mensagens, banimento, auditoria
+const td = await user('dave'); await call(td, 'POST', `/invites/${inv.code}`);
+const dId = (await call(ta, 'GET', `/search?q=entrou&guild=${g.id}`)).data.find(m => m.author.username === 'dave' + sfx)?.author_id;
+ok(!!dId, 'dave entrou no servidor');
+ok((await call(tb, 'PUT', `/guilds/${g.id}/bans/${dId}`, {})).status === 403, 'mod sem permissão de banir não bane');
+ok((await call(ta, 'PATCH', `/guilds/${g.id}/members/${dId}`, { timeout_until: Date.now() + 60000, reason: 'flood' })).status === 200, 'dono aplica castigo');
+ok((await call(td, 'POST', `/channels/${text.id}/messages`, { content: 'oi' })).status === 403, 'de castigo não envia mensagem');
+ok((await call(td, 'PUT', `/channels/${text.id}/messages/${up.data.id}/reactions/${encodeURIComponent('😀')}`)).status === 403, 'de castigo não reage');
+await call(ta, 'PATCH', `/guilds/${g.id}/members/${dId}`, { timeout_until: null });
+const burst = []; for (let i = 0; i < 8; i++) burst.push((await call(td, 'POST', `/channels/${text.id}/messages`, { content: 'spam ' + i })).status);
+ok(burst[0] === 200 && burst.includes(429), 'castigo removido e limite de mensagens: ' + burst.join(','));
+await call(ta, 'PUT', `/guilds/${g.id}/bans/${dId}`, { reason: 'spam', delete_messages: true });
+ok(!(await call(ta, 'GET', `/channels/${text.id}/messages`)).data.some(m => m.author_id === dId && m.type === 0), 'banir apaga as mensagens recentes');
+ok((await call(td, 'POST', `/invites/${inv.code}`)).status === 403, 'banido não volta por convite');
+ok((await call(ta, 'GET', `/guilds/${g.id}/bans`)).data[0]?.reason === 'spam', 'lista de banimentos');
+await call(ta, 'DELETE', `/guilds/${g.id}/bans/${dId}`);
+ok((await call(td, 'POST', `/invites/${inv.code}`)).status === 200, 'desbanido volta por convite');
+const aud = (await call(ta, 'GET', `/guilds/${g.id}/audit`)).data.entries.map(e => e.action);
+ok(['member_ban', 'member_unban', 'member_timeout', 'member_timeout_remove', 'role_create', 'member_roles', 'message_delete'].every(a => aud.includes(a)), 'registro de auditoria: ' + [...new Set(aud)].join(' '));
+ok((await call(tb, 'GET', `/guilds/${g.id}/audit`)).status === 403, 'auditoria só para quem gerencia o servidor');
+
 // conta: configurações sincronizadas, sessões, username, privacidade, transferência, exclusão
 await call(ta, 'PUT', '/me/settings', { settings: { theme: 'midnight', soundVolume: 42 } });
 ok((await call(ta, 'GET', '/me/settings')).data.settings.theme === 'midnight', 'configurações sincronizadas na conta');

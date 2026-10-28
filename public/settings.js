@@ -6,6 +6,7 @@ import { seg, toggle, row, section, slider, qualityPanel, captureKey, comboToAcc
 import { playSound, SOUND_DEFS, soundCfg } from './sounds.js';
 import { soundSources, mySounds, addSound, editSound, playLocal, soundVol } from './soundboard.js';
 import { applyOutput } from './quick.js';
+import { timeoutDialog, removeTimeout, banDialog, timedOutUntil, bansPage, auditPage } from './mod.js';
 
 const SWATCHES = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55d', '#faa61a', '#9b59b6', '#1abc9c', '#e67e22', '#3498db', '#95a5a6', '#2c2f33', '#ffffff'];
 const THEMES = { dark: 'Escuro', darker: 'Preto (AMOLED)', midnight: 'Meia-noite', light: 'Claro' };
@@ -22,6 +23,16 @@ async function uploadFile(accept = 'image/*', maxMB = 12) {
   });
 }
 const uploadImage = () => uploadFile('image/*', 12);
+// avatares prontos do servidor + opção de enviar uma imagem própria
+async function avatarPicker(current, onPick) {
+  const info = await fetch('/api/server-info').then(r => r.json()).catch(() => ({}));
+  let m;
+  const pick = (url) => { onPick(url); m.close(); };
+  m = modal('Escolha seu avatar', 'Use um dos avatares prontos ou envie uma imagem sua.', h('div',
+    h('div.avgrid', (info.default_avatars || []).map(url => h('button.avopt' + (url === current ? '.on' : ''), { title: 'Usar este avatar', onclick: () => pick(url) }, h('img', { src: url, alt: '' })))),
+    h('button.btn', { style: { marginTop: '16px', width: '100%' }, onclick: async () => { const u = await uploadImage(); if (u) pick(u.url); } }, 'Enviar uma imagem…')),
+  [{ label: 'Cancelar', cls: 'link' }]);
+}
 const swatches = (cur, onPick) => {
   const box = h('div.swatches');
   const draw = (c) => box.replaceChildren(...SWATCHES.map(s => h('i' + (s === c ? '.sel' : ''), { style: { background: s }, onclick: () => { onPick(s); draw(s); } })),
@@ -36,7 +47,7 @@ const USER_GROUPS = [
   ['Configurações do usuário', [['account', 'Minha conta', 'senha usuário nome excluir'], ['profile', 'Perfil', 'avatar banner bio status pronomes'], ['privacy', 'Privacidade e segurança', 'amizade sessões dispositivos links']]],
   ['Configurações do aplicativo', [['appearance', 'Aparência', 'tema cor fonte compacto hora'], ['accessibility', 'Acessibilidade', 'movimento contraste saturação'], ['voice', 'Voz e vídeo', 'microfone ruído eco câmera dispositivo bitrate'], ['stream', 'Transmissão', 'tela resolução fps qualidade'], ['sounds', 'Sons', 'efeitos silenciar ensurdecer entrar sair'], ['soundboard', 'Soundboard', 'sons pad meme'], ['notifications', 'Notificações', 'avisos menção silenciar servidor'], ['keys', 'Atalhos', 'teclas push-to-talk mutar'], ['advanced', 'Avançado', 'desenvolvedor exportar importar redefinir']]],
 ];
-const SERVER_PAGES = [['overview', 'Visão geral', 'nome ícone banner dono'], ['channels', 'Canais', 'ordem renomear'], ['roles', 'Cargos', 'permissões'], ['emojis', 'Emojis', ''], ['sounds', 'Soundboard do servidor', 'sons áudio'], ['members', 'Membros', 'expulsar'], ['invites', 'Convites', 'link']];
+const SERVER_PAGES = [['overview', 'Visão geral', 'nome ícone banner dono'], ['channels', 'Canais', 'ordem renomear'], ['roles', 'Cargos', 'permissões'], ['emojis', 'Emojis', ''], ['sounds', 'Soundboard do servidor', 'sons áudio'], ['members', 'Membros', 'expulsar banir castigo'], ['bans', 'Banimentos', 'banir desbanir'], ['audit', 'Registro de auditoria', 'log moderação histórico'], ['invites', 'Convites', 'link']];
 
 export function openSettings(kind, ctx) {
   document.getElementById('settings')?.remove();
@@ -48,7 +59,7 @@ export function openSettings(kind, ctx) {
   const R = {
     account: () => accountPage(close), profile: () => profilePage(), privacy: (r) => privacyPage(r), appearance: () => appearancePage(), accessibility: () => accessibilityPage(),
     voice: (r) => voicePage(ctx, r), stream: () => streamPage(), sounds: () => soundsPage(), soundboard: () => soundboardPage(), notifications: () => notificationsPage(), keys: () => keysPage(), advanced: () => advancedPage(ctx), app: () => appPage(),
-    overview: () => overviewPage(gid), channels: () => channelsPage(gid), roles: () => rolesPage(gid), emojis: () => emojisPage(gid), sounds_srv: () => serverSoundsPage(gid), members: () => membersPage(gid), invites: () => invitesPage(gid),
+    overview: () => overviewPage(gid), channels: () => channelsPage(gid), roles: () => rolesPage(gid), emojis: () => emojisPage(gid), sounds_srv: () => serverSoundsPage(gid), members: () => membersPage(gid), bans: () => bansPage(gid), audit: () => auditPage(gid), invites: () => invitesPage(gid),
   };
   const sKey = (k) => (isServer && k === 'sounds' ? 'sounds_srv' : k);
   let current;
@@ -107,7 +118,7 @@ function profilePage() {
   const bind = (key, input) => { input.value = d[key]; input.oninput = () => { d[key] = input.value; touch(); }; return input; };
   const emojiBtn = h('button.btn.grey', { style: { minWidth: '44px' }, title: 'Escolher emoji', onclick: (e) => emojiPicker(e.currentTarget, (em) => { d.status_emoji = em.startsWith('<:') ? '' : em; emojiBtn.textContent = d.status_emoji || '😀'; touch(); }, { noCustom: true }) }, d.status_emoji || '😀');
   const left = h('div.col',
-    card(row('Avatar', 'PNG, JPG, GIF ou WebP até 12 MB', h('div.btns', h('button.btn', { onclick: async () => { const u = await uploadImage(); if (u) { d.avatar = u.url; touch(); } } }, 'Trocar'), h('button.btn.grey', { onclick: () => { d.avatar = null; touch(); } }, 'Remover'))),
+    card(row('Avatar', 'Escolha um dos avatares prontos ou envie PNG, JPG, GIF ou WebP até 12 MB', h('div.btns', h('button.btn', { onclick: () => avatarPicker(d.avatar, (url) => { d.avatar = url; touch(); }) }, 'Trocar'), h('button.btn.grey', { onclick: () => { d.avatar = null; touch(); } }, 'Remover'))),
       row('Banner', 'Imagem de fundo do seu cartão', h('div.btns', h('button.btn', { onclick: async () => { const u = await uploadImage(); if (u) { d.banner = u.url; touch(); } } }, 'Enviar'), h('button.btn.grey', { onclick: () => { d.banner = null; touch(); } }, 'Remover')))),
     card(h('label.f', 'Nome de exibição', bind('display_name', h('input', { maxLength: 32 }))), h('label.f', 'Pronomes', bind('pronouns', h('input', { maxLength: 40, placeholder: 'ele/dele, ela/dela, elu/delu…' }))),
       h('label.f', 'Cor do avatar'), swatches(d.color, (c) => { d.color = c; touch(); }), h('label.f', { style: { marginTop: '16px' } }, 'Cor do banner / destaque'), swatches(d.banner_color, (c) => { d.banner_color = c; touch(); })),
@@ -394,8 +405,10 @@ function membersPage(gid) {
   const draw = () => {
     box.replaceChildren(...[...g.members.values()].filter(m => nameOf(m.user_id, gid).toLowerCase().includes(q.value.toLowerCase())).map(m => {
       const u = user(m.user_id);
-      return h('div.frow', { style: { cursor: 'default' } }, avatar(u, 36, { ring: 'var(--bg-pri)' }), h('div.fn', h('b', nameOf(m.user_id, gid)), h('small', '@' + u.username + (g.owner_id === u.id ? ' • Dono' : ''))),
+      return h('div.frow', { style: { cursor: 'default' } }, avatar(u, 36, { ring: 'var(--bg-pri)' }), h('div.fn', h('b', nameOf(m.user_id, gid)), h('small', '@' + u.username + (g.owner_id === u.id ? ' • Dono' : '') + (timedOutUntil(gid, u.id) ? ' • de castigo até ' + new Date(timedOutUntil(gid, u.id)).toLocaleString('pt-BR') : ''))),
         can(gid, PERM.MANAGE_ROLES) && g.roles.length > 0 && h('button.btn.grey', { onclick: () => rolePicker(g, m) }, 'Cargos'),
+        can(gid, PERM.MODERATE) && u.id !== g.owner_id && u.id !== S.me.id && h('button.btn.grey', { onclick: () => (timedOutUntil(gid, u.id) ? removeTimeout(gid, u.id) : timeoutDialog(gid, u.id)) }, timedOutUntil(gid, u.id) ? 'Tirar castigo' : 'Castigo'),
+        can(gid, PERM.BAN) && u.id !== g.owner_id && u.id !== S.me.id && h('button.btn.red', { onclick: () => banDialog(gid, u.id, () => setTimeout(draw, 300)) }, 'Banir'),
         can(gid, PERM.KICK) && u.id !== g.owner_id && u.id !== S.me.id && h('button.btn.red', { onclick: async () => { if (await confirmBox('Expulsar', `Expulsar ${u.display_name}?`, 'Expulsar')) { await tryApi('DELETE', `/guilds/${gid}/members/${u.id}`); setTimeout(draw, 300); } } }, 'Expulsar'));
     }));
   };

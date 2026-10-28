@@ -9,14 +9,17 @@ import https from 'node:https';
 import { execFileSync } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 import { all, get, run, newId, UPLOAD_DIR, DATA_DIR } from './db.js';
+import { startSfu, sfuEnabled, sfuJoin, sfuLeave, sfuRequest } from './sfu.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
 const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB || 50) * 1024 * 1024;
 const OPEN_REGISTRATION = process.env.OPEN_REGISTRATION !== '0';
+// avatares padrão (public/avatars): um é sorteado para cada conta nova
+const DEFAULT_AVATARS = (() => { try { return fs.readdirSync(path.join(__dirname, '..', 'public', 'avatars')).filter(f => /\.(png|jpe?g|webp|gif)$/i.test(f)).sort().map(f => '/avatars/' + f); } catch { return []; } })();
 
-const P = { ADMIN: 1, MANAGE_GUILD: 2, MANAGE_CHANNELS: 4, MANAGE_MESSAGES: 8, KICK: 16, CREATE_INVITE: 32, MANAGE_ROLES: 64 };
+const P = { ADMIN: 1, MANAGE_GUILD: 2, MANAGE_CHANNELS: 4, MANAGE_MESSAGES: 8, KICK: 16, CREATE_INVITE: 32, MANAGE_ROLES: 64, BAN: 128, MODERATE: 256 };
 const COLORS = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55d', '#faa61a', '#9b59b6', '#1abc9c'];
 
 // ---------- helpers ----------
@@ -51,14 +54,29 @@ function memberPerms(gid, uid) {
   return (p & P.ADMIN) ? 0xffffff : p;
 }
 const can = (gid, uid, bit) => (memberPerms(gid, uid) & bit) !== 0;
+// castigo: não fala, não reage, não entra em voz
+const timedOut = (gid, uid) => !!gid && (get('SELECT timeout_until t FROM members WHERE guild_id=? AND user_id=?', gid, uid)?.t || 0) > Date.now();
+function audit(gid, actor, action, target = null, details = '') {
+  run('INSERT INTO audit_log(id,guild_id,actor_id,action,target_id,details,created_at) VALUES(?,?,?,?,?,?,?)', newId(), gid, actor, action, target, String(details).slice(0, 500), Date.now());
+}
+// limite de mensagens: rajada de 5, recarrega 1 a cada 0,8 s
+const buckets = new Map();
+function rateOk(uid) {
+  const now = Date.now(), b = buckets.get(uid) || { n: 5, t: now };
+  b.n = Math.min(5, b.n + (now - b.t) / 800); b.t = now;
+  if (b.n < 1) { buckets.set(uid, b); return false; }
+  b.n -= 1; buckets.set(uid, b); return true;
+}
+setInterval(() => { const old = Date.now() - 60000; for (const [k, b] of buckets) if (b.t < old) buckets.delete(k); }, 60000).unref();
 
 function memberObj(gid, uid) {
   const m = get('SELECT * FROM members WHERE guild_id=? AND user_id=?', gid, uid);
   if (!m) return null;
-  return { user_id: uid, nickname: m.nickname, joined_at: m.joined_at,
+  return { user_id: uid, nickname: m.nickname, joined_at: m.joined_at, timeout_until: m.timeout_until > Date.now() ? m.timeout_until : null,
     roles: all('SELECT role_id FROM member_roles WHERE guild_id=? AND user_id=?', gid, uid).map(r => r.role_id) };
 }
-const vsObj = (cid, uid, s) => ({ channel_id: cid, user_id: uid, mute: s.mute, deaf: s.deaf, video: s.video, screen: s.screen });
+const roomStart = new Map(); // channelId -> quando a sala deixou de estar vazia (cronômetro da chamada)
+const vsObj = (cid, uid, s) => ({ channel_id: cid, user_id: uid, mute: s.mute, deaf: s.deaf, video: s.video, screen: s.screen, started_at: roomStart.get(cid) });
 function voiceStatesFor(gid) {
   const out = [];
   for (const [cid, m] of voice) {
@@ -142,8 +160,9 @@ app.post('/api/register', wrap((req, res) => {
   if (pw.length < 4) return bad(res, 'Senha muito curta (mínimo 4)');
   if (get('SELECT 1 x FROM users WHERE username=?', username)) return bad(res, 'Esse nome de usuário já existe', 409);
   const id = newId(), salt = crypto.randomBytes(16).toString('hex');
-  run('INSERT INTO users(id,username,display_name,pass_hash,salt,color,created_at) VALUES(?,?,?,?,?,?,?)',
-    id, username, clean(req.body.display_name, 32) || username, hashPw(pw, salt), salt, COLORS[Math.floor(Math.random() * COLORS.length)], Date.now());
+  run('INSERT INTO users(id,username,display_name,pass_hash,salt,color,avatar,created_at) VALUES(?,?,?,?,?,?,?,?)',
+    id, username, clean(req.body.display_name, 32) || username, hashPw(pw, salt), salt, COLORS[Math.floor(Math.random() * COLORS.length)],
+    DEFAULT_AVATARS.length ? DEFAULT_AVATARS[Math.floor(Math.random() * DEFAULT_AVATARS.length)] : null, Date.now());
   const token = crypto.randomBytes(32).toString('hex');
   run('INSERT INTO sessions(token,user_id,created_at,agent) VALUES(?,?,?,?)', token, id, Date.now(), clean(req.headers['user-agent'], 200));
   res.json({ token });
@@ -172,7 +191,7 @@ app.patch('/api/me', auth, wrap((req, res) => {
     banner: b.banner !== undefined ? (String(b.banner).startsWith('/files/') ? b.banner : null) : u.banner,
     status_emoji: b.status_emoji !== undefined ? clean(b.status_emoji, 16) : u.status_emoji,
   };
-  if (f.avatar && !String(f.avatar).startsWith('/files/')) f.avatar = u.avatar;
+  if (f.avatar && !String(f.avatar).startsWith('/files/') && !DEFAULT_AVATARS.includes(f.avatar)) f.avatar = u.avatar;
   run('UPDATE users SET display_name=?,bio=?,avatar=?,color=?,banner_color=?,custom_status=?,status=?,pronouns=?,banner=?,status_emoji=? WHERE id=?',
     f.display_name, f.bio, f.avatar, f.color, f.banner_color, f.custom_status, f.status, f.pronouns, f.banner, f.status_emoji, req.uid);
   broadcastPresence(req.uid);
@@ -262,6 +281,7 @@ app.patch('/api/guilds/:id', auth, wrap((req, res) => {
   run('UPDATE guilds SET name=?,icon=?,banner=?,description=?,accent=? WHERE id=?', clean(b.name, 100) || g.name, file(b.icon, g.icon), file(b.banner, g.banner),
     b.description !== undefined ? clean(b.description, 300) : g.description, b.accent !== undefined ? clean(b.accent, 9) : g.accent, g.id);
   const n = get('SELECT * FROM guilds WHERE id=?', g.id);
+  audit(g.id, req.uid, req.body.owner_id !== undefined ? 'guild_transfer' : 'guild_update', req.body.owner_id !== undefined ? String(req.body.owner_id) : null, n.name);
   dispatch(guildMemberIds(g.id), 'GUILD_UPDATE', { id: n.id, name: n.name, icon: n.icon, banner: n.banner, description: n.description, accent: n.accent, owner_id: n.owner_id });
   res.json({});
 }));
@@ -289,7 +309,42 @@ app.delete('/api/guilds/:id/members/:uid', auth, wrap((req, res) => {
   if (target === g.owner_id) return bad(res, 'O dono não pode sair/ser expulso; exclua o servidor', 400);
   if (target !== req.uid && !can(gid, req.uid, P.KICK)) return bad(res, 'Sem permissão', 403);
   removeMember(gid, target, target !== req.uid);
+  if (target !== req.uid) audit(gid, req.uid, 'member_kick', target, clean(req.query.reason, 300));
   res.json({});
+}));
+// Banimentos
+app.get('/api/guilds/:id/bans', auth, wrap((req, res) => {
+  if (!can(req.params.id, req.uid, P.BAN)) return bad(res, 'Sem permissão', 403);
+  res.json(all('SELECT user_id,reason,by_id,created_at FROM bans WHERE guild_id=? ORDER BY created_at DESC', req.params.id).map(b => ({ ...b, user: userPub(b.user_id) })));
+}));
+app.put('/api/guilds/:id/bans/:uid', auth, wrap((req, res) => {
+  const gid = req.params.id, target = req.params.uid, g = get('SELECT * FROM guilds WHERE id=?', gid);
+  if (!g || !can(gid, req.uid, P.BAN)) return bad(res, 'Sem permissão', 403);
+  if (target === g.owner_id || target === req.uid || !getUser(target)) return bad(res, 'Não é possível banir este usuário');
+  const reason = clean(req.body.reason, 300);
+  run('INSERT INTO bans(guild_id,user_id,reason,by_id,created_at) VALUES(?,?,?,?,?) ON CONFLICT(guild_id,user_id) DO UPDATE SET reason=excluded.reason', gid, target, reason, req.uid, Date.now());
+  if (get('SELECT 1 x FROM members WHERE guild_id=? AND user_id=?', gid, target)) removeMember(gid, target, true);
+  if (req.body.delete_messages) { // apaga as mensagens das últimas 24 h
+    for (const m of all('SELECT m.id,m.channel_id FROM messages m JOIN channels c ON c.id=m.channel_id WHERE c.guild_id=? AND m.author_id=? AND m.created_at>?', gid, target, Date.now() - 86400000)) {
+      run('DELETE FROM messages WHERE id=?', m.id);
+      dispatch(guildMemberIds(gid), 'MESSAGE_DELETE', { id: m.id, channel_id: m.channel_id, guild_id: gid });
+    }
+  }
+  audit(gid, req.uid, 'member_ban', target, reason);
+  res.json({});
+}));
+app.delete('/api/guilds/:id/bans/:uid', auth, wrap((req, res) => {
+  if (!can(req.params.id, req.uid, P.BAN)) return bad(res, 'Sem permissão', 403);
+  run('DELETE FROM bans WHERE guild_id=? AND user_id=?', req.params.id, req.params.uid);
+  audit(req.params.id, req.uid, 'member_unban', req.params.uid);
+  res.json({});
+}));
+app.get('/api/guilds/:id/audit', auth, wrap((req, res) => {
+  if (!can(req.params.id, req.uid, P.MANAGE_GUILD)) return bad(res, 'Sem permissão', 403);
+  const rows = req.query.before ? all('SELECT * FROM audit_log WHERE guild_id=? AND id<? ORDER BY id DESC LIMIT 100', req.params.id, String(req.query.before))
+    : all('SELECT * FROM audit_log WHERE guild_id=? ORDER BY id DESC LIMIT 100', req.params.id);
+  const ids = new Set(rows.flatMap(r => [r.actor_id, r.target_id]).filter(Boolean));
+  res.json({ entries: rows, users: [...ids].map(userPub).filter(Boolean) });
 }));
 app.patch('/api/guilds/:id/members/:uid', auth, wrap((req, res) => {
   const gid = req.params.id, target = req.params.uid === 'me' ? req.uid : req.params.uid;
@@ -300,8 +355,18 @@ app.patch('/api/guilds/:id/members/:uid', auth, wrap((req, res) => {
     if (!own && !can(gid, req.uid, P.MANAGE_ROLES)) return bad(res, 'Sem permissão', 403);
     run('UPDATE members SET nickname=? WHERE guild_id=? AND user_id=?', clean(req.body.nickname, 32) || null, gid, target);
   }
+  if (req.body.timeout_until !== undefined) { // castigo (null = remover)
+    const g = get('SELECT owner_id FROM guilds WHERE id=?', gid);
+    if (!can(gid, req.uid, P.MODERATE) || own || target === g.owner_id) return bad(res, 'Sem permissão', 403);
+    const until = req.body.timeout_until ? Math.min(+req.body.timeout_until, Date.now() + 28 * 86400000) : null;
+    if (until !== null && !(until > Date.now())) return bad(res, 'Duração inválida');
+    run('UPDATE members SET timeout_until=? WHERE guild_id=? AND user_id=?', until, gid, target);
+    if (until) { const c = currentVoice(target); if (c && get('SELECT 1 x FROM channels WHERE id=? AND guild_id=?', c, gid)) leaveVoice(target, c); }
+    audit(gid, req.uid, until ? 'member_timeout' : 'member_timeout_remove', target, until ? new Date(until).toISOString() + (req.body.reason ? ' — ' + clean(req.body.reason, 300) : '') : '');
+  }
   if (Array.isArray(req.body.roles)) {
     if (!can(gid, req.uid, P.MANAGE_ROLES)) return bad(res, 'Sem permissão', 403);
+    audit(gid, req.uid, 'member_roles', target, req.body.roles.map(r => get('SELECT name FROM roles WHERE id=? AND guild_id=?', r, gid)?.name).filter(Boolean).join(', ') || '(nenhum)');
     run('DELETE FROM member_roles WHERE guild_id=? AND user_id=?', gid, target);
     for (const r of req.body.roles) if (get('SELECT 1 x FROM roles WHERE id=? AND guild_id=?', r, gid)) run('INSERT OR IGNORE INTO member_roles VALUES(?,?,?)', gid, target, r);
   }
@@ -314,6 +379,7 @@ app.post('/api/guilds/:id/roles', auth, wrap((req, res) => {
   const id = newId();
   run('INSERT INTO roles(id,guild_id,name,color,perms,position) VALUES(?,?,?,?,?,?)', id, req.params.id, clean(req.body.name, 50) || 'novo cargo', clean(req.body.color, 9) || '#99aab5', Number(req.body.perms) | 0, Date.now() % 100000);
   dispatch(guildMemberIds(req.params.id), 'ROLE_UPDATE', { guild_id: req.params.id, role: get('SELECT * FROM roles WHERE id=?', id) });
+  audit(req.params.id, req.uid, 'role_create', id, clean(req.body.name, 50) || 'novo cargo');
   res.json({ id });
 }));
 app.patch('/api/roles/:id', auth, wrap((req, res) => {
@@ -321,12 +387,14 @@ app.patch('/api/roles/:id', auth, wrap((req, res) => {
   if (!r || !can(r.guild_id, req.uid, P.MANAGE_ROLES)) return bad(res, 'Sem permissão', 403);
   run('UPDATE roles SET name=?,color=?,perms=? WHERE id=?', clean(req.body.name, 50) || r.name, clean(req.body.color, 9) || r.color, req.body.perms !== undefined ? Number(req.body.perms) | 0 : r.perms, r.id);
   dispatch(guildMemberIds(r.guild_id), 'ROLE_UPDATE', { guild_id: r.guild_id, role: get('SELECT * FROM roles WHERE id=?', r.id) });
+  audit(r.guild_id, req.uid, 'role_update', r.id, get('SELECT name FROM roles WHERE id=?', r.id).name);
   res.json({});
 }));
 app.delete('/api/roles/:id', auth, wrap((req, res) => {
   const r = get('SELECT * FROM roles WHERE id=?', req.params.id);
   if (!r || !can(r.guild_id, req.uid, P.MANAGE_ROLES)) return bad(res, 'Sem permissão', 403);
   run('DELETE FROM roles WHERE id=?', r.id);
+  audit(r.guild_id, req.uid, 'role_delete', r.id, r.name);
   dispatch(guildMemberIds(r.guild_id), 'ROLE_DELETE', { guild_id: r.guild_id, id: r.id });
   res.json({});
 }));
@@ -342,6 +410,7 @@ app.post('/api/guilds/:id/channels', auth, wrap((req, res) => {
   const parent = get('SELECT id FROM channels WHERE id=? AND guild_id=? AND type=4', req.body.parent_id, gid) ? req.body.parent_id : null;
   run('INSERT INTO channels(id,guild_id,type,name,position,parent_id,created_at) VALUES(?,?,?,?,?,?,?)', id, gid, type, name, pos, parent, Date.now());
   dispatch(guildMemberIds(gid), 'CHANNEL_CREATE', get('SELECT * FROM channels WHERE id=?', id));
+  audit(gid, req.uid, 'channel_create', id, name);
   res.json({ id });
 }));
 app.patch('/api/channels/:id', auth, wrap((req, res) => {
@@ -349,6 +418,7 @@ app.patch('/api/channels/:id', auth, wrap((req, res) => {
   if (!ch || !ch.guild_id || !can(ch.guild_id, req.uid, P.MANAGE_CHANNELS)) return bad(res, 'Sem permissão', 403);
   run('UPDATE channels SET name=?,topic=?,position=? WHERE id=?', clean(req.body.name, 100) || ch.name, req.body.topic !== undefined ? clean(req.body.topic, 1024) : ch.topic, Number.isFinite(+req.body.position) && req.body.position !== undefined ? +req.body.position : ch.position, ch.id);
   dispatch(guildMemberIds(ch.guild_id), 'CHANNEL_UPDATE', get('SELECT * FROM channels WHERE id=?', ch.id));
+  if (req.body.name !== undefined || req.body.topic !== undefined) audit(ch.guild_id, req.uid, 'channel_update', ch.id, get('SELECT name FROM channels WHERE id=?', ch.id).name);
   res.json({});
 }));
 app.delete('/api/channels/:id', auth, wrap((req, res) => {
@@ -357,6 +427,7 @@ app.delete('/api/channels/:id', auth, wrap((req, res) => {
   if (voice.has(ch.id)) for (const u of [...voice.get(ch.id).keys()]) leaveVoice(u, ch.id);
   run('UPDATE channels SET parent_id=NULL WHERE parent_id=?', ch.id);
   run('DELETE FROM channels WHERE id=?', ch.id);
+  audit(ch.guild_id, req.uid, 'channel_delete', ch.id, ch.name);
   dispatch(guildMemberIds(ch.guild_id), 'CHANNEL_DELETE', { id: ch.id, guild_id: ch.guild_id });
   res.json({});
 }));
@@ -375,6 +446,7 @@ app.get('/api/invites/:code', wrap((req, res) => {
 app.post('/api/invites/:code', auth, wrap((req, res) => {
   const i = get('SELECT * FROM invites WHERE code=?', req.params.code);
   if (!i) return bad(res, 'Convite inválido ou expirado', 404);
+  if (get('SELECT 1 x FROM bans WHERE guild_id=? AND user_id=?', i.guild_id, req.uid)) return bad(res, 'Você foi banido deste servidor', 403);
   if (!get('SELECT 1 x FROM members WHERE guild_id=? AND user_id=?', i.guild_id, req.uid)) {
     run('INSERT INTO members(guild_id,user_id,joined_at) VALUES(?,?,?)', i.guild_id, req.uid, Date.now());
     run('UPDATE invites SET uses=uses+1 WHERE code=?', i.code);
@@ -398,7 +470,9 @@ app.get('/api/guilds/:id/invites', auth, wrap((req, res) => {
 app.delete('/api/invites/:code', auth, wrap((req, res) => {
   const i = get('SELECT * FROM invites WHERE code=?', req.params.code);
   if (!i || !(i.creator_id === req.uid || can(i.guild_id, req.uid, P.MANAGE_GUILD))) return bad(res, 'Sem permissão', 403);
-  run('DELETE FROM invites WHERE code=?', i.code); res.json({});
+  run('DELETE FROM invites WHERE code=?', i.code);
+  audit(i.guild_id, req.uid, 'invite_delete', null, i.code);
+  res.json({});
 }));
 // Emojis personalizados
 app.post('/api/guilds/:id/emojis', auth, wrap((req, res) => {
@@ -491,6 +565,8 @@ function mentionedIds(content, ch) {
 app.post('/api/channels/:id/messages', auth, wrap((req, res) => {
   const ch = channelFor(req, res); if (!ch) return;
   if (ch.type === 4) return bad(res, 'Canal não aceita mensagens');
+  if (timedOut(ch.guild_id, req.uid)) return bad(res, 'Você está de castigo neste servidor', 403);
+  if (!rateOk(req.uid)) return bad(res, 'Você está enviando mensagens rápido demais', 429);
   const content = String(req.body.content ?? '').slice(0, 4000);
   const atts = (Array.isArray(req.body.attachments) ? req.body.attachments : []).slice(0, 10)
     .filter(a => a && typeof a.url === 'string' && a.url.startsWith('/files/'))
@@ -523,7 +599,31 @@ app.delete('/api/channels/:id/messages/:mid', auth, wrap((req, res) => {
   const m = get('SELECT * FROM messages WHERE id=? AND channel_id=?', req.params.mid, ch.id);
   if (!m || (m.author_id !== req.uid && !(ch.guild_id && can(ch.guild_id, req.uid, P.MANAGE_MESSAGES)))) return bad(res, 'Sem permissão', 403);
   run('DELETE FROM messages WHERE id=?', m.id);
+  if (m.author_id !== req.uid) audit(ch.guild_id, req.uid, 'message_delete', m.author_id, `#${ch.name}: ${(m.content || '').slice(0, 200)}`);
   dispatch(channelAudience(ch), 'MESSAGE_DELETE', { id: m.id, channel_id: ch.id, guild_id: ch.guild_id });
+  res.json({});
+}));
+// remove um anexo da mensagem (a mensagem some se ficar sem texto e sem anexos)
+app.delete('/api/channels/:id/messages/:mid/attachments/:idx', auth, wrap((req, res) => {
+  const ch = channelFor(req, res); if (!ch) return;
+  const m = get('SELECT * FROM messages WHERE id=? AND channel_id=?', req.params.mid, ch.id);
+  if (!m || (m.author_id !== req.uid && !(ch.guild_id && can(ch.guild_id, req.uid, P.MANAGE_MESSAGES)))) return bad(res, 'Sem permissão', 403);
+  const atts = JSON.parse(m.attachments || '[]'), i = +req.params.idx;
+  if (!Number.isInteger(i) || !atts[i]) return bad(res, 'Anexo não encontrado', 404);
+  const [gone] = atts.splice(i, 1);
+  if (m.author_id !== req.uid) audit(ch.guild_id, req.uid, 'message_delete', m.author_id, `#${ch.name}: anexo ${gone.name}`);
+  if (!atts.length && !(m.content || '').trim()) {
+    run('DELETE FROM messages WHERE id=?', m.id);
+    dispatch(channelAudience(ch), 'MESSAGE_DELETE', { id: m.id, channel_id: ch.id, guild_id: ch.guild_id });
+  } else {
+    run('UPDATE messages SET attachments=? WHERE id=?', JSON.stringify(atts), m.id);
+    dispatch(channelAudience(ch), 'MESSAGE_UPDATE', { ...messageObj(get('SELECT * FROM messages WHERE id=?', m.id)), guild_id: ch.guild_id });
+  }
+  // apaga o arquivo do disco se nenhuma outra mensagem usa
+  const fname = path.basename(String(gone.url).split('/')[2] || '');
+  const like = '%' + fname.replace(/[%_\\]/g, '\\$&') + '%', used = (sql) => get(sql + " LIKE ? ESCAPE '\\'", like);
+  if (fname && !used('SELECT 1 x FROM messages WHERE attachments') && !used('SELECT 1 x FROM users WHERE avatar') && !used('SELECT 1 x FROM users WHERE banner') && !used('SELECT 1 x FROM users WHERE settings')
+    && !used('SELECT 1 x FROM emojis WHERE url') && !used('SELECT 1 x FROM sounds WHERE url') && !used('SELECT 1 x FROM guilds WHERE icon') && !used('SELECT 1 x FROM guilds WHERE banner')) fs.unlink(path.join(UPLOAD_DIR, fname), () => { });
   res.json({});
 }));
 function setPin(req, res, v) {
@@ -542,6 +642,7 @@ function reaction(req, res, add) {
   const m = get('SELECT * FROM messages WHERE id=? AND channel_id=?', req.params.mid, ch.id);
   if (!m) return bad(res, 'Mensagem não encontrada', 404);
   const emoji = clean(req.params.emoji, 64);
+  if (add && timedOut(ch.guild_id, req.uid)) return bad(res, 'Você está de castigo neste servidor', 403);
   if (add) run('INSERT OR IGNORE INTO reactions VALUES(?,?,?)', m.id, req.uid, emoji);
   else run('DELETE FROM reactions WHERE message_id=? AND user_id=? AND emoji=?', m.id, req.uid, emoji);
   dispatch(channelAudience(ch), 'MESSAGE_UPDATE', { ...messageObj(get('SELECT * FROM messages WHERE id=?', m.id)), guild_id: ch.guild_id });
@@ -639,7 +740,7 @@ app.get('/files/:f/:name?', (req, res) => {
   res.sendFile(f, { root: UPLOAD_DIR, dotfiles: 'allow' });
 });
 
-app.get('/api/server-info', (req, res) => res.json({ name: 'LocalCord', registration: OPEN_REGISTRATION }));
+app.get('/api/server-info', (req, res) => res.json({ name: 'LocalCord', registration: OPEN_REGISTRATION, default_avatars: DEFAULT_AVATARS }));
 app.use(express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
 app.get(/^\/(?!api|files|gateway).*/, (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 
@@ -678,7 +779,8 @@ function buildReady(uid) {
 
 function leaveVoice(uid, cid) {
   const m = voice.get(cid); if (!m || !m.has(uid)) return;
-  m.delete(uid); if (!m.size) voice.delete(cid);
+  m.delete(uid); if (!m.size) { voice.delete(cid); roomStart.delete(cid); }
+  sfuLeave(cid, uid);
   const ch = get('SELECT * FROM channels WHERE id=?', cid);
   if (ch) dispatch(channelAudience(ch), 'VOICE_STATE', { channel_id: null, prev_channel_id: cid, user_id: uid, guild_id: ch.guild_id });
   for (const [, s] of m) send(s.ws, 'VOICE_PEER_LEFT', { channel_id: cid, user_id: uid });
@@ -707,14 +809,26 @@ wss.on('connection', (ws) => {
         case 'VOICE_JOIN': {
           const ch = get('SELECT * FROM channels WHERE id=?', String(d.channel_id));
           if (!ch || (ch.type !== 2 && ch.type !== 1) || !canAccessChannel(uid, ch)) return;
+          if (timedOut(ch.guild_id, uid)) return send(ws, 'VOICE_DENIED', { channel_id: ch.id, reason: 'Você está de castigo neste servidor' });
           const prev = currentVoice(uid); if (prev) leaveVoice(uid, prev);
-          if (!voice.has(ch.id)) voice.set(ch.id, new Map());
+          if (!voice.has(ch.id)) { voice.set(ch.id, new Map()); roomStart.set(ch.id, Date.now()); }
           const room = voice.get(ch.id);
           const peers = [...room.keys()];
           const st = { ws, mute: false, deaf: false, video: false, screen: false };
           room.set(uid, st);
-          send(ws, 'VOICE_JOINED', { channel_id: ch.id, peers });
+          if (!sfuEnabled()) send(ws, 'VOICE_JOINED', { channel_id: ch.id, peers });
           dispatch(channelAudience(ch), 'VOICE_STATE', { ...vsObj(ch.id, uid, st), guild_id: ch.guild_id });
+          if (!sfuEnabled()) break;
+          sfuJoin(ch.id, uid, (t, x) => send(ws, t, { ...x, channel_id: ch.id })).then(sfu => {
+            if (voice.get(ch.id)?.get(uid) !== st) return sfuLeave(ch.id, uid); // saiu enquanto entrava
+            send(ws, 'VOICE_JOINED', { channel_id: ch.id, peers, sfu });
+          }).catch(e => console.error('sfu join', e));
+          break;
+        }
+        case 'SFU': { // sinalização do SFU: requisição/resposta
+          const c = currentVoice(uid), rid = d.rid;
+          if (!c || voice.get(c).get(uid).ws !== ws) return send(ws, 'SFU_RES', { rid, error: 'fora da sala' });
+          sfuRequest(c, uid, String(d.op), d).then(data => send(ws, 'SFU_RES', { rid, data }), e => send(ws, 'SFU_RES', { rid, error: e.message }));
           break;
         }
         case 'SOUNDBOARD': { // toca um som para todos na sala de voz
@@ -766,6 +880,7 @@ function loadTls() {
   return { key: fs.readFileSync(keyP), cert: fs.readFileSync(certP) };
 }
 
+await startSfu();
 server.listen(PORT, HOST, () => {
   console.log(`\n  LocalCord rodando`);
   const tls = process.env.HTTPS === '0' ? null : loadTls();

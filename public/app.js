@@ -7,6 +7,7 @@ import { openAudioPanel, openStatusPanel } from './quick.js';
 import { seg, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
 import { openSettings } from './settings.js';
 import { profileCard, STATUS_TXT } from './card.js';
+import { timeoutDialog, removeTimeout, banDialog, timedOutUntil } from './mod.js';
 applyTheme();
 
 let ws, voice, retry = 0, ready = false, pendingInvite = null;
@@ -123,7 +124,7 @@ function onEvent(t, d) {
     case 'DM_CREATE': { S.dms.set(d.id, d); d.recipients.forEach(u => S.users.set(u.id, u)); renderSide(); renderRail(); break; }
     case 'MEMBER_ADD': { const g = guild(d.guild_id); if (g) { g.members.set(d.member.user_id, d.member); S.users.set(d.user.id, d.user); renderMembers(); } break; }
     case 'MEMBER_REMOVE': { const g = guild(d.guild_id); if (g) { g.members.delete(d.user_id); renderMembers(); } break; }
-    case 'MEMBER_UPDATE': { const g = guild(d.guild_id); if (g) { g.members.set(d.user_id, { user_id: d.user_id, nickname: d.nickname, roles: d.roles, joined_at: d.joined_at }); renderMembers(); renderSide(); refreshAuthors(d.user_id); } break; }
+    case 'MEMBER_UPDATE': { const g = guild(d.guild_id); if (g) { g.members.set(d.user_id, { user_id: d.user_id, nickname: d.nickname, roles: d.roles, joined_at: d.joined_at, timeout_until: d.timeout_until }); renderMembers(); renderSide(); refreshAuthors(d.user_id); } break; }
     case 'ROLE_UPDATE': { const g = guild(d.guild_id); if (g) { const i = g.roles.findIndex(r => r.id === d.role.id); if (i >= 0) g.roles[i] = d.role; else g.roles.push(d.role); g.roles.sort((a, b) => b.position - a.position); renderMembers(); } break; }
     case 'ROLE_DELETE': { const g = guild(d.guild_id); if (g) { g.roles = g.roles.filter(r => r.id !== d.id); for (const m of g.members.values()) m.roles = m.roles.filter(r => r !== d.id); renderMembers(); } break; }
     case 'RELATIONSHIP': {
@@ -149,15 +150,19 @@ function onEvent(t, d) {
         } else if (dmCh && d.channel_id && !before && !mineCh) incomingCall(dmCh, d.user_id);
       }
       if (!d.channel_id && S.dms.has(d.prev_channel_id)) document.getElementById('call-banner')?.remove();
-      renderSide(); renderVoiceUI(); if (S.view.cid && [1, 2].includes(channelById(S.view.cid)?.type)) renderCallBar();
+      renderSide(); renderRail(); renderVoiceUI(); if (S.view.cid && [1, 2].includes(channelById(S.view.cid)?.type)) renderCallBar();
       break;
     }
     case 'SOUNDBOARD': sbIncoming(d, voice); break;
     case 'SOUNDS_UPDATE': { const g = guild(d.guild_id); if (g) { g.sounds = d.sounds; document.dispatchEvent(new Event('sb-changed')); } break; }
     case 'EMOJIS_UPDATE': { const g = guild(d.guild_id); if (g) { g.emojis = d.emojis; renderMessages(true); } break; }
     case 'VOICE_JOINED': voice.onJoined(d); break;
+    case 'VOICE_DENIED': if (voice.channelId === d.channel_id) { voice.leave(); toast(d.reason, true); } break;
     case 'VOICE_PEER_LEFT': voice.onPeerLeft(d); break;
     case 'VOICE_SIGNAL': voice.onSignal(d); break;
+    case 'SFU_RES': voice.onSfuRes(d); break;
+    case 'SFU_NEW_PRODUCER': voice.onSfuProducer(d); break;
+    case 'SFU_CONSUMER_CLOSED': voice.onSfuConsumerClosed(d); break;
     case 'TYPING': {
       let m = S.typing.get(d.channel_id); if (!m) S.typing.set(d.channel_id, m = new Map());
       m.set(d.user_id, Date.now() + 8000); renderTyping(); setTimeout(renderTyping, 8100); break;
@@ -252,6 +257,7 @@ function guildUnread(g) { return g.channels.some(c => S.unread[c.id]); }
 function guildMentions(g) { return g.channels.reduce((n, c) => n + (S.mentions[c.id] || 0), 0); }
 function renderRail() {
   const rail = $('#rail'); if (!rail) return;
+  document.getElementById('vcard')?.remove();
   const dmMentions = [...S.dms.keys()].reduce((n, id) => n + (S.mentions[id] || 0), 0);
   const pending = [...S.rels.values()].filter(r => r.type === 3).length;
   const wrap = (cls, tip, el, extra) => h('div.rail-wrap' + cls, { 'data-tip': tip }, el, extra);
@@ -259,10 +265,31 @@ function renderRail() {
   rail.replaceChildren(
     wrap(S.view.gid === '@me' ? '.active' : '', 'Mensagens diretas', h('div.rail-item', { onclick: () => go('@me'), style: { fontSize: '0' } }, icon('dm', 28)), badge(dmMentions + pending)),
     h('div.sep'),
-    ...[...S.guilds.values()].map(g => wrap((S.view.gid === g.id ? '.active' : '') + (guildUnread(g) && S.view.gid !== g.id ? '.unread' : ''), g.name,
-      h('div.rail-item', { onclick: () => go(g.id), oncontextmenu: (e) => guildMenu(e, g) }, g.icon ? h('img', { src: g.icon, alt: '' }) : g.name.split(/\s+/).map(w => w[0]).join('').slice(0, 3)), badge(guildMentions(g)))),
+    ...[...S.guilds.values()].map(g => {
+      const rooms = voiceRooms(g);
+      const w = wrap((S.view.gid === g.id ? '.active' : '') + (guildUnread(g) && S.view.gid !== g.id ? '.unread' : ''), rooms.length ? null : g.name,
+        h('div.rail-item', { onclick: () => go(g.id), oncontextmenu: (e) => guildMenu(e, g) }, g.icon ? h('img', { src: g.icon, alt: '' }) : g.name.split(/\s+/).map(w => w[0]).join('').slice(0, 3)),
+        badge(guildMentions(g)) || (rooms.length ? h('div.vbadge', { title: '' }, icon('voice', 12)) : null));
+      if (rooms.length) { w.onmouseenter = () => voiceCard(w, g); w.onmouseleave = () => document.getElementById('vcard')?.remove(); }
+      return w;
+    }),
     wrap('', 'Adicionar um servidor', h('div.rail-item.add', { onclick: addServerModal, style: { fontSize: '0' } }, icon('plus', 24))));
 }
+// salas de voz ocupadas de um servidor: [{ ch, users: [voiceState] }]
+const voiceRooms = (g) => g.channels.filter(c => c.type === 2).map(ch => ({ ch, users: [...S.voice.values()].filter(v => v.channel_id === ch.id) })).filter(r => r.users.length);
+// cartão ao passar o mouse no servidor: quem está em qual sala
+function voiceCard(anchor, g) {
+  document.getElementById('vcard')?.remove();
+  const r = anchor.getBoundingClientRect();
+  const card = h('div#vcard', { style: { top: Math.max(8, r.top) + 'px' } }, h('div.vct', g.name),
+    voiceRooms(g).map(({ ch, users }) => h('div.vcroom', h('div.vcname', icon('voice', 14), h('span', ch.name), callTimer(users)),
+      h('div.vcusers', users.map(v => h('span.vcu', { title: nameOf(v.user_id, g.id) }, avatar(user(v.user_id), 24, { status: false }), h('span', nameOf(v.user_id, g.id))))))));
+  document.body.append(card);
+}
+// cronômetro da chamada: conta desde que a sala deixou de estar vazia
+const fmtDur = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)), hh = Math.floor(s / 3600), mm = Math.floor(s / 60) % 60, ss = String(s % 60).padStart(2, '0'); return hh ? `${hh}:${String(mm).padStart(2, '0')}:${ss}` : `${mm}:${ss}`; };
+const callTimer = (users) => { const t = users.find(v => v.started_at)?.started_at; return t ? h('span.vtimer', { 'data-start': t }, fmtDur(Date.now() - t)) : null; };
+setInterval(() => document.querySelectorAll('.vtimer[data-start]').forEach(e => { e.textContent = fmtDur(Date.now() - +e.dataset.start); }), 1000);
 
 function addServerModal() {
   const name = h('input', { value: `Servidor de ${S.me.display_name}`, maxLength: 100 }), code = h('input', { placeholder: 'https://… ou código do convite' });
@@ -337,7 +364,7 @@ function renderSide() {
       const vs = c.type === 2 ? [...S.voice.values()].filter(v => v.channel_id === c.id) : [];
       return h('div', h('div.ch' + (S.view.cid === c.id ? '.active' : '') + (S.unread[c.id] && c.type === 0 ? '.unread' : ''),
         { onclick: () => { go(g.id, c.id); }, oncontextmenu: (e) => channelMenu(e, g, c) },
-        chIcon(c), h('span.name', c.name), S.mentions[c.id] > 0 && h('span.pill', S.mentions[c.id]),
+        chIcon(c), h('span.name', c.name), vs.length > 0 && callTimer(vs), S.mentions[c.id] > 0 && h('span.pill', S.mentions[c.id]),
         can(g.id, PERM.MANAGE_CHANNELS) && h('span.actions', { onclick: (e) => { e.stopPropagation(); channelSettings(g, c); } }, icon('gear', 16))),
         vs.length > 0 && h('div.vusers', vs.map(v => vuserRow(g, v))));
     };
@@ -467,6 +494,8 @@ function userMenu(e, uid, gid) {
     voice?.peers.has(uid) && { label: `Volume do usuário (${voice.volumes[uid] ?? 100}%)`, fn: async () => { const v = await promptBox('Volume do usuário', 'Volume (0-200)', String(voice.volumes[uid] ?? 100), 'Definir'); if (v != null) voice.setVolume(uid, Math.max(0, Math.min(200, +v || 100))); } },
     g && '-',
     g && can(gid, PERM.MANAGE_ROLES) && { label: 'Apelido…', fn: async () => { const n = await promptBox('Alterar apelido', 'Apelido', member(gid, uid)?.nickname || ''); if (n != null) tryApi('PATCH', `/guilds/${gid}/members/${uid}`, { nickname: n }); } },
+    g && can(gid, PERM.MODERATE) && g.owner_id !== uid && (timedOutUntil(gid, uid) ? { label: 'Remover castigo', fn: () => removeTimeout(gid, uid) } : { label: 'Castigo…', danger: true, fn: () => timeoutDialog(gid, uid) }),
+    g && can(gid, PERM.BAN) && g.owner_id !== uid && { label: 'Banir…', danger: true, fn: () => banDialog(gid, uid) },
     g && can(gid, PERM.KICK) && g.owner_id !== uid && { label: 'Expulsar', danger: true, fn: async () => { if (await confirmBox('Expulsar membro', `Expulsar ${user(uid).display_name}?`, 'Expulsar')) tryApi('DELETE', `/guilds/${gid}/members/${uid}`); } },
     '-', S.prefs.devMode && { label: 'Copiar ID do usuário', fn: () => navigator.clipboard?.writeText(uid) },
   ]);
@@ -501,7 +530,18 @@ function renderMain() {
       vc && h('div#stage'),
       h('div#chat' + (vc ? '.side' : ''), inCall && h('div#stage.dmstage'), h('div#msgs'), h('div#typing'), composer(ch, dm ? '@' + user(peer.id).display_name : (vc ? 'chat de ' : '#') + ch.name)),
       !dm && !vc && S.membersOpen && h('div#members')));
+  stickToBottom($('#msgs'));
   renderMembers(); loadChannel(ch.id); if (vc || inCall) renderVoiceUI();
+}
+// imagens/vídeos carregam depois da rolagem: se estava no fim, continua no fim
+// (só rolagens da pessoa contam: o scroll anchoring do navegador também dispara 'scroll')
+function stickToBottom(box) {
+  let userAt = 0;
+  box.stick = true;
+  for (const ev of ['wheel', 'touchmove', 'keydown', 'pointerdown']) box.addEventListener(ev, () => (userAt = Date.now()), { passive: true });
+  box.addEventListener('scroll', () => { if (Date.now() - userAt < 1500) box.stick = box.scrollHeight - box.scrollTop - box.clientHeight < 120; });
+  const fix = () => { if (box.stick) box.scrollTop = box.scrollHeight; };
+  box.addEventListener('load', fix, true); box.addEventListener('loadedmetadata', fix, true);
 }
 
 // ---------- mensagens ----------
@@ -540,7 +580,8 @@ function renderMessages(keepPos) {
     box.append(msgEl(m, prev && sameDay(prev.created_at, m.created_at) ? prev : null)); prev = m;
   }
   if (S.pending.length) renderPending();
-  box.scrollTop = keepPos && !near ? old : box.scrollHeight;
+  box.stick = !(keepPos && !near);
+  box.scrollTop = box.stick ? box.scrollHeight : old;
 }
 function appendMessage(m) {
   const box = $('#msgs'), list = S.messages.get(m.channel_id); if (!box) return;
@@ -548,7 +589,7 @@ function appendMessage(m) {
   const prev = list[list.length - 2];
   if (!prev || !sameDay(prev.created_at, m.created_at)) box.append(h('div.daysep', h('span', dayLabel(m.created_at))));
   box.append(msgEl(m, prev && sameDay(prev.created_at, m.created_at) ? prev : null));
-  if (near) box.scrollTop = box.scrollHeight;
+  if (near) { box.stick = true; box.scrollTop = box.scrollHeight; }
 }
 function refreshAuthors(uid) { if ($('#msgs') && S.view.cid && S.messages.get(S.view.cid)?.some(m => m.author_id === uid)) renderMessages(true); }
 
@@ -580,7 +621,7 @@ function msgEl(m, prev) {
     body.querySelectorAll('.mention[data-uid]').forEach(s => (s.onclick = () => profile(s, s.dataset.uid, gid)));
     el.append(body);
   }
-  for (const f of m.attachments || []) el.append(attachEl(f));
+  appendAttachments(el, m, mine || (gid && can(gid, PERM.MANAGE_MESSAGES)));
   if (m.reactions?.length) el.append(h('div.reactions', m.reactions.map(r => h('div.react' + (r.users.includes(S.me.id) ? '.me' : ''), { title: r.users.map(u => nameOf(u, gid)).join(', '), onclick: () => react(m, r.emoji, !r.users.includes(S.me.id)) }, reactionFace(r.emoji), h('span', r.users.length)))));
   el.append(h('div.toolbar',
     h('button', { title: 'Reagir', onclick: (e) => emojiPicker(e.currentTarget, (em) => react(m, em, true)) }, icon('smile', 18)),
@@ -594,9 +635,22 @@ function reactionFace(e) {
   if (m) { const u = emojiUrl(m[2]); return u ? h('img.cemoji', { src: u, alt: ':' + m[1] + ':', style: { height: '16px' } }) : h('span', ':' + m[1] + ':'); }
   return h('span', e);
 }
+const isImg = (f) => /^(png|jpe?g|gif|webp|avif|bmp)$/.test((f.name.split('.').pop() || '').toLowerCase());
+// imagens da mesma mensagem viram uma grade; cada anexo tem uma lixeira ao passar o mouse
+function appendAttachments(el, m, canDel) {
+  const atts = (m.attachments || []).map((f, i) => ({ f, i }));
+  const del = (f, i) => canDel && h('button.adel', { title: 'Remover anexo (Shift: sem confirmar)', onclick: async (e) => {
+    e.stopPropagation();
+    if (e.shiftKey || await confirmBox('Remover anexo', `Remover "${f.name}" desta mensagem?`, 'Remover')) tryApi('DELETE', `/channels/${m.channel_id}/messages/${m.id}/attachments/${i}`);
+  } }, icon('trash', 16));
+  const imgs = atts.filter(a => isImg(a.f));
+  if (imgs.length) el.append(h('div.mgrid.n' + Math.min(imgs.length, 5), imgs.map(({ f, i }) =>
+    h('div.mtile', h('img', { src: f.url, alt: f.name, loading: 'lazy', onclick: () => lightbox(f.url) }), del(f, i)))));
+  for (const { f, i } of atts.filter(a => !isImg(a.f))) { const a = attachEl(f); a.classList.add('mtile'); const d = del(f, i); if (d) a.append(d); el.append(a); }
+}
 function attachEl(f) {
   const ext = (f.name.split('.').pop() || '').toLowerCase(), url = f.url;
-  if (/^(png|jpe?g|gif|webp|avif|bmp)$/.test(ext)) return h('div.attach', h('img', { src: url, alt: f.name, loading: 'lazy', onclick: () => lightbox(url) }));
+  if (isImg(f)) return h('div.attach', h('img', { src: url, alt: f.name, loading: 'lazy', onclick: () => lightbox(url) }));
   if (/^(mp4|webm)$/.test(ext)) return h('div.attach', h('video', { src: url, controls: true, preload: 'metadata' }));
   if (/^(mp3|ogg|wav|m4a)$/.test(ext)) return h('div.attach', h('audio', { src: url, controls: true, preload: 'none' }));
   return h('div.file', icon('file', 32), h('div', h('a.fn', { href: url + '?download=1', download: f.name }, f.name), h('div.fs', bytes(f.size))), h('a.ibtn', { href: url + '?download=1', download: f.name, style: { marginLeft: 'auto' } }, icon('dl')));
@@ -627,7 +681,7 @@ async function jumpTo(mid) {
     const list = await tryApi('GET', `/channels/${S.view.cid}/messages?around=${mid}`); if (!list) return;
     S.messages.set(S.view.cid, list); S.loaded.set(S.view.cid, false); renderMessages(false); el = document.querySelector(`[data-mid="${mid}"]`);
   }
-  if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('hl'); setTimeout(() => el.classList.remove('hl'), 2000); }
+  if (el) { $('#msgs').stick = false; el.scrollIntoView({ block: 'center' }); el.classList.add('hl'); setTimeout(() => el.classList.remove('hl'), 2000); }
 }
 async function showPins() {
   const list = await tryApi('GET', `/channels/${S.view.cid}/pins`); if (!list) return;

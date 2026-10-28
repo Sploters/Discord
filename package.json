@@ -5,7 +5,8 @@
   "type": "module",
   "main": "server/index.js",
   "scripts": {
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "build:vendor": "esbuild scripts/msc-entry.mjs --bundle --format=esm --minify --platform=browser --outfile=public/vendor/msc/mediasoup-client.js"
   },
   "engines": {
     "node": ">=22.5"
@@ -13,9 +14,12 @@
   "dependencies": {
     "@sapphi-red/web-noise-suppressor": "^0.4.1",
     "express": "^4.21.2",
+    "mediasoup": "^3.32.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
+    "mediasoup-client": "^3.25.3",
     "puppeteer-core": "^25.16.0"
   }
 }

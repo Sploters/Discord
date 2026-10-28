@@ -7,7 +7,7 @@ const EXE = process.env.BROWSER || 'C:/Program Files (x86)/Microsoft/Edge/Applic
 fs.rmSync('.testdata2', { recursive: true, force: true });
 fs.mkdirSync(SHOTS, { recursive: true });
 const srv = spawn('node', ['server/index.js'], { env: { ...process.env, PORT, HTTPS: '0', DATA_DIR: './.testdata2' }, stdio: 'ignore' });
-await new Promise(r => setTimeout(r, 1500));
+for (let i = 0; i < 50; i++) { try { await fetch(BASE + '/api/server-info'); break; } catch { await new Promise(r => setTimeout(r, 200)); } }
 let fails = 0; const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fails++; };
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const browser = await puppeteer.launch({ executablePath: EXE, headless: 'new', args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required', '--no-sandbox'] });
@@ -54,13 +54,15 @@ try {
   ok(await A.evaluate(() => window.__lc.voice.micGraph?.processed === true), 'cadeia RNNoise ativa (processed)');
   await B.evaluate(() => [...document.querySelectorAll('#stage .btn')].find(b => /Entrar/.test(b.textContent)).click());
   await sleep(5000);
-  const conn = (p) => p.evaluate(() => [...window.__lc.voice.peers.values()].map(x => x.pc.connectionState + '/' + x.pc.iceConnectionState));
+  // SFU: estado dos 2 transportes com o servidor; malha: de cada RTCPeerConnection
+  const conn = (p) => p.evaluate(() => { const v = window.__lc.voice; return v.sfu ? [v.sfu.send, v.sfu.recv].map(t => t?.connectionState || 'new') : [...v.peers.values()].map(x => x.pc.connectionState + '/' + x.pc.iceConnectionState); });
+  ok(await A.evaluate(() => !!window.__lc.voice.sfu) === (process.env.RTC !== '0'), 'modo de voz: ' + (process.env.RTC === '0' ? 'malha P2P' : 'SFU'));
   for (let i = 0; i < 30 && !((await conn(A)).some(x => x.startsWith('connected')) && (await conn(B)).some(x => x.startsWith('connected'))); i++) await sleep(500);
   const cA = await conn(A), cB = await conn(B);
   ok(cA.some(x => x.startsWith('connected')), 'WebRTC conectado (alice) ' + JSON.stringify(cA));
   ok(cB.some(x => x.startsWith('connected')), 'WebRTC conectado (bob) ' + JSON.stringify(cB));
   if (!cB.some(x => x.startsWith('connected'))) console.log('  diag', JSON.stringify(await Promise.all([A, B].map(p => p.evaluate(() => ({ err: window.__lc.voice.error, mic: !!window.__lc.voice.mic, ch: window.__lc.voice.channelId, peers: window.__lc.voice.peers.size, states: [...window.__lc.S.voice.values()].length }))))));
-  const bytes = await B.evaluate(async () => { let n = 0; for (const p of window.__lc.voice.peers.values()) for (const r of (await p.pc.getStats()).values()) if (r.type === 'inbound-rtp' && r.kind === 'audio') n += r.bytesReceived; return n; });
+  const bytes = await B.evaluate(async () => { let n = 0; const v = window.__lc.voice; for (const pc of v.sfu ? [v.sfu.recv] : [...v.peers.values()].map(p => p.pc)) for (const r of (await pc.getStats()).values()) if (r.type === 'inbound-rtp' && r.kind === 'audio') n += r.bytesReceived; return n; });
   ok(bytes > 1000, `áudio fluindo para o bob (${bytes} bytes)`);
   await A.screenshot({ path: `${SHOTS}/03-voice.png` });
 
@@ -76,7 +78,7 @@ try {
   await sleep(4500);
   ok(await B.evaluate(() => !!window.__lc.voice.peers.values().next().value?.streams.screen), 'bob recebeu stream de tela');
   ok(await B.evaluate(() => { const v = document.querySelector('.tile.screen video'); return !!v && v.videoWidth > 0; }), 'vídeo da tela renderizando no bob');
-  const br = await A.evaluate(() => window.__lc.voice.peers.values().next().value.senders.screenvideo?.getParameters().encodings[0].maxBitrate);
+  const br = await A.evaluate(() => { const v = window.__lc.voice, s = v.sfu ? v.sfu.producers.screen?.rtpSender : v.peers.values().next().value.senders.screenvideo; return s && Math.max(...s.getParameters().encodings.map(e => e.maxBitrate || 0)); });
   ok(br > 1e6, `bitrate da transmissão configurado (${br})`);
   let w=0;for(let i=0;i<30&&w<640;i++){await sleep(500);w=await B.evaluate(()=>document.querySelector('.tile.screen video')?.videoWidth||0);}
   ok(w>=640,'resolução da transmissão sobe para '+w+'px de largura');

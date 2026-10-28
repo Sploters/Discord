@@ -1,4 +1,5 @@
-// Voz/vídeo/tela via WebRTC em malha (P2P), sinalização pelo gateway.
+// Voz/vídeo/tela via WebRTC: pelo SFU do servidor (mediasoup) quando disponível; senão em malha (P2P).
+// Sinalização pelo gateway.
 // Microfone passa por uma cadeia WebAudio: high-pass → denoise (RNNoise/GTCRN) → noise gate → ganho.
 
 import { playSound } from './sounds.js';
@@ -100,7 +101,8 @@ export class Voice {
     try {
       const old = this.micGraph; await this.buildMic();
       const track = this.mic.getAudioTracks()[0];
-      for (const p of this.peers.values()) { const s = p.senders.micaudio; if (s) await s.replaceTrack(track); else p.senders.micaudio = p.pc.addTrack(track, this.mic); }
+      if (this.sfu) await this.sfuProduce('mic', track);
+      else for (const p of this.peers.values()) { const s = p.senders.micaudio; if (s) await s.replaceTrack(track); else p.senders.micaudio = p.pc.addTrack(track, this.mic); }
       void old;
     } catch (e) { this.error = e.message; }
     this.onUpdate();
@@ -123,6 +125,7 @@ export class Voice {
     if (!this.channelId) return;
     playSound('selfLeave');
     this.send('VOICE_LEAVE', {});
+    this.sfuClose();
     for (const uid of [...this.peers.keys()]) this.drop(uid);
     this.micGraph?.dispose(); this.micGraph = null;
     for (const s of [this.cam, this.screen]) s?.getTracks().forEach(t => t.stop());
@@ -130,8 +133,140 @@ export class Voice {
     for (const a of this.analysers.values()) a.src.disconnect(); this.analysers.clear();
     clearInterval(this.timer); this.onUpdate();
   }
-  onJoined({ peers }) { for (const uid of peers) this.connect(uid, true); }
+  onJoined({ channel_id, peers, sfu }) {
+    if (channel_id !== this.channelId) return;
+    if (sfu) this.sfuStart(sfu).catch(e => { console.warn('sfu', e); this.error = 'Falha ao conectar a voz: ' + (e.message || e); this.onUpdate(); });
+    else for (const uid of peers) this.connect(uid, true);
+  }
   onPeerLeft({ user_id }) { this.drop(user_id); this.onUpdate(); }
+
+  // ---------- SFU (mediasoup): um envio ao servidor, que repassa a todos ----------
+  sfuReq(op, d = {}) {
+    const rid = (this.rid = (this.rid || 0) + 1);
+    return new Promise((resolve, reject) => {
+      (this.pending ||= new Map()).set(rid, { resolve, reject });
+      this.send('SFU', { ...d, rid, op });
+      setTimeout(() => { if (this.pending.delete(rid)) reject(new Error('sem resposta do servidor (' + op + ')')); }, 15000);
+    });
+  }
+  onSfuRes({ rid, data, error }) {
+    const p = this.pending?.get(rid); if (!p) return;
+    this.pending.delete(rid); error ? p.reject(new Error(error)) : p.resolve(data);
+  }
+  async sfuStart({ rtpCapabilities }) {
+    const { Device } = await import('/vendor/msc/mediasoup-client.js');
+    const cid = this.channelId, device = new Device();
+    await device.load({ routerRtpCapabilities: rtpCapabilities });
+    const sfu = { cid, device, producers: {}, consumers: new Map(), seen: new Set(), ready: false };
+    this.sfu = sfu;
+    const transport = async (dir) => {
+      const info = await this.sfuReq('transport', { dir });
+      const t = device[dir === 'send' ? 'createSendTransport' : 'createRecvTransport']({ ...info, iceServers: this.ice });
+      t.on('connect', ({ dtlsParameters }, ok, fail) => this.sfuReq('connect', { transport_id: t.id, dtlsParameters }).then(ok, fail));
+      t.on('connectionstatechange', (s) => { if (s === 'failed') t.restartIce?.(); this.onUpdate(true); });
+      if (dir === 'send') t.on('produce', ({ kind, rtpParameters, appData }, ok, fail) =>
+        this.sfuReq('produce', { transport_id: t.id, kind, rtpParameters, source: appData.source }).then(ok, fail));
+      return t;
+    };
+    sfu.send = await transport('send'); sfu.recv = await transport('recv');
+    if (this.sfu !== sfu) return;
+    const { producers } = await this.sfuReq('producers');
+    if (this.sfu !== sfu) return;
+    sfu.ready = true;
+    for (const p of producers) this.onSfuProducer(p);
+    // o que já estava ligado antes de conectar
+    if (this.mic) await this.sfuProduce('mic', this.mic.getAudioTracks()[0]);
+    if (this.cam) await this.sfuProduce('cam', this.cam.getVideoTracks()[0]);
+    if (this.screen) await this.sfuPublishScreen();
+    this.onUpdate();
+  }
+  sfuClose() {
+    const s = this.sfu; if (!s) return;
+    this.sfu = null;
+    s.send?.close(); s.recv?.close();
+    for (const p of this.pending?.values() || []) p.reject(new Error('saiu da sala'));
+    this.pending?.clear();
+  }
+  sfuEncodings(source) {
+    const o = this.screenOpts || {};
+    if (source === 'mic') return [{ maxBitrate: (this.prefs.voiceBitrate || 64) * 1000, priority: 'high', networkPriority: 'high' }];
+    if (source === 'cam') return [ // simulcast: o servidor escolhe a camada que cabe na banda de cada um
+      { rid: 'r0', scaleResolutionDownBy: 4, maxBitrate: 150_000 },
+      { rid: 'r1', scaleResolutionDownBy: 2, maxBitrate: 500_000 },
+      { rid: 'r2', scaleResolutionDownBy: 1, maxBitrate: 2_000_000 }];
+    if (source === 'screen') {
+      const top = bitrateFor(o.res || 1080, o.fps || 30);
+      // fps vem da restrição da trilha (prioridade/fps por camada não são aceitos pelo Chromium no simulcast)
+      return [{ rid: 'r0', scaleResolutionDownBy: 2, maxBitrate: Math.round(top / 4) },
+        { rid: 'r1', scaleResolutionDownBy: 1, maxBitrate: top }];
+    }
+    return undefined;
+  }
+  async sfuProduce(source, track) {
+    const s = this.sfu; if (!s?.ready || !track) return;
+    const cur = s.producers[source];
+    if (cur && !cur.closed) return cur.replaceTrack({ track });
+    const opts = { track, appData: { source }, encodings: this.sfuEncodings(source), stopTracks: false };
+    if (source === 'mic') opts.codecOptions = { opusStereo: false, opusDtx: true, opusFec: true, opusMaxAverageBitrate: (this.prefs.voiceBitrate || 64) * 1000 };
+    if (source === 'screenaudio') opts.codecOptions = { opusStereo: true, opusFec: true, opusMaxAverageBitrate: 128000 };
+    if (source === 'screen') opts.codecOptions = { videoGoogleStartBitrate: 1000 };
+    const p = await s.send.produce(opts);
+    if (this.sfu !== s) return p.close();
+    s.producers[source] = p;
+    if (source === 'screen') this.sfuTuneScreen();
+  }
+  async sfuPublishScreen() {
+    const vt = this.screen?.getVideoTracks()[0], at = this.screen?.getAudioTracks()[0];
+    if (vt) await this.sfuProduce('screen', vt);
+    if (at) await this.sfuProduce('screenaudio', at);
+  }
+  sfuStop(source) {
+    const s = this.sfu, p = s?.producers[source]; if (!p) return;
+    p.close(); delete s.producers[source];
+    this.sfuReq('close_producer', { source }).catch(() => { });
+  }
+  async sfuTuneScreen() {
+    const p = this.sfu?.producers.screen; if (!p?.rtpSender) return;
+    try {
+      const prm = p.rtpSender.getParameters(), enc = this.sfuEncodings('screen');
+      prm.encodings.forEach((e, i) => Object.assign(e, enc[i] || {}));
+      prm.degradationPreference = this.screenOpts?.hint === 'detail' ? 'maintain-resolution' : 'maintain-framerate';
+      await p.rtpSender.setParameters(prm);
+    } catch (e) { console.warn('screen params', e); }
+  }
+  ensurePeer(uid) {
+    let p = this.peers.get(uid);
+    if (!p) this.peers.set(uid, p = { uid, streams: {}, meta: {}, audioEl: null, screenAudioEl: null, senders: {}, consumers: new Map() });
+    return p;
+  }
+  async onSfuProducer({ producer_id, user_id, source, channel_id }) {
+    const s = this.sfu;
+    if (!s?.ready || channel_id && channel_id !== s.cid || s.seen.has(producer_id) || user_id === this.myId) return;
+    s.seen.add(producer_id);
+    try {
+      const r = await this.sfuReq('consume', { transport_id: s.recv.id, producer_id, rtpCapabilities: s.device.rtpCapabilities });
+      const c = await s.recv.consume({ id: r.id, producerId: r.producer_id, kind: r.kind, rtpParameters: r.rtpParameters });
+      if (this.sfu !== s) return c.close();
+      const p = this.ensurePeer(user_id), stream = new MediaStream([c.track]);
+      s.consumers.set(c.id, { c, uid: user_id, source });
+      p.consumers.set(c.id, source);
+      if (source === 'mic') this.attachAudio(p, stream, 'mic');
+      else if (source === 'screenaudio') this.attachAudio(p, stream, 'screen');
+      else { p.streams[source] = stream; c.track.onmute = c.track.onunmute = () => this.onUpdate(); }
+      await this.sfuReq('resume', { consumer_id: c.id });
+      this.onUpdate();
+    } catch (e) { console.warn('consume', e); s.seen.delete(producer_id); }
+  }
+  onSfuConsumerClosed({ consumer_id }) {
+    const e = this.sfu?.consumers.get(consumer_id); if (!e) return;
+    this.sfu.consumers.delete(consumer_id); e.c.close();
+    const p = this.peers.get(e.uid); if (!p) return;
+    p.consumers.delete(consumer_id);
+    if (e.source === 'mic') { p.audioEl?.remove(); p.audioEl = null; this.analysers.get(e.uid)?.src.disconnect(); this.analysers.delete(e.uid); this.speaking.delete(e.uid); }
+    else if (e.source === 'screenaudio') { p.screenAudioEl?.remove(); p.screenAudioEl = null; }
+    else delete p.streams[e.source];
+    this.onUpdate();
+  }
 
   connect(uid, initiator) {
     if (this.peers.has(uid)) return this.peers.get(uid);
@@ -167,7 +302,7 @@ export class Voice {
     if (this.screen) this.tuneSender(p, 'screenvideo', 'screen'); if (this.cam) this.tuneSender(p, 'camvideo', 'cam');
   }
   tuneAudio(p) { // taxa de bits da voz (kbps) e prioridade
-    const s = p.senders.micaudio; if (!s) return;
+    const s = this.sfu ? this.sfu.producers.mic?.rtpSender : p.senders.micaudio; if (!s) return;
     setTimeout(async () => { try { const prm = s.getParameters(); if (!prm.encodings?.length) prm.encodings = [{}]; prm.encodings[0].maxBitrate = (this.prefs.voiceBitrate || 64) * 1000; prm.encodings[0].priority = 'high'; await s.setParameters(prm); } catch { } }, 800);
   }
   sendMeta(uid) {
@@ -194,7 +329,7 @@ export class Voice {
     [300, 1500, 4000].forEach(ms => setTimeout(apply, ms));
   }
   async onSignal({ from, data }) {
-    if (!this.channelId) return;
+    if (!this.channelId || this.sfu) return;
     const p = this.connect(from, false), pc = p.pc;
     try {
       if (data.meta) {
@@ -214,7 +349,8 @@ export class Voice {
   }
   drop(uid) {
     const p = this.peers.get(uid); if (!p) return;
-    p.pc.close(); p.audioEl?.remove(); p.screenAudioEl?.remove();
+    p.pc?.close(); p.audioEl?.remove(); p.screenAudioEl?.remove();
+    for (const id of p.consumers?.keys() || []) { this.sfu?.consumers.get(id)?.c.close(); this.sfu?.consumers.delete(id); }
     this.analysers.get(uid)?.src.disconnect(); this.analysers.delete(uid); this.speaking.delete(uid);
     this.peers.delete(uid);
   }
@@ -293,11 +429,14 @@ export class Voice {
     if (o.res !== 'source') { c.height = { ideal: +o.res, max: +o.res }; c.width = { ideal: Math.round(+o.res * 16 / 9) }; }
     try { await vt.applyConstraints(c); } catch (e) { console.warn('applyConstraints', e); }
     vt.contentHint = o.hint;
-    for (const p of this.peers.values()) this.tuneSender(p, 'screenvideo', 'screen');
+    if (this.sfu) this.sfuTuneScreen();
+    else for (const p of this.peers.values()) this.tuneSender(p, 'screenvideo', 'screen');
     this.onUpdate();
   }
   publish(kind, stream) {
-    for (const p of this.peers.values()) {
+    if (this.sfu) {
+      (kind === 'screen' ? this.sfuPublishScreen() : this.sfuProduce(kind, stream.getVideoTracks()[0])).catch(e => { console.warn('produce', e); this.error = e.message; this.onUpdate(); });
+    } else for (const p of this.peers.values()) {
       this.sendMeta(p.uid);
       stream.getTracks().forEach(t => { p.senders[kind + t.kind] = p.pc.addTrack(t, stream); });
       this.tuneSender(p, kind + 'video', kind);
@@ -306,7 +445,8 @@ export class Voice {
   }
   stopLocal(kind) {
     const s = this[kind]; if (!s) return;
-    for (const p of this.peers.values()) for (const t of s.getTracks()) { const snd = p.senders[kind + t.kind]; if (snd) { try { p.pc.removeTrack(snd); } catch { } delete p.senders[kind + t.kind]; } }
+    if (this.sfu) { this.sfuStop(kind); if (kind === 'screen') this.sfuStop('screenaudio'); }
+    else for (const p of this.peers.values()) for (const t of s.getTracks()) { const snd = p.senders[kind + t.kind]; if (snd) { try { p.pc.removeTrack(snd); } catch { } delete p.senders[kind + t.kind]; } }
     s.getTracks().forEach(t => t.stop()); this[kind] = null;
     playSound(kind === 'cam' ? 'camOff' : 'selfStreamStop');
     this.sendState(); this.onUpdate();
@@ -314,6 +454,13 @@ export class Voice {
   // estatísticas simples de qualidade (para o painel de conexão)
   async stats() {
     const out = [];
+    if (this.sfu) { // uma conexão só (com o servidor); repete a latência para cada participante
+      let rtt = null;
+      try { for (const r of (await this.sfu.send.getStats()).values()) if (r.type === 'candidate-pair' && r.nominated && r.currentRoundTripTime != null) rtt = Math.round(r.currentRoundTripTime * 1000); } catch { }
+      const state = this.sfu.recv?.connectionState || 'new';
+      for (const p of this.peers.values()) out.push({ uid: p.uid, state: `${state} (via servidor)`, rtt, kbpsIn: 0 });
+      return out;
+    }
     for (const p of this.peers.values()) {
       let rtt = null, kbpsIn = 0;
       try { for (const r of (await p.pc.getStats()).values()) { if (r.type === 'candidate-pair' && r.nominated && r.currentRoundTripTime != null) rtt = Math.round(r.currentRoundTripTime * 1000); } } catch { }

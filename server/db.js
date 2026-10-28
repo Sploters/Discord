@@ -54,4 +54,9 @@ addCol('users', 'friend_policy', "TEXT DEFAULT 'all'");
 addCol('users', 'settings', 'TEXT');
 addCol('sessions', 'agent', 'TEXT');
 addCol('sessions', 'last_seen', 'INTEGER');
+// moderação: banimentos, castigo (timeout) e registro de auditoria
+db.exec(`CREATE TABLE IF NOT EXISTS bans(guild_id TEXT NOT NULL REFERENCES guilds(id) ON DELETE CASCADE, user_id TEXT NOT NULL, reason TEXT DEFAULT '', by_id TEXT, created_at INTEGER, PRIMARY KEY(guild_id,user_id));
+CREATE TABLE IF NOT EXISTS audit_log(id TEXT PRIMARY KEY, guild_id TEXT NOT NULL REFERENCES guilds(id) ON DELETE CASCADE, actor_id TEXT, action TEXT NOT NULL, target_id TEXT, details TEXT DEFAULT '', created_at INTEGER);
+CREATE INDEX IF NOT EXISTS idx_audit_guild ON audit_log(guild_id, id);`);
+addCol('members', 'timeout_until', 'INTEGER');
 db.exec(`CREATE TABLE IF NOT EXISTS sounds(id TEXT PRIMARY KEY, guild_id TEXT NOT NULL REFERENCES guilds(id) ON DELETE CASCADE, name TEXT NOT NULL, emoji TEXT, url TEXT NOT NULL, volume INTEGER DEFAULT 100, creator_id TEXT, created_at INTEGER);`);

@@ -7,7 +7,7 @@ Chat + voz + vídeo + transmissão de tela auto-hospedado, com layout inspirado 
 - **Mensagens:** markdown, respostas, edição, fixadas, reações (inclusive emoji do servidor), menções, anexos, pré-visualização de imagens de links, busca, "digitando…", não lidas.
 - **Perfil:** avatar e banner (imagem/GIF), cor, pronomes, status com emoji, bio, prévia ao vivo.
 - **Social:** DMs, amigos, bloqueio, privacidade de pedidos, **chamadas de voz/vídeo em DM** com toque.
-- **Voz:** WebRTC P2P; redução de ruído por IA (RNNoise e GTCRN, trocáveis ao vivo), porta de ruído, eco, ganho, taxa de bits, push-to-talk, volume por usuário, teste de microfone, latência.
+- **Voz:** WebRTC via **SFU no servidor** (mediasoup: cada um envia uma vez, o servidor repassa; câmera e tela com simulcast), com malha P2P como reserva; redução de ruído por IA (RNNoise e GTCRN, trocáveis ao vivo), porta de ruído, eco, ganho, taxa de bits, push-to-talk, volume por usuário, teste de microfone, latência.
 - **Painéis rápidos (barra do usuário):** ▾ do microfone troca **dispositivo de entrada**, modo de ruído, **eco**, porta de ruído, ganho e volume; ▾ do fone troca **dispositivo de saída** e volumes; clicar no seu nome muda **status** (online/ausente/não perturbe/invisível) e status personalizado.
 - **Sons:** efeito sonoro para silenciar, ensurdecer, entrar/sair da chamada (você e os outros), câmera, começar/parar transmissão, mensagens, menções, chamada recebida e amizade; cada um liga/desliga, tem volume, teste e opção de **trocar pelo seu próprio áudio**.
 - **Soundboard:** sons pessoais (ficam na conta) e dos servidores, tocados para toda a sala de voz; favoritos, volume, silenciar, escolher quais servidores usar e **atalho de teclado por som**.
@@ -23,17 +23,23 @@ Requer Node.js >= 22.5 (usa `node:sqlite`) e `openssl`. No Docker/Umbrel já vem
 
 Variáveis: `PORT`, `HTTPS_PORT`, `HOST`, `DATA_DIR`, `MAX_UPLOAD_MB`, `OPEN_REGISTRATION=0`, `HTTPS=0`, `TLS_KEY`/`TLS_CERT`, `TLS_SAN=IP:<ip-vpn>`, `TURN_URL`/`TURN_USER`/`TURN_PASS`.
 
-Docker: `docker build -t localcord . && docker run -d --restart=always -p 3000:3000 -p 3443:3443 -v ~/localcord-data:/data -e TLS_SAN=IP:<ip-vpn> localcord`
+Voz (SFU): `RTC_PORT` (padrão 40000, UDP+TCP — libere no firewall), `RTC_IPS` (IPs onde escutar; padrão: todos os IPv4 das interfaces, então suba a VPN **antes** do servidor), `RTC_ANNOUNCED_IP` (em Docker: o IP da VPN do host), `RTC=0` (desliga o SFU e volta à malha P2P).
+
+Docker: `docker build -t localcord . && docker run -d --restart=always -p 3000:3000 -p 3443:3443 -p 40000:40000/udp -p 40000:40000/tcp -v ~/localcord-data:/data -e TLS_SAN=IP:<ip-vpn> -e RTC_ANNOUNCED_IP=<ip-vpn> localcord`
 Atualizar: reconstrua a imagem e recrie o container com o mesmo volume (o banco migra sozinho).
 
 ## Aplicativo desktop (Windows)
 Instaladores em `desktop/dist/`: `LocalCord-Setup-<versão>.exe` e `LocalCord-Portable-<versão>.exe`. No primeiro uso o app pede o endereço do servidor (IP da VPN). Regerar: `cd desktop && npm install && npm run dist`.
 
+## Desenvolvimento
+O cliente do SFU fica em `public/vendor/msc/` (gerado de `mediasoup-client`): `npm install && npm run build:vendor`.
+
 ## Testes
     BASE=http://localhost:3000 node scripts/e2e.mjs   # API + gateway + voz + soundboard + conta
-    node scripts/ui-test.mjs                          # navegador real: 2 usuários, WebRTC, RNNoise, sons, painéis, configurações
+    node scripts/ui-test.mjs                          # navegador real: 2 usuários, voz pelo SFU, RNNoise, sons, painéis, configurações
+    RTC=0 node scripts/ui-test.mjs                    # o mesmo, com voz em malha P2P
     node scripts/desktop-test.mjs                     # app Electron
     node scripts/desktop-share-test.mjs               # Electron transmitindo a tela real para outro usuário
 
 ## Limitações conhecidas
-Voz em malha P2P (bom até ~6-8 pessoas por sala). Push-to-talk e atalhos de som só com o app em foco (global: mutar/ensurdecer). Sem threads, bots ou criptografia de ponta a ponta.
+Sem o SFU (RTC=0 ou mediasoup indisponível) a voz cai para malha P2P, boa até ~6-8 pessoas por sala. Push-to-talk e atalhos de som só com o app em foco (global: mutar/ensurdecer). Sem threads, bots ou criptografia de ponta a ponta.
