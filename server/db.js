@@ -9,6 +9,7 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 export const db = new DatabaseSync(path.join(DATA_DIR, 'localcord.db'));
 db.exec(`
 PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS users(
   id TEXT PRIMARY KEY, username TEXT UNIQUE COLLATE NOCASE NOT NULL, display_name TEXT,
@@ -59,4 +60,28 @@ db.exec(`CREATE TABLE IF NOT EXISTS bans(guild_id TEXT NOT NULL REFERENCES guild
 CREATE TABLE IF NOT EXISTS audit_log(id TEXT PRIMARY KEY, guild_id TEXT NOT NULL REFERENCES guilds(id) ON DELETE CASCADE, actor_id TEXT, action TEXT NOT NULL, target_id TEXT, details TEXT DEFAULT '', created_at INTEGER);
 CREATE INDEX IF NOT EXISTS idx_audit_guild ON audit_log(guild_id, id);`);
 addCol('members', 'timeout_until', 'INTEGER');
+
+// busca: índice FTS5 sobre o texto e os anexos (nomes), sem acentos; mantido por gatilhos.
+// (usa o rowid de messages: não rode VACUUM sem depois fazer INSERT INTO messages_fts(messages_fts) VALUES('rebuild'))
+const hadFts = !!get("SELECT 1 x FROM sqlite_master WHERE name='messages_fts'");
+db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(content, attachments, content='messages', content_rowid='rowid', tokenize='unicode61 remove_diacritics 2');
+CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN INSERT INTO messages_fts(rowid, content, attachments) VALUES (new.rowid, new.content, new.attachments); END;
+CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN INSERT INTO messages_fts(messages_fts, rowid, content, attachments) VALUES ('delete', old.rowid, old.content, old.attachments); END;
+CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE OF content, attachments ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content, attachments) VALUES ('delete', old.rowid, old.content, old.attachments);
+  INSERT INTO messages_fts(rowid, content, attachments) VALUES (new.rowid, new.content, new.attachments); END;`);
+if (!hadFts) db.exec("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')");
+
+// caixa de entrada: quem foi mencionado/respondido em cada mensagem
+const hadMentions = !!get("SELECT 1 x FROM sqlite_master WHERE name='mentions'");
+db.exec(`CREATE TABLE IF NOT EXISTS mentions(message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY(message_id, user_id));
+CREATE INDEX IF NOT EXISTS idx_mentions_user ON mentions(user_id, message_id);`);
+if (!hadMentions) { // preenche com o histórico (menções diretas e respostas)
+  const ins = db.prepare('INSERT OR IGNORE INTO mentions VALUES(?,?,?)');
+  for (const m of all("SELECT id, author_id, content, reply_to FROM messages WHERE content LIKE '%<@%' OR reply_to IS NOT NULL")) {
+    for (const x of (m.content || '').matchAll(/<@(\d+)>/g)) if (x[1] !== m.author_id) ins.run(m.id, x[1], 'mention');
+    const r = m.reply_to && get('SELECT author_id FROM messages WHERE id=?', m.reply_to);
+    if (r && r.author_id !== m.author_id) ins.run(m.id, r.author_id, 'reply');
+  }
+}
 db.exec(`CREATE TABLE IF NOT EXISTS sounds(id TEXT PRIMARY KEY, guild_id TEXT NOT NULL REFERENCES guilds(id) ON DELETE CASCADE, name TEXT NOT NULL, emoji TEXT, url TEXT NOT NULL, volume INTEGER DEFAULT 100, creator_id TEXT, created_at INTEGER);`);

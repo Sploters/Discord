@@ -207,6 +207,7 @@ function updateTitle() {
   const n = Object.values(S.mentions).reduce((a, b) => a + b, 0);
   document.title = (n ? `(${n}) ` : '') + 'LocalCord';
   desktop?.setBadge?.(n);
+  const btn = document.querySelector('.inbox-btn'); if (btn) { btn.querySelector('.ibadge')?.remove(); const b = inboxBadge(); if (b) btn.append(b); }
 }
 function ack(cid) {
   if (!S.unread[cid] && !S.mentions[cid]) return;
@@ -415,12 +416,13 @@ function voicePanel() {
   if (!voice?.active) return h('div.hidden');
   const ch = channelById(voice.channelId), g = guild(ch?.guild_id);
   return h('div#voice-panel',
-    h('div.t', h('span', { style: { display: 'flex', gap: '6px', alignItems: 'center' } }, icon('voice', 16), 'Voz conectada', h('small#vp-ping', { style: { color: 'var(--text-muted)', fontWeight: 400 } })), h('button.ibtn', { title: 'Desconectar', onclick: () => voice.leave() }, icon('phoneoff', 20))),
-    h('div.sub', `${ch?.type === 1 ? 'Chamada com ' + user(dmPeer(ch).id).display_name : (ch?.name || '')} ${g ? '/ ' + g.name : ''} • ruído: ${({ off: 'off', standard: 'padrão', rnnoise: 'IA', gtcrn: 'IA+' })[S.prefs.noiseMode]}`),
+    h('div.t', h('span', { style: { display: 'flex', gap: '6px', alignItems: 'center' } }, icon('voice', 16), 'Voz conectada', pingEl()),
+      h('span.vp-btns', h('button.ibtn', { title: 'Soundboard', onclick: (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) }) }, icon('waves', 20)),
+        h('button.ibtn', { title: 'Desconectar', onclick: () => voice.leave() }, icon('phoneoff', 20)))),
+    h('div.sub', `${ch?.type === 1 ? 'Chamada com ' + user(dmPeer(ch).id).display_name : (ch?.name || '')}${g ? ' / ' + g.name : ''}`),
     h('div.row',
       h('button' + (voice.cam ? '.on' : ''), { title: 'Câmera', onclick: () => voiceAct(() => voice.toggleCam()) }, icon('video', 20)),
       h('button' + (voice.screen ? '.on' : ''), { title: 'Transmitir tela', onclick: startShare }, icon('screen', 20)),
-      h('button', { title: 'Soundboard', onclick: (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) }) }, icon('music', 20)),
       h('button', { title: 'Configurações de voz', onclick: () => openSettings('voice', ctxSettings()) }, icon('sliders', 20)),
       h('button', { title: 'Ir para a sala', onclick: () => ch && (ch.type === 1 ? go('@me', ch.id) : go(ch.guild_id, ch.id)) }, icon('expand', 20))));
 }
@@ -431,7 +433,6 @@ function joinVoice(cid) {
 }
 function userbar() {
   const me = S.me, ctx = () => ({ voice, logout, go });
-  const sbOpen = (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctx()) });
   return h('div#userbar',
     h('div.me', { onclick: (e) => openStatusPanel(e.currentTarget, { openSettings: (k) => openSettings(k, ctx()), openProfile: () => profile($('#userbar .me'), me.id, S.view.gid) }), oncontextmenu: (e) => statusMenu(e), title: 'Status e perfil' }, avatar(me, 32, { ring: 'var(--bg-user)' }),
       h('div.names', h('div.dn', me.display_name), h('div.un', me.custom_status || STATUS_TXT[me.status]))),
@@ -439,7 +440,6 @@ function userbar() {
       h('button.ibtn.caret', { title: 'Dispositivo de entrada, ruído e eco', onclick: (e) => openAudioPanel(e.currentTarget, voice, 'in', { openSettings: (k) => openSettings(k, ctx()) }) }, icon('caret', 14))),
     h('div.ubtn', h('button.ibtn' + (voice?.deafened ? '.on' : ''), { title: voice?.deafened ? 'Ativar áudio' : 'Ensurdecer', onclick: () => voiceToggle('deaf') }, icon(voice?.deafened ? 'headoff' : 'headset')),
       h('button.ibtn.caret', { title: 'Dispositivo de saída e volumes', onclick: (e) => openAudioPanel(e.currentTarget, voice, 'out', { openSettings: (k) => openSettings(k, ctx()) }) }, icon('caret', 14))),
-    h('button.ibtn', { title: 'Soundboard', onclick: sbOpen }, icon('music')),
     h('button.ibtn', { title: 'Configurações do usuário', onclick: () => openSettings('account', ctx()) }, icon('gear')));
 }
 function voiceToggle(k) { k === 'mute' ? voice.toggleMute() : voice.toggleDeaf(); }
@@ -514,7 +514,7 @@ function renderMain() {
   const ch = channelById(v.cid);
   if (!ch) return main.replaceChildren(h('div.empty', { style: { margin: 'auto' } }, h('h2', 'Sem canais'), h('p', 'Este servidor ainda não tem canais.')));
   const dm = ch.type === 1, vc = ch.type === 2, peer = dm && dmPeer(ch);
-  const search = h('input.search', { placeholder: 'Buscar', onkeydown: (e) => { if (e.key === 'Enter') doSearch(search.value); if (e.key === 'Escape') { search.value = ''; closeResults(); } } });
+  const search = h('input.search', { placeholder: 'Buscar', title: 'Filtros: de:nome  tem:imagem|arquivo|link|video  em:canal', onkeydown: (e) => { if (e.key === 'Enter') doSearch(search.value); if (e.key === 'Escape') { search.value = ''; closeResults(); } } });
   const inCall = dm && callActive(ch.id);
   main.replaceChildren(
     h('div#topbar',
@@ -524,6 +524,7 @@ function renderMain() {
       h('div.spacer'),
       dm && h('button.ibtn', { title: voice.channelId === ch.id ? 'Desligar' : 'Iniciar chamada de voz', onclick: () => voice.channelId === ch.id ? voice.leave() : joinVoice(ch.id) }, icon(voice.channelId === ch.id ? 'phoneoff' : 'phone')),
       h('button.ibtn', { title: 'Mensagens fixadas', onclick: showPins }, icon('pin')),
+      h('button.ibtn.inbox-btn', { title: 'Caixa de entrada (menções e respostas)', onclick: showInbox }, icon('bell'), inboxBadge()),
       !dm && h('button.ibtn' + (S.membersOpen ? '.sel' : ''), { title: 'Lista de membros', onclick: () => { S.membersOpen = !S.membersOpen; renderMain(); } }, icon('users')),
       search),
     h('div#content',
@@ -692,6 +693,31 @@ async function doSearch(q) {
   const gid = S.view.kind === 'guild' ? S.view.gid : '';
   const list = await tryApi('GET', `/search?q=${encodeURIComponent(q)}${gid ? '&guild=' + gid : ''}`); if (!list) return;
   showResults(`${list.length} resultado(s)`, list);
+  if (!list.length) $('#results')?.append(h('div.hintline', { style: { padding: '8px' } }, 'Dica: use de:nome, tem:imagem, tem:arquivo, tem:link ou em:canal para filtrar.'));
+}
+// ---------- caixa de entrada: menções, respostas e @everyone ----------
+const inboxCount = () => Object.values(S.mentions).reduce((n, v) => n + (v || 0), 0);
+const inboxBadge = () => { const n = inboxCount(); return n ? h('span.ibadge', n > 99 ? '99+' : n) : null; };
+const KIND_TXT = { mention: 'mencionou você', reply: 'respondeu você', everyone: 'mencionou @everyone' };
+async function showInbox() {
+  closeResults();
+  const box = h('div'), more = h('button.btn.grey', { style: { width: '100%', marginTop: '4px', display: 'none' } }, 'Carregar mais');
+  const panel = h('div#results.inbox', h('div.rh', 'Caixa de entrada', h('button.ibtn', { style: { width: '20px', height: '20px' }, onclick: closeResults }, icon('x', 14))), box, more);
+  $('#content')?.append(panel);
+  const load = async (before) => {
+    const list = await tryApi('GET', '/inbox' + (before ? '?before=' + before : '')); if (!list) return;
+    for (const m of list) {
+      const ch = channelById(m.channel_id), g = guild(m.guild_id);
+      const where = g ? `#${m.channel_name} • ${g.name}` : 'Mensagem direta';
+      const e = msgEl(m, null); e.querySelector('.toolbar')?.remove();
+      box.append(h('div.ibx' + (m.unread ? '.unread' : ''), { onclick: () => { closeResults(); if (S.view.cid !== m.channel_id) { go(ch?.guild_id || '@me', m.channel_id); setTimeout(() => jumpTo(m.id), 600); } else jumpTo(m.id); } },
+        h('div.ibh', h('b', nameOf(m.author_id, m.guild_id)), ' ' + (KIND_TXT[m.kind] || ''), h('span', where)), e));
+    }
+    if (!box.children.length) box.append(h('div.empty', { style: { marginTop: '20px' } }, 'Nada por aqui. Menções e respostas a você aparecem nesta caixa.'));
+    more.style.display = list.length === 30 ? '' : 'none';
+    more.onclick = () => load(list.at(-1).id);
+  };
+  load();
 }
 function closeResults() { $('#results')?.remove(); }
 function showResults(title, list) {
@@ -890,7 +916,7 @@ function renderVoiceUI(speakOnly) {
     btn(voice.deafened ? 'headoff' : 'headset', 'Ensurdecer', voice.deafened, () => voiceToggle('deaf')),
     btn('video', 'Câmera', !!voice.cam, () => voiceAct(() => voice.toggleCam())),
     btn('screen', voice.screen ? 'Parar transmissão' : 'Transmitir tela', !!voice.screen, startShare),
-    btn('music', 'Soundboard', false, (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) })),
+    btn('waves', 'Soundboard', false, (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) })),
     btn('sliders', 'Configurações de voz', false, () => openSettings('voice', ctxSettings())),
     btn('phoneoff', 'Desconectar', false, () => voice.leave(), '.red'),
   ] : h('button.btn.green', { style: { minWidth: '220px', minHeight: '46px', fontSize: '16px' }, onclick: () => joinVoice(ch.id) }, dm ? 'Atender / entrar na chamada' : 'Entrar na sala de voz'));
@@ -942,11 +968,20 @@ function liveShareModal() {
     { label: 'Fechar', cls: 'link' }].filter(Boolean), { width: '560px' });
 }
 
-function updatePing() {
-  const el = document.getElementById('vp-ping'); if (!el || !voice.active) return;
-  voice.stats().then(st => { const rt = st.map(s => s.rtt).filter(x => x != null); el.textContent = rt.length ? `${Math.max(...rt)} ms` : st.length ? 'conectando…' : 'sozinho'; el.title = 'Latência (pior par)'; });
+// latência até o servidor (SFU) ou pior par (malha): Wi-Fi colorido + ms
+let lastPing = null;
+const pingEl = () => { const el = h('span#vp-ping.ping', icon('wifi', 14), h('span')); paintPing(el); return el; };
+function paintPing(el) {
+  const p = lastPing;
+  el.className = 'ping ' + (p == null ? '' : p < 80 ? 'good' : p < 200 ? 'mid' : 'bad');
+  el.lastChild.textContent = p == null ? '' : `${p} ms`;
+  el.title = p == null ? 'Medindo a conexão…' : `Latência até o servidor: ${p} ms`;
 }
-setInterval(() => voice?.active && updatePing(), 4000);
+function updatePing() {
+  if (!voice.active) { lastPing = null; return; }
+  voice.ping().then(p => { lastPing = p; const el = document.getElementById('vp-ping'); if (el) paintPing(el); });
+}
+setInterval(() => voice?.active && updatePing(), 2000);
 
 function incomingCall(dm, uid) {
   const u = user(uid); document.getElementById('call-banner')?.remove();

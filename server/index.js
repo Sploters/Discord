@@ -407,7 +407,7 @@ app.post('/api/guilds/:id/channels', auth, wrap((req, res) => {
   if (type === 0) name = name.toLowerCase().replace(/[^\p{L}\p{N}_-]+/gu, '-');
   name = name || 'novo-canal';
   const id = newId(), pos = (get('SELECT MAX(position) m FROM channels WHERE guild_id=?', gid).m ?? 0) + 1;
-  const parent = get('SELECT id FROM channels WHERE id=? AND guild_id=? AND type=4', req.body.parent_id, gid) ? req.body.parent_id : null;
+  const parent = get('SELECT id FROM channels WHERE id=? AND guild_id=? AND type=4', String(req.body.parent_id ?? ''), gid) ? String(req.body.parent_id) : null;
   run('INSERT INTO channels(id,guild_id,type,name,position,parent_id,created_at) VALUES(?,?,?,?,?,?,?)', id, gid, type, name, pos, parent, Date.now());
   dispatch(guildMemberIds(gid), 'CHANNEL_CREATE', get('SELECT * FROM channels WHERE id=?', id));
   audit(gid, req.uid, 'channel_create', id, name);
@@ -544,18 +544,60 @@ app.get('/api/channels/:id/pins', auth, wrap((req, res) => {
   const ch = channelFor(req, res); if (!ch) return;
   res.json(all('SELECT * FROM messages WHERE channel_id=? AND pinned=1 ORDER BY id DESC', ch.id).map(messageObj));
 }));
-app.get('/api/search', auth, wrap((req, res) => {
-  const q = clean(req.query.q, 100); if (!q) return res.json([]);
-  const like = '%' + q.replace(/[%_\\]/g, '\\$&') + '%';
-  let rows;
-  if (req.query.guild) {
-    rows = get('SELECT 1 x FROM members WHERE guild_id=? AND user_id=?', String(req.query.guild), req.uid)
-      ? all("SELECT m.* FROM messages m JOIN channels c ON c.id=m.channel_id WHERE c.guild_id=? AND m.content LIKE ? ESCAPE '\\' ORDER BY m.id DESC LIMIT 50", String(req.query.guild), like) : [];
-  } else {
-    rows = all("SELECT m.* FROM messages m JOIN dm_participants p ON p.channel_id=m.channel_id AND p.user_id=? WHERE m.content LIKE ? ESCAPE '\\' ORDER BY m.id DESC LIMIT 50", req.uid, like);
+// Busca: texto livre no índice FTS (sem acento, por prefixo) + filtros de:nome tem:imagem|arquivo|link|video em:canal
+const HAS = {
+  imagem: "m.attachments GLOB '*.[pP][nN][gG]\"*' OR m.attachments GLOB '*.[jJ][pP]*' OR m.attachments GLOB '*.[gG][iI][fF]\"*' OR m.attachments GLOB '*.[wW][eE][bB][pP]\"*'",
+  video: "m.attachments GLOB '*.[mM][pP]4\"*' OR m.attachments GLOB '*.[wW][eE][bB][mM]\"*'",
+  arquivo: "m.attachments <> '[]'", link: "m.content LIKE '%http%'",
+};
+HAS.image = HAS.imagem; HAS.file = HAS.arquivo; HAS.anexo = HAS.arquivo;
+function parseSearch(q) {
+  const out = { terms: [], from: [], has: [], in: [] };
+  for (const t of q.match(/(?:[^\s"]+|"[^"]*")+/g) || []) {
+    const m = t.match(/^(de|from|tem|has|em|in):(.+)$/i), v = m?.[2].replace(/^[@#"]+|"$/g, '');
+    if (m && v) out[{ de: 'from', from: 'from', tem: 'has', has: 'has', em: 'in', in: 'in' }[m[1].toLowerCase()]].push(v.toLowerCase());
+    else out.terms.push(t.replace(/"/g, ''));
   }
+  return out;
+}
+app.get('/api/search', auth, wrap((req, res) => {
+  const q = clean(req.query.q, 200); if (!q) return res.json([]);
+  const p = parseSearch(q), where = ['m.type = 0'], args = [];
+  const gid = req.query.guild ? String(req.query.guild) : null;
+  if (gid) {
+    if (!get('SELECT 1 x FROM members WHERE guild_id=? AND user_id=?', gid, req.uid)) return res.json([]);
+    where.push('c.guild_id = ?'); args.push(gid);
+  } else { where.push('m.channel_id IN (SELECT channel_id FROM dm_participants WHERE user_id=?)'); args.push(req.uid); }
+  const fts = p.terms.map(t => t.replace(/[^\p{L}\p{N}_.-]+/gu, ' ').trim()).filter(Boolean).flatMap(t => t.split(/\s+/)).map(t => `"${t}"*`).join(' ');
+  if (fts) { where.push('m.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)'); args.push(fts); }
+  else if (p.terms.length) return res.json([]); // só pontuação
+  for (const name of p.from) {
+    where.push('m.author_id IN (SELECT id FROM users WHERE lower(username)=? OR lower(display_name)=?' + (gid ? ' UNION SELECT user_id FROM members WHERE guild_id=? AND lower(nickname)=?' : '') + ')');
+    args.push(name, name); if (gid) args.push(gid, name);
+  }
+  for (const k of p.has) { if (!HAS[k]) return res.json([]); where.push('(' + HAS[k] + ')'); }
+  for (const name of p.in) { where.push('lower(c.name) = ?'); args.push(name); }
+  if (!fts && !p.from.length && !p.has.length && !p.in.length) return res.json([]);
+  const rows = all(`SELECT m.* FROM messages m JOIN channels c ON c.id=m.channel_id WHERE ${where.join(' AND ')} ORDER BY m.id DESC LIMIT 50`, ...args);
   res.json(rows.map(messageObj));
 }));
+// Caixa de entrada: menções, respostas e @everyone dirigidos a mim, de todos os servidores e DMs
+app.get('/api/inbox', auth, wrap((req, res) => {
+  const before = req.query.before ? String(req.query.before) : '99999999999999999999';
+  const rows = all(`SELECT m.*, mm.kind, c.guild_id, c.name channel_name FROM mentions mm JOIN messages m ON m.id=mm.message_id JOIN channels c ON c.id=m.channel_id
+    WHERE mm.user_id=? AND m.id<? AND (c.guild_id IN (SELECT guild_id FROM members WHERE user_id=?) OR c.id IN (SELECT channel_id FROM dm_participants WHERE user_id=?))
+    ORDER BY m.id DESC LIMIT 30`, req.uid, before, req.uid, req.uid);
+  res.json(rows.map(r => {
+    const rs = get('SELECT last_id FROM read_states WHERE user_id=? AND channel_id=?', req.uid, r.channel_id);
+    return { ...messageObj(r), guild_id: r.guild_id, channel_name: r.channel_name, kind: r.kind, unread: !rs || rs.last_id < r.id };
+  }));
+}));
+function saveMentions(m, ch, content) { // grava quem deve ver esta mensagem na caixa de entrada
+  run("DELETE FROM mentions WHERE message_id=? AND kind<>'reply'", m.id);
+  const everyone = /@everyone|@here/.test(content) && ch.guild_id;
+  const ids = everyone ? channelAudience(ch) : [...content.matchAll(/<@(\d+)>/g)].map(x => x[1]);
+  for (const id of new Set(ids)) if (id !== m.author_id) run('INSERT OR IGNORE INTO mentions VALUES(?,?,?)', m.id, id, everyone ? 'everyone' : 'mention');
+}
 function mentionedIds(content, ch) {
   const ids = new Set();
   for (const m of content.matchAll(/<@(\d+)>/g)) ids.add(m[1]);
@@ -580,7 +622,11 @@ app.post('/api/channels/:id/messages', auth, wrap((req, res) => {
   run('INSERT INTO messages(id,channel_id,author_id,content,created_at,reply_to,attachments) VALUES(?,?,?,?,?,?,?)',
     id, ch.id, req.uid, content, Date.now(), req.body.reply_to ? String(req.body.reply_to) : null, JSON.stringify(atts));
   run('INSERT INTO read_states VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET last_id=excluded.last_id', req.uid, ch.id, id);
-  const msg = { ...messageObj(get('SELECT * FROM messages WHERE id=?', id)), guild_id: ch.guild_id, mentions: mentionedIds(content, ch) };
+  const row = get('SELECT * FROM messages WHERE id=?', id);
+  saveMentions(row, ch, content);
+  const rep = row.reply_to && get('SELECT author_id FROM messages WHERE id=? AND channel_id=?', row.reply_to, ch.id);
+  if (rep && rep.author_id !== req.uid) run('INSERT OR REPLACE INTO mentions VALUES(?,?,?)', id, rep.author_id, 'reply');
+  const msg = { ...messageObj(row), guild_id: ch.guild_id, mentions: mentionedIds(content, ch) };
   dispatch(channelAudience(ch), 'MESSAGE_CREATE', msg);
   res.json(msg);
 }));
@@ -591,6 +637,7 @@ app.patch('/api/channels/:id/messages/:mid', auth, wrap((req, res) => {
   const content = String(req.body.content ?? '').slice(0, 4000);
   if (!content.trim()) return bad(res, 'Mensagem vazia');
   run('UPDATE messages SET content=?,edited_at=? WHERE id=?', content, Date.now(), m.id);
+  saveMentions(m, ch, content);
   dispatch(channelAudience(ch), 'MESSAGE_UPDATE', { ...messageObj(get('SELECT * FROM messages WHERE id=?', m.id)), guild_id: ch.guild_id });
   res.json({});
 }));

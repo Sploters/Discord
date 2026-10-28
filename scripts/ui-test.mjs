@@ -64,6 +64,10 @@ try {
   if (!cB.some(x => x.startsWith('connected'))) console.log('  diag', JSON.stringify(await Promise.all([A, B].map(p => p.evaluate(() => ({ err: window.__lc.voice.error, mic: !!window.__lc.voice.mic, ch: window.__lc.voice.channelId, peers: window.__lc.voice.peers.size, states: [...window.__lc.S.voice.values()].length }))))));
   const bytes = await B.evaluate(async () => { let n = 0; const v = window.__lc.voice; for (const pc of v.sfu ? [v.sfu.recv] : [...v.peers.values()].map(p => p.pc)) for (const r of (await pc.getStats()).values()) if (r.type === 'inbound-rtp' && r.kind === 'audio') n += r.bytesReceived; return n; });
   ok(bytes > 1000, `áudio fluindo para o bob (${bytes} bytes)`);
+  await sleep(2500);
+  const ping = await A.evaluate(() => ({ t: document.querySelector('#vp-ping')?.textContent, wifi: !!document.querySelector('#vp-ping svg'), sub: document.querySelector('#voice-panel .sub')?.textContent, sb: !!document.querySelector('#voice-panel .t button[title="Soundboard"]') }));
+  ok(/^\d+ ms$/.test(ping.t || '') && ping.wifi, `ping com Wi-Fi no painel de voz (${ping.t})`);
+  ok(!/ruído|sozinho/i.test(ping.sub + ping.t) && ping.sb, 'painel sem "ruído/sozinho" e soundboard ao lado de desconectar');
   await A.screenshot({ path: `${SHOTS}/03-voice.png` });
 
   // transmissão de tela: getDisplayMedia substituído por canvas (headless não tem seletor de tela)
@@ -104,7 +108,7 @@ try {
   ok(!!wav, 'áudio de teste enviado');
   await B.evaluate(() => { window.__plays = []; const A0 = window.Audio; window.Audio = function (u) { window.__plays.push(u); return new A0(u); }; window.Audio.prototype = A0.prototype; });
   await A.evaluate((u) => { window.__lc.S.prefs.mySounds = [{ id: 'm1', name: 'Bip', emoji: '🔔', url: u, vol: 100 }]; }, wav);
-  await A.evaluate(() => document.querySelector('#userbar button[title="Soundboard"]').click()); await sleep(500);
+  await A.evaluate(() => document.querySelector('#voice-panel button[title="Soundboard"]').click()); await sleep(500);
   await A.evaluate(() => [...document.querySelectorAll('.sbtabs button')].find(b => /Meus/.test(b.textContent))?.click()); await sleep(300);
   await A.screenshot({ path: `${SHOTS}/07-soundboard.png` });
   await A.evaluate(() => document.querySelector('.sbtn')?.click()); await sleep(1200);

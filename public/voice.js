@@ -451,6 +451,14 @@ export class Voice {
     playSound(kind === 'cam' ? 'camOff' : 'selfStreamStop');
     this.sendState(); this.onUpdate();
   }
+  // latência (ms): até o servidor no SFU; pior par na malha; null se ainda não há medida
+  async ping() {
+    const rtts = [];
+    const read = async (src) => { try { for (const r of (await src.getStats()).values()) if (r.type === 'candidate-pair' && (r.nominated || r.state === 'succeeded') && r.currentRoundTripTime != null) rtts.push(Math.round(r.currentRoundTripTime * 1000)); } catch { } };
+    if (this.sfu) { await read(this.sfu.send); if (!rtts.length && this.sfu.recv) await read(this.sfu.recv); return rtts.length ? Math.min(...rtts) : null; }
+    for (const p of this.peers.values()) if (p.pc) await read(p.pc);
+    return rtts.length ? Math.max(...rtts) : null;
+  }
   // estatísticas simples de qualidade (para o painel de conexão)
   async stats() {
     const out = [];

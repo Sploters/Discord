@@ -89,9 +89,30 @@ const sres = await call(ta, 'POST', `/guilds/${g.id}/sounds`, { name: 'Som', emo
 ok(!!sres.data.id, 'dono cria som do servidor'); const su = await gb.wait('SOUNDS_UPDATE'); ok(su.sounds.length === 1, 'membros recebem sons do servidor');
 gb.ws.close(); const left = await ga.wait('VOICE_PEER_LEFT'); ok(left.user_id === rb.user.id, 'saída de voz ao desconectar');
 
+// busca (sem acento, prefixo, nome de anexo, filtros) e caixa de entrada
+await call(ta, 'POST', `/channels/${text.id}/messages`, { content: 'Você viu o relatório?', attachments: [{ url: '/files/x.pdf/orcamento_final.pdf', name: 'orcamento_final.pdf', size: 10, type: 'application/pdf' }] });
+await call(tb, 'POST', `/channels/${text.id}/messages`, { content: 'olha https://exemplo.com' });
+const sq = async (q) => (await call(ta, 'GET', `/search?q=${encodeURIComponent(q)}&guild=${g.id}`)).data;
+ok((await sq('voce relat')).length === 1, 'busca ignora acento e aceita prefixo');
+ok((await sq('orcamento')).length === 1, 'busca acha pelo nome do anexo');
+ok((await sq('de:bob' + sfx)).every(m => m.author_id === rb.user.id) && (await sq('de:bob' + sfx)).length >= 2, 'filtro de:usuário');
+ok((await sq('tem:link')).length === 1 && (await sq('tem:arquivo')).length === 1, 'filtros tem:link e tem:arquivo');
+ok((await sq('entrou')).length === 0, 'mensagens de sistema fora da busca');
+ok((await call(tb, 'GET', `/search?q=relat&guild=${g.id}`)).data.length === 1 && (await call(g3, 'GET', `/search?q=relat&guild=${g.id}`)).data.length === 0, 'busca respeita quem é membro');
+const men = (await call(ta, 'POST', `/channels/${text.id}/messages`, { content: `ei <@${rb.user.id}>` })).data;
+const ib = (await call(tb, 'GET', '/inbox')).data;
+ok(ib.some(i => i.kind === 'mention' && i.id === men.id), 'caixa de entrada: menção');
+const rep2 = (await call(ta, 'POST', `/channels/${text.id}/messages`, { content: 'respondendo', reply_to: up.data.id })).data;
+await call(ta, 'POST', `/channels/${text.id}/messages`, { content: '@everyone reunião' });
+const ib2 = (await call(tb, 'GET', '/inbox')).data;
+ok(ib2.some(i => i.kind === 'reply' && i.id === rep2.id) && ib2.some(i => i.kind === 'everyone'), 'caixa de entrada: resposta e @everyone');
+ok(ib2[0].unread === true, 'caixa de entrada marca não lidas');
+await call(tb, 'POST', `/channels/${text.id}/ack`);
+ok((await call(tb, 'GET', '/inbox')).data.every(i => !i.unread), 'ler o canal limpa as não lidas da caixa');
+
 // moderação: castigo, limite de mensagens, banimento, auditoria
 const td = await user('dave'); await call(td, 'POST', `/invites/${inv.code}`);
-const dId = (await call(ta, 'GET', `/search?q=entrou&guild=${g.id}`)).data.find(m => m.author.username === 'dave' + sfx)?.author_id;
+const dId = (await ga.wait('MEMBER_ADD', d => d.user.username === 'dave' + sfx)).user.id;
 ok(!!dId, 'dave entrou no servidor');
 ok((await call(tb, 'PUT', `/guilds/${g.id}/bans/${dId}`, {})).status === 403, 'mod sem permissão de banir não bane');
 ok((await call(ta, 'PATCH', `/guilds/${g.id}/members/${dId}`, { timeout_until: Date.now() + 60000, reason: 'flood' })).status === 200, 'dono aplica castigo');
