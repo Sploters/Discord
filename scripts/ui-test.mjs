@@ -65,9 +65,19 @@ try {
   const bytes = await B.evaluate(async () => { let n = 0; const v = window.__lc.voice; for (const pc of v.sfu ? [v.sfu.recv] : [...v.peers.values()].map(p => p.pc)) for (const r of (await pc.getStats()).values()) if (r.type === 'inbound-rtp' && r.kind === 'audio') n += r.bytesReceived; return n; });
   ok(bytes > 1000, `áudio fluindo para o bob (${bytes} bytes)`);
   await sleep(2500);
-  const ping = await A.evaluate(() => ({ t: document.querySelector('#vp-ping')?.textContent, wifi: !!document.querySelector('#vp-ping svg'), sub: document.querySelector('#voice-panel .sub')?.textContent, sb: !!document.querySelector('#voice-panel .t button[title="Soundboard"]') }));
-  ok(/^\d+ ms$/.test(ping.t || '') && ping.wifi, `ping com Wi-Fi no painel de voz (${ping.t})`);
-  ok(!/ruído|sozinho/i.test(ping.sub + ping.t) && ping.sb, 'painel sem "ruído/sozinho" e soundboard ao lado de desconectar');
+  const ping = await A.evaluate(() => ({ t: document.querySelector('#vp-ping')?.title, wifi: !!document.querySelector('#voice-panel .t > span > #vp-ping svg'), sub: document.querySelector('#voice-panel .sub')?.textContent, sb: !!document.querySelector('#voice-panel .row button[title="Soundboard"]'), mic: !!document.querySelector('#voice-panel .t button[title^="Testar microfone"]') }));
+  ok(/Ping: \d+ ms/.test(ping.t || '') && ping.wifi, `Wi-Fi à esquerda de "Voz conectada" com o ping no tooltip (${ping.t})`);
+  ok(!/ruído|sozinho/i.test(ping.sub) && ping.sb && ping.mic, 'teste de microfone ao lado de desconectar; soundboard na linha de botões');
+  await A.click('#vp-ping'); await sleep(2500);
+  const chart = await A.evaluate(() => ({ line: !!document.querySelector('.pingpop .pline'), stats: document.querySelector('.pingpop .pstats')?.innerText }));
+  ok(chart.line && /Média\s*\n?\s*\d+ ms/.test(chart.stats || ''), 'gráfico do ping com média e último: ' + JSON.stringify(chart.stats));
+  await A.screenshot({ path: `${SHOTS}/03b-ping.png` });
+  await A.evaluate(() => document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))); await sleep(200);
+  await A.click('#voice-panel button[title^="Testar microfone"]'); await sleep(1200);
+  const mic = await A.evaluate(() => ({ w: parseFloat(document.querySelector('.micpop .mfill')?.style.width) || 0, toggles: document.querySelectorAll('.micpop .switch').length }));
+  ok(mic.w > 0 && mic.toggles === 2, `teste de microfone: medidor ${mic.w}% e chaves de eco/porta de ruído`);
+  await A.screenshot({ path: `${SHOTS}/03c-mic.png` });
+  await A.evaluate(() => document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))); await sleep(200);
   await A.screenshot({ path: `${SHOTS}/03-voice.png` });
 
   // transmissão de tela: getDisplayMedia substituído por canvas (headless não tem seletor de tela)

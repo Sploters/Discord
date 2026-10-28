@@ -49,6 +49,32 @@ export function openAudioPanel(anchor, voice, kind, { openSettings } = {}) {
   el.style.top = Math.max(8, r.top - b.height - 10) + 'px'; el.style.left = Math.max(8, Math.min(r.left - 20, innerWidth - b.width - 8)) + 'px';
 }
 
+// Teste de microfone (medidor + ouvir a si mesmo) e filtros: ruído, eco, porta de ruído
+export function openMicPanel(anchor, voice, { openSettings } = {}) {
+  const rebuild = async () => { const wasOn = loop; if (voice.active) await voice.rebuildMic(); if (wasOn) voice.micGraph?.setLoopback(true); };
+  const fill = h('div.mfill'), meter = h('div.mmeter', fill);
+  let loop = false;
+  const loopBtn = h('button.btn.grey', { style: { width: '100%' }, onclick: () => {
+    loop = !loop; voice.micGraph?.setLoopback(loop);
+    loopBtn.textContent = loop ? 'Parar de me ouvir' : 'Ouvir meu microfone'; loopBtn.classList.toggle('red', loop);
+  } }, 'Ouvir meu microfone');
+  const body = h('div.qpop.micpop',
+    h('h4', 'Teste de microfone'), meter, h('small.mhint', voice.micGraph ? 'Fale algo: a barra mostra o que os outros recebem (já com os filtros).' : 'Microfone indisponível nesta chamada.'),
+    voice.micGraph && loopBtn, voice.micGraph && h('small.mhint', 'Use fone de ouvido para não dar microfonia.'),
+    h('h4', 'Redução de ruído'), seg(NOISE_MODES, S.prefs.noiseMode, v => { S.prefs.noiseMode = v; savePrefs(); rebuild(); }),
+    h('div.qrow', h('span', 'Cancelamento de eco'), toggle(S.prefs.echo !== false, v => { S.prefs.echo = v; savePrefs(); rebuild(); })),
+    h('div.qrow', h('span', 'Porta de ruído'), toggle(!!S.prefs.gate, v => { S.prefs.gate = v; savePrefs(); rebuild(); })),
+    openSettings && h('button.btn.link', { style: { marginTop: '8px' }, onclick: () => { closeFloating(); openSettings('voice'); } }, 'Mais opções de voz…'));
+  const el = popout(anchor, body, 'up'); el.classList.add('quick');
+  const r = anchor.getBoundingClientRect(), b = el.getBoundingClientRect();
+  el.style.top = Math.max(8, r.top - b.height - 10) + 'px'; el.style.left = Math.max(8, Math.min(r.left - 20, innerWidth - b.width - 8)) + 'px';
+  const iv = setInterval(() => {
+    if (!document.body.contains(body)) { clearInterval(iv); if (loop) voice.micGraph?.setLoopback(false); return; }
+    const lv = voice.analysers.get(voice.myId)?.level || 0;
+    fill.style.width = Math.min(100, Math.round(lv * 160)) + '%'; fill.classList.toggle('hot', lv > .55);
+  }, 80);
+}
+
 export function openStatusPanel(anchor, { openSettings, openProfile } = {}) {
   const me = S.me;
   const body = h('div.qpop');

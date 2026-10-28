@@ -3,7 +3,7 @@ import { S, api, tryApi, user, guild, channelById, member, nameOf, roleColor, ca
 import { Voice, SCREEN_PRESETS } from './voice.js';
 import { playSound } from './sounds.js';
 import { openSoundboard, onIncoming as sbIncoming, handleKey as sbKey } from './soundboard.js';
-import { openAudioPanel, openStatusPanel } from './quick.js';
+import { openAudioPanel, openStatusPanel, openMicPanel } from './quick.js';
 import { seg, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
 import { openSettings } from './settings.js';
 import { profileCard, STATUS_TXT } from './card.js';
@@ -416,15 +416,15 @@ function voicePanel() {
   if (!voice?.active) return h('div.hidden');
   const ch = channelById(voice.channelId), g = guild(ch?.guild_id);
   return h('div#voice-panel',
-    h('div.t', h('span', { style: { display: 'flex', gap: '6px', alignItems: 'center' } }, icon('voice', 16), 'Voz conectada', pingEl()),
-      h('span.vp-btns', h('button.ibtn', { title: 'Soundboard', onclick: (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) }) }, icon('waves', 20)),
+    h('div.t', h('span', { style: { display: 'flex', gap: '6px', alignItems: 'center' } }, pingEl(), 'Voz conectada'),
+      h('span.vp-btns', h('button.ibtn', { title: 'Testar microfone, ruído e eco', onclick: (e) => openMicPanel(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) }) }, icon('waves', 20)),
         h('button.ibtn', { title: 'Desconectar', onclick: () => voice.leave() }, icon('phoneoff', 20)))),
-    h('div.sub', `${ch?.type === 1 ? 'Chamada com ' + user(dmPeer(ch).id).display_name : (ch?.name || '')}${g ? ' / ' + g.name : ''}`),
+    h('div.sub', { title: 'Ir para a sala', onclick: () => ch && (ch.type === 1 ? go('@me', ch.id) : go(ch.guild_id, ch.id)) }, `${ch?.type === 1 ? 'Chamada com ' + user(dmPeer(ch).id).display_name : (ch?.name || '')}${g ? ' / ' + g.name : ''}`),
     h('div.row',
       h('button' + (voice.cam ? '.on' : ''), { title: 'Câmera', onclick: () => voiceAct(() => voice.toggleCam()) }, icon('video', 20)),
       h('button' + (voice.screen ? '.on' : ''), { title: 'Transmitir tela', onclick: startShare }, icon('screen', 20)),
       h('button', { title: 'Configurações de voz', onclick: () => openSettings('voice', ctxSettings()) }, icon('sliders', 20)),
-      h('button', { title: 'Ir para a sala', onclick: () => ch && (ch.type === 1 ? go('@me', ch.id) : go(ch.guild_id, ch.id)) }, icon('expand', 20))));
+      h('button', { title: 'Soundboard', onclick: (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) }) }, icon('voice', 20))));
 }
 const voiceAct = (fn) => Promise.resolve().then(fn).catch(e => toast(e.message, true));
 function joinVoice(cid) {
@@ -916,7 +916,7 @@ function renderVoiceUI(speakOnly) {
     btn(voice.deafened ? 'headoff' : 'headset', 'Ensurdecer', voice.deafened, () => voiceToggle('deaf')),
     btn('video', 'Câmera', !!voice.cam, () => voiceAct(() => voice.toggleCam())),
     btn('screen', voice.screen ? 'Parar transmissão' : 'Transmitir tela', !!voice.screen, startShare),
-    btn('waves', 'Soundboard', false, (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) })),
+    btn('voice', 'Soundboard', false, (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) })),
     btn('sliders', 'Configurações de voz', false, () => openSettings('voice', ctxSettings())),
     btn('phoneoff', 'Desconectar', false, () => voice.leave(), '.red'),
   ] : h('button.btn.green', { style: { minWidth: '220px', minHeight: '46px', fontSize: '16px' }, onclick: () => joinVoice(ch.id) }, dm ? 'Atender / entrar na chamada' : 'Entrar na sala de voz'));
@@ -968,20 +968,75 @@ function liveShareModal() {
     { label: 'Fechar', cls: 'link' }].filter(Boolean), { width: '560px' });
 }
 
-// latência até o servidor (SFU) ou pior par (malha): Wi-Fi colorido + ms
-let lastPing = null;
-const pingEl = () => { const el = h('span#vp-ping.ping', icon('wifi', 14), h('span')); paintPing(el); return el; };
+// latência até o servidor (SFU) ou pior par (malha): Wi-Fi colorido; passar o mouse = ms; clicar = gráfico do último minuto
+const pingHist = []; // [{ t, ms }] dos últimos 60 s
+const lastPing = () => pingHist.at(-1)?.ms ?? null;
+const pingLevel = (p) => (p == null ? '' : p < 80 ? 'good' : p < 200 ? 'mid' : 'bad');
+const pingEl = () => { const el = h('button#vp-ping.ping', { onclick: (e) => openPingChart(e.currentTarget) }, icon('wifi', 16)); paintPing(el); return el; };
 function paintPing(el) {
-  const p = lastPing;
-  el.className = 'ping ' + (p == null ? '' : p < 80 ? 'good' : p < 200 ? 'mid' : 'bad');
-  el.lastChild.textContent = p == null ? '' : `${p} ms`;
-  el.title = p == null ? 'Medindo a conexão…' : `Latência até o servidor: ${p} ms`;
+  const p = lastPing();
+  el.className = 'ping ' + pingLevel(p);
+  el.title = p == null ? 'Medindo a conexão…' : `Ping: ${p} ms (clique para ver o gráfico)`;
 }
 function updatePing() {
-  if (!voice.active) { lastPing = null; return; }
-  voice.ping().then(p => { lastPing = p; const el = document.getElementById('vp-ping'); if (el) paintPing(el); });
+  if (!voice.active) { pingHist.length = 0; return; }
+  const cid = voice.channelId;
+  voice.ping().then(p => {
+    if (voice.channelId !== cid) return;
+    const now = Date.now();
+    if (p != null) pingHist.push({ t: now, ms: p });
+    while (pingHist.length && now - pingHist[0].t > 60000) pingHist.shift();
+    const el = document.getElementById('vp-ping'); if (el) paintPing(el);
+    document.dispatchEvent(new Event('ping-sample'));
+  });
 }
-setInterval(() => voice?.active && updatePing(), 2000);
+setInterval(() => (voice?.active ? updatePing() : (pingHist.length = 0)), 1000);
+function openPingChart(anchor) {
+  const W = 300, H = 120, L = 34, R = 8, T = 10, B = 20;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('class', 'pchart'); svg.setAttribute('role', 'img');
+  const avgEl = h('b'), lastEl = h('b'), rangeEl = h('b'), tip = h('div.ptip.hidden');
+  const body = h('div.qpop.pingpop', h('h4', 'Ping até o servidor — último minuto'), h('div.pwrap', svg, tip),
+    h('div.pstats', h('div', h('small', 'Último'), lastEl), h('div', h('small', 'Média'), avgEl), h('div', h('small', 'Mín – máx'), rangeEl)));
+  const ns = (tag, attrs) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
+  let pts = [];
+  const draw = () => {
+    const now = Date.now(), data = pingHist.filter(s => now - s.t <= 60000);
+    const vals = data.map(s => s.ms), max = Math.max(50, ...vals), top = Math.ceil(max * 1.2 / 20) * 20;
+    const x = (t) => L + (W - L - R) * (1 - (now - t) / 60000), y = (ms) => T + (H - T - B) * (1 - ms / top);
+    svg.replaceChildren();
+    for (const v of [0, top / 2, top]) { // grade discreta + rótulos
+      svg.append(ns('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), class: 'pgrid' }));
+      const tx = ns('text', { x: L - 6, y: y(v) + 4, class: 'paxis', 'text-anchor': 'end' }); tx.textContent = Math.round(v); svg.append(tx);
+    }
+    for (const [t, lbl] of [[now - 60000, '-60s'], [now - 30000, '-30s'], [now, 'agora']]) { const tx = ns('text', { x: x(t), y: H - 4, class: 'paxis', 'text-anchor': t === now ? 'end' : t === now - 60000 ? 'start' : 'middle' }); tx.textContent = lbl; svg.append(tx); }
+    pts = data.map(s => ({ ...s, x: x(s.t), y: y(s.ms) }));
+    if (pts.length > 1) svg.append(ns('polyline', { points: pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '), class: 'pline' }));
+    if (pts.length) { const p = pts.at(-1); svg.append(ns('circle', { cx: p.x, cy: p.y, r: 4, class: 'pdot' })); }
+    if (!pts.length) { const tx = ns('text', { x: (L + W - R) / 2, y: H / 2, class: 'paxis', 'text-anchor': 'middle' }); tx.textContent = 'Medindo…'; svg.append(tx); }
+    const avg = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+    lastEl.textContent = vals.length ? `${vals.at(-1)} ms` : '—'; avgEl.textContent = avg != null ? `${avg} ms` : '—';
+    rangeEl.textContent = vals.length ? `${Math.min(...vals)} – ${Math.max(...vals)} ms` : '—';
+    svg.setAttribute('aria-label', `Ping no último minuto: média ${avg ?? '—'} ms, último ${vals.at(-1) ?? '—'} ms`);
+  };
+  // dica ao passar o mouse: amostra mais próxima
+  svg.addEventListener('mousemove', (e) => {
+    if (!pts.length) return;
+    const r = svg.getBoundingClientRect(), mx = (e.clientX - r.left) * (W / r.width);
+    const p = pts.reduce((a, b) => (Math.abs(b.x - mx) < Math.abs(a.x - mx) ? b : a));
+    svg.querySelector('.pcross')?.remove(); svg.querySelector('.phov')?.remove();
+    svg.append(ns('line', { x1: p.x, x2: p.x, y1: T, y2: H - B, class: 'pcross' }), ns('circle', { cx: p.x, cy: p.y, r: 4, class: 'pdot phov' }));
+    tip.textContent = `${p.ms} ms · há ${Math.round((Date.now() - p.t) / 1000)} s`; tip.classList.remove('hidden');
+    tip.style.left = Math.min(r.width - 110, Math.max(0, p.x * r.width / W - 50)) + 'px';
+  });
+  svg.addEventListener('mouseleave', () => { tip.classList.add('hidden'); svg.querySelector('.pcross')?.remove(); svg.querySelector('.phov')?.remove(); });
+  draw();
+  const onSample = () => { if (!document.body.contains(body)) return document.removeEventListener('ping-sample', onSample); if (tip.classList.contains('hidden')) draw(); };
+  document.addEventListener('ping-sample', onSample);
+  const el = popout(anchor, body, 'up'); el.classList.add('quick');
+  const r = anchor.getBoundingClientRect(), b = el.getBoundingClientRect();
+  el.style.top = Math.max(8, r.top - b.height - 10) + 'px'; el.style.left = Math.max(8, r.left) + 'px';
+}
 
 function incomingCall(dm, uid) {
   const u = user(uid); document.getElementById('call-banner')?.remove();
