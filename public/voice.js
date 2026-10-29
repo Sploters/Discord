@@ -125,7 +125,7 @@ export class Voice {
         : 'Microfone indisponível neste navegador.');
       await this.buildMic();
     } catch (e) { this.mic = null; this.error = e.message || 'Não foi possível acessar o microfone (entrando como ouvinte).'; }
-    this.channelId = channelId;
+    this.channelId = channelId; this.joinedAt = Date.now();
     this.timer = setInterval(() => this.poll(), 100);
     this.send('VOICE_JOIN', { channel_id: channelId });
     this.sendState(); this.onUpdate(); playSound('selfJoin');

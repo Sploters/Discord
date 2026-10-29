@@ -75,6 +75,34 @@ export function sfuLeave(cid, uid) {
 
 const producerInfo = (p, uid) => ({ producer_id: p.id, user_id: uid, kind: p.kind, source: p.appData.source });
 
+// Publica o producer na sala e avisa os demais participantes
+function registerProducer(r, peer, source, p) {
+  peer.producers.get(source)?.close();
+  peer.producers.set(source, p);
+  p.on('transportclose', () => peer.producers.get(source) === p && peer.producers.delete(source));
+  p.observer.on('close', () => {
+    if (peer.producers.get(source) === p) peer.producers.delete(source);
+    for (const o of r.peers.values()) if (o !== peer) o.notify('SFU_PRODUCER_CLOSED', producerInfo(p, peer.uid));
+  });
+  for (const o of r.peers.values()) if (o !== peer) o.notify('SFU_NEW_PRODUCER', producerInfo(p, peer.uid));
+}
+
+// Bot de música: recebe RTP/Opus local (ffmpeg) e publica como o microfone de um participante.
+// O ffmpeg deve enviar para 127.0.0.1:<port> com o payload type 101 e o ssrc devolvidos.
+export async function sfuAttachRtp(cid, uid) {
+  const r = rooms.get(cid), peer = r?.peers.get(uid);
+  if (!peer) throw new Error('fora da sala');
+  const t = await r.router.createPlainTransport({ listenInfo: { protocol: 'udp', ip: '127.0.0.1' }, rtcpMux: true, comedia: true });
+  const ssrc = 1000000 + Math.floor(Math.random() * 1e8);
+  const p = await t.produce({ kind: 'audio', appData: { source: 'mic' }, rtpParameters: {
+    codecs: [{ mimeType: 'audio/opus', payloadType: 101, clockRate: 48000, channels: 2, parameters: { useinbandfec: 1, 'sprop-stereo': 1 } }],
+    encodings: [{ ssrc }] } });
+  peer.transports.set(t.id, t);
+  t.observer.on('close', () => peer.transports.delete(t.id));
+  registerProducer(r, peer, 'mic', p);
+  return { port: t.tuple.localPort, ssrc, payloadType: 101, close: () => { try { p.close(); } catch { } try { t.close(); } catch { } } };
+}
+
 // Requisições do cliente (via gateway). Retorna o payload da resposta ou lança erro.
 export async function sfuRequest(cid, uid, op, d) {
   const r = rooms.get(cid), peer = r?.peers.get(uid);
@@ -91,15 +119,8 @@ export async function sfuRequest(cid, uid, op, d) {
     case 'produce': {
       const t = transport(), source = String(d.source);
       if (t.appData.dir !== 'send' || !SOURCES.includes(source)) throw new Error('produção inválida');
-      peer.producers.get(source)?.close();
       const p = await t.produce({ kind: d.kind, rtpParameters: d.rtpParameters, appData: { source } });
-      peer.producers.set(source, p);
-      p.on('transportclose', () => peer.producers.get(source) === p && peer.producers.delete(source));
-      p.observer.on('close', () => {
-        if (peer.producers.get(source) === p) peer.producers.delete(source);
-        for (const o of r.peers.values()) if (o !== peer) o.notify('SFU_PRODUCER_CLOSED', producerInfo(p, uid));
-      });
-      for (const o of r.peers.values()) if (o !== peer) o.notify('SFU_NEW_PRODUCER', producerInfo(p, uid));
+      registerProducer(r, peer, source, p);
       return { id: p.id };
     }
     case 'close_producer': { const p = peer.producers.get(String(d.source)); p?.close(); return {}; }

@@ -5,6 +5,11 @@ Chat + voz + vídeo + transmissão de tela auto-hospedado, com layout inspirado 
 ## Recursos
 - **Servidores:** categorias, canais de texto e de voz (com chat ao lado), convites gerenciáveis, cargos com permissões, apelido por servidor, ícone/banner/descrição/cor, **emojis personalizados** (`:nome:`), **soundboard do servidor**, mensagem de boas-vindas, reordenar canais, transferir propriedade, notificações por servidor/canal.
 - **Mensagens:** markdown, respostas, edição, fixadas, reações (inclusive emoji do servidor), menções, anexos, pré-visualização de imagens de links, busca, "digitando…", não lidas.
+- **Mensagens de voz:** botão de microfone no compositor grava (até 5 min) com forma de onda ao vivo, pré-escuta e envio; o player mostra as barras, permite pular no trecho e acelerar (1x/1,5x/2x).
+- **Tradução:** clique direito → Traduzir (mostra sob a mensagem, só para você), botão no compositor para traduzir o rascunho e prefixo `$en`, `$es`, `$ja`… para enviar já traduzido. Idioma e "manter original" em Aparência.
+- **Espectadores:** cada transmissão mostra quantos e quem está assistindo (clique no selo para a lista).
+- **Clique direito → Entrar na chamada** em quem está em voz.
+- **Animações:** transições ao trocar de canal, abrir janelas/menus e receber mensagens (desligam em Acessibilidade → Reduzir animações ou em Aparência).
 - **Perfil:** avatar e banner (imagem/GIF), cor, pronomes, status com emoji, bio, prévia ao vivo.
 - **Social:** DMs, amigos, bloqueio, privacidade de pedidos, **chamadas de voz/vídeo em DM** com toque.
 - **Voz:** WebRTC via **SFU no servidor** (mediasoup: cada um envia uma vez, o servidor repassa; câmera e tela com simulcast), com malha P2P como reserva; redução de ruído por IA (RNNoise e GTCRN, trocáveis ao vivo), porta de ruído, eco, ganho, taxa de bits, push-to-talk, volume por usuário, teste de microfone, latência.
@@ -21,12 +26,18 @@ Requer Node.js >= 22.5 (usa `node:sqlite`) e `openssl`. No Docker/Umbrel já vem
     npm install --omit=dev
     npm start            # HTTP :3000 e HTTPS :3443
 
+Tradução: `LIBRETRANSLATE_URL` (+ `LIBRETRANSLATE_KEY`) usa uma instância LibreTranslate sua; sem ela, o servidor usa o endpoint público não oficial do Google Tradutor (o texto traduzido sai do servidor). `TRANSLATE=0` desliga.
+
 Variáveis: `PORT`, `HTTPS_PORT`, `HOST`, `DATA_DIR`, `MAX_UPLOAD_MB`, `OPEN_REGISTRATION=0`, `HTTPS=0`, `TLS_KEY`/`TLS_CERT`, `TLS_SAN=IP:<ip-vpn>`, `TURN_URL`/`TURN_USER`/`TURN_PASS`.
 
 Voz (SFU): `RTC_PORT` (padrão 40000, UDP+TCP — libere no firewall), `RTC_IPS` (IPs onde escutar; padrão: todos os IPv4 das interfaces, então suba a VPN **antes** do servidor), `RTC_ANNOUNCED_IP` (em Docker: o IP da VPN do host), `RTC=0` (desliga o SFU e volta à malha P2P).
 
 Docker: `docker build -t localcord . && docker run -d --restart=always -p 3000:3000 -p 3443:3443 -p 40000:40000/udp -p 40000:40000/tcp -v ~/localcord-data:/data -e TLS_SAN=IP:<ip-vpn> -e RTC_ANNOUNCED_IP=<ip-vpn> localcord`
 Atualizar: reconstrua a imagem e recrie o container com o mesmo volume (o banco migra sozinho).
+
+## Bot de música
+Botão 🎵 na barra da chamada: cole um link (YouTube, SoundCloud, Spotify, Bandcamp, Twitch, Vimeo…) ou digite o nome da música. O bot entra na sala como um participante (cada um ajusta o volume dele), mantém uma fila/playlist e qualquer pessoa da sala pode pausar, pular, remover músicas ou tirá-lo da chamada. Sai sozinho após 5 min parado (`MUSIC_IDLE_MIN`) ou quando todos saem. O áudio vem do yt-dlp (sem anúncios) + ffmpeg, ambos já incluídos na imagem Docker; o Spotify só fornece os nomes das faixas, que são procurados no YouTube. Requer o SFU de voz ativo.
+Variáveis: `MUSIC_IDLE_MIN`, `MUSIC_ALLOW_ANY=1` (libera qualquer site), `YTDLP_COOKIES=/data/cookies.txt` (se o YouTube pedir login), `YTDLP_PATH`, `FFMPEG_PATH`. Se o YouTube parar de funcionar, refaça o deploy para baixar o yt-dlp atualizado.
 
 ## Aplicativo desktop (Windows)
 Instaladores em `desktop/dist/`: `LocalCord-Setup-<versão>.exe` e `LocalCord-Portable-<versão>.exe`. No primeiro uso o app pede o endereço do servidor (IP da VPN). Regerar: `cd desktop && npm install && npm run dist`.
@@ -36,6 +47,7 @@ O cliente do SFU fica em `public/vendor/msc/` (gerado de `mediasoup-client`): `n
 
 ## Testes
     BASE=http://localhost:3000 node scripts/e2e.mjs   # API + gateway + voz + soundboard + conta
+    BASE=http://localhost:3000 node scripts/features-test.mjs   # mensagem de voz, espectadores e tradução
     node scripts/ui-test.mjs                          # navegador real: 2 usuários, voz pelo SFU, RNNoise, sons, painéis, configurações
     RTC=0 node scripts/ui-test.mjs                    # o mesmo, com voz em malha P2P
     node scripts/desktop-test.mjs                     # app Electron

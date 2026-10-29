@@ -2,17 +2,22 @@ import { h, icon, avatar, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyE
 import { S, api, tryApi, user, guild, channelById, member, nameOf, roleColor, can, perms, PERM, dmPeer, relType, toast, modal, confirmBox, promptBox, menu, popout, emojiPicker, lightbox, closeFloating, beep, notify, notifPolicy, desktop, applyTheme, emojiUrl, allEmojis, savePrefs } from './state.js';
 import { Voice, SCREEN_PRESETS } from './voice.js';
 import { playSound } from './sounds.js';
+import { initMusic, onState as musicOnState, onRes as musicOnRes, openMusic } from './music.js';
 import { openSoundboard, onIncoming as sbIncoming, handleKey as sbKey } from './soundboard.js';
 import { openAudioPanel, openStatusPanel, openMicPanel } from './quick.js';
 import { seg, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
 import { openSettings } from './settings.js';
 import { profileCard, STATUS_TXT } from './card.js';
 import { timeoutDialog, removeTimeout, banDialog, timedOutUntil } from './mod.js';
+import { recordVoiceMessage, voiceEl } from './voicemsg.js';
+import { initPlugins, mentionUser, addMention, resolveMentions } from './plugins.js';
+import { toggleTranslation, isTranslated, translationBlock, translateOutgoing, draftMenu } from './translate.js';
 applyTheme();
 
 let ws, voice, retry = 0, ready = false, pendingInvite = null;
 const $ = (s) => document.querySelector(s);
 const gwSend = (t, d) => ws?.readyState === 1 && ws.send(JSON.stringify({ t, d }));
+initMusic(gwSend);
 
 // =============== Autenticação ===============
 function showAuth(mode = 'login') {
@@ -137,6 +142,7 @@ function onEvent(t, d) {
     case 'VOICE_STATE': {
       const prevVs = S.voice.get(d.user_id), before = prevVs?.channel_id, mineCh = voice.channelId;
       if (d.channel_id) S.voice.set(d.user_id, d); else S.voice.delete(d.user_id);
+      if (d.user_id === S.me.id && !d.channel_id) musicOnState({ active: false });
       if (d.user_id === S.me.id && !d.channel_id && voice.active && voice.channelId === d.prev_channel_id) voice.leave();
       if (d.user_id !== S.me.id) {
         const prevState = prevVs, dmCh = S.dms.get(d.channel_id || d.prev_channel_id);
@@ -153,7 +159,10 @@ function onEvent(t, d) {
       renderSide(); renderRail(); renderVoiceUI(); if (S.view.cid && [1, 2].includes(channelById(S.view.cid)?.type)) renderCallBar();
       break;
     }
+    case 'STREAM_VIEWERS': if (d.viewers.length) S.viewers.set(d.streamer_id, d.viewers); else S.viewers.delete(d.streamer_id); renderVoiceUI(); break;
     case 'SOUNDBOARD': sbIncoming(d, voice); break;
+    case 'MUSIC_STATE': if (d.channel_id === voice.channelId) musicOnState(d); break;
+    case 'MUSIC_RES': musicOnRes(d); break;
     case 'SOUNDS_UPDATE': { const g = guild(d.guild_id); if (g) { g.sounds = d.sounds; document.dispatchEvent(new Event('sb-changed')); } break; }
     case 'EMOJIS_UPDATE': { const g = guild(d.guild_id); if (g) { g.emojis = d.emojis; renderMessages(true); } break; }
     case 'VOICE_JOINED': voice.onJoined(d); break;
@@ -183,13 +192,14 @@ function onEvent(t, d) {
   }
 }
 
+const detached = new Set(); // canais em que estou vendo o início do histórico (sem as mensagens recentes)
 function onMessage(m) {
-  const list = S.messages.get(m.channel_id);
-  if (list && !list.some(x => x.id === m.id)) list.push(m);
+  const list = S.messages.get(m.channel_id), gap = detached.has(m.channel_id);
+  if (list && !gap && !list.some(x => x.id === m.id)) list.push(m);
   S.users.set(m.author.id, { ...S.users.get(m.author.id), ...m.author });
   const mine = m.author_id === S.me.id, viewing = S.view.cid === m.channel_id && document.hasFocus();
   const t = S.typing.get(m.channel_id); if (t) { t.delete(m.author_id); renderTyping(); }
-  if (S.view.cid === m.channel_id && list) appendMessage(m);
+  if (S.view.cid === m.channel_id && list && !gap) appendMessage(m);
   if (mine) return;
   const ch = channelById(m.channel_id), isDM = ch?.type === 1, pol = notifPolicy(ch);
   const text = m.content || '', direct = text.includes(`<@${S.me.id}>`);
@@ -239,7 +249,8 @@ function applyRoute(first) {
   }
   S.replyTo = null; S.editing = null; S.pending = []; closeFloating();
   $('#app').classList.remove('nav-open');
-  renderRail(); renderSide(); renderMain();
+  syncWatching(null); renderRail(); renderSide(); renderMain();
+  for (const sel of ['#msgs', '#stage', '#members', '#side .list']) { const e = $(sel); if (e) { e.classList.remove('sw'); void e.offsetWidth; e.classList.add('sw'); } }
 }
 
 // =============== Shell ===============
@@ -251,6 +262,7 @@ function buildShell() {
   $('#app').replaceChildren(h('div#rail'), h('div#side'), h('div#main'));
   $('#app').addEventListener('dragover', (e) => { if (e.dataTransfer?.types?.includes('Files') && $('#composer')) { e.preventDefault(); if (!$('#dropzone')) $('#chat').append(h('div#dropzone', 'Solte para anexar')); } });
   $('#app').addEventListener('dragleave', (e) => { if (!e.relatedTarget) $('#dropzone')?.remove(); });
+  initPlugins({ S, go, channelById, guild, user, dmPeer, menu });
   $('#app').addEventListener('drop', (e) => { $('#dropzone')?.remove(); if (e.dataTransfer?.files?.length && $('#composer')) { e.preventDefault(); [...e.dataTransfer.files].forEach(addFile); } });
 }
 
@@ -285,7 +297,7 @@ function voiceCard(anchor, g) {
   const r = anchor.getBoundingClientRect();
   const card = h('div#vcard', { style: { top: Math.max(8, r.top) + 'px' } }, h('div.vct', g.name),
     voiceRooms(g).map(({ ch, users }) => h('div.vcroom', h('div.vcname', icon('voice', 14), h('span', ch.name), callTimer(users)),
-      h('div.vcusers', users.map(v => h('span.vcu', { title: nameOf(v.user_id, g.id) }, avatar(user(v.user_id), 24, { status: false }), h('span', nameOf(v.user_id, g.id))))))));
+      h('div.vcusers', users.map(v => h('span.vcu', { title: nameOf(v.user_id, g.id), oncontextmenu: (e) => userMenu(e, v.user_id, g.id) }, avatar(user(v.user_id), 24, { status: false }), h('span', nameOf(v.user_id, g.id))))))));
   document.body.append(card);
 }
 // cronômetro da chamada: conta desde que a sala deixou de estar vazia
@@ -419,7 +431,7 @@ function voicePanel() {
   if (!voice?.active) return h('div.hidden');
   const ch = channelById(voice.channelId), g = guild(ch?.guild_id);
   return h('div#voice-panel',
-    h('div.t', h('span', { style: { display: 'flex', gap: '6px', alignItems: 'center' } }, pingEl(), 'Voz conectada'),
+    h('div.t', h('span', { style: { display: 'flex', gap: '6px', alignItems: 'center' } }, pingEl(), 'Voz conectada', voice.joinedAt && h('span.vtimer.vp-time', { 'data-start': voice.joinedAt, title: 'Tempo na chamada' }, fmtDur(Date.now() - voice.joinedAt))),
       h('span.vp-btns', h('button.ibtn', { title: 'Testar microfone, ruído e eco', onclick: (e) => openMicPanel(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) }) }, icon('waves', 20)),
         h('button.ibtn', { title: 'Desconectar', onclick: () => voice.leave() }, icon('phoneoff', 20)))),
     h('div.sub', { title: 'Ir para a sala', onclick: () => ch && (ch.type === 1 ? go('@me', ch.id) : go(ch.guild_id, ch.id)) }, `${ch?.type === 1 ? 'Chamada com ' + user(dmPeer(ch).id).display_name : (ch?.name || '')}${g ? ' / ' + g.name : ''}`),
@@ -427,7 +439,8 @@ function voicePanel() {
       h('button' + (voice.cam ? '.on' : ''), { title: 'Câmera', onclick: () => voiceAct(() => voice.toggleCam()) }, icon('video', 20)),
       h('button' + (voice.screen ? '.on' : ''), { title: 'Transmitir tela', onclick: startShare }, icon('screen', 20)),
       h('button', { title: 'Configurações de voz', onclick: () => openSettings('voice', ctxSettings()) }, icon('sliders', 20)),
-      h('button', { title: 'Soundboard', onclick: (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) }) }, icon('voice', 20))));
+      h('button', { title: 'Soundboard', onclick: (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) }) }, icon('voice', 20)),
+      h('button', { title: 'Música (bot)', onclick: (e) => openMusic(e.currentTarget, voice) }, icon('music', 20))));
 }
 const voiceAct = (fn) => Promise.resolve().then(fn).catch(e => toast(e.message, true));
 function joinVoice(cid) {
@@ -484,12 +497,22 @@ async function openDM(uid) {
   const dm = await tryApi('POST', '/dms', { user_id: uid }); if (!dm) return;
   S.dms.set(dm.id, dm); closeFloating(); go('@me', dm.id);
 }
+// quem está em voz numa sala que dá para entrar (e que não é a minha)
+function joinableCall(uid) {
+  const vs = S.voice.get(uid); if (!vs || uid === S.me.id || vs.channel_id === voice?.channelId) return null;
+  return channelById(vs.channel_id) || null;
+}
+function joinCallOf(uid) {
+  const ch = joinableCall(uid); if (!ch) return toast('Essa pessoa não está mais em uma chamada', true);
+  go(ch.guild_id || '@me', ch.id); joinVoice(ch.id);
+}
 function userMenu(e, uid, gid) {
   if (uid === S.me.id) return menu(e, [{ label: 'Perfil', fn: () => profile(e.target, uid, gid) }, S.prefs.devMode && { label: 'Copiar ID do usuário', fn: () => navigator.clipboard?.writeText(uid) }]);
   const g = gid && gid !== '@me' ? guild(gid) : null, rt = relType(uid);
   menu(e, [
     { label: 'Perfil', fn: () => profile(e.target, uid, gid) },
     { label: 'Enviar mensagem', fn: () => openDM(uid) },
+    joinableCall(uid) && { label: 'Entrar na chamada', fn: () => joinCallOf(uid) },
     rt === 0 && { label: 'Adicionar amigo', fn: () => tryApi('POST', '/relationships', { username: user(uid).username }).then(r => r && toast('Pedido enviado')) },
     rt === 1 && { label: 'Remover amigo', danger: true, fn: () => tryApi('DELETE', `/relationships/${uid}`) },
     rt !== 2 ? { label: 'Bloquear', danger: true, fn: () => tryApi('PUT', `/relationships/${uid}`, { type: 2 }) } : { label: 'Desbloquear', fn: () => tryApi('DELETE', `/relationships/${uid}`) },
@@ -526,6 +549,7 @@ function renderMain() {
         : [h('span.hash', icon(vc ? 'voice' : 'hash', 24)), h('span', ch.name), ch.topic && h('span.topic', ch.topic)],
       h('div.spacer'),
       dm && h('button.ibtn', { title: voice.channelId === ch.id ? 'Desligar' : 'Iniciar chamada de voz', onclick: () => voice.channelId === ch.id ? voice.leave() : joinVoice(ch.id) }, icon(voice.channelId === ch.id ? 'phoneoff' : 'phone')),
+      h('button.ibtn', { title: 'Ir para a primeira mensagem', onclick: jumpToTop }, icon('totop')),
       h('button.ibtn', { title: 'Mensagens fixadas', onclick: showPins }, icon('pin')),
       h('button.ibtn.inbox-btn', { title: 'Caixa de entrada (menções e respostas)', onclick: showInbox }, icon('bell'), inboxBadge()),
       !dm && h('button.ibtn' + (S.membersOpen ? '.sel' : ''), { title: 'Lista de membros', onclick: () => { S.membersOpen = !S.membersOpen; renderMain(); } }, icon('users')),
@@ -551,6 +575,7 @@ function stickToBottom(box) {
 // ---------- mensagens ----------
 async function loadChannel(cid) {
   const box = $('#msgs');
+  if (detached.delete(cid)) { S.messages.delete(cid); S.loaded.delete(cid); }
   if (!S.messages.has(cid)) {
     box.replaceChildren(h('div.empty', 'Carregando…'));
     const list = await tryApi('GET', `/channels/${cid}/messages?limit=50`); if (!list) return;
@@ -561,6 +586,12 @@ async function loadChannel(cid) {
   renderMessages(false); ack(cid); renderTyping();
   const msgs = $('#msgs');
   msgs.onscroll = async () => {
+    if (detached.has(cid) && !msgs.dataset.loading && msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 80) {
+      msgs.dataset.loading = 1; const cur = S.messages.get(cid), newer = await tryApi('GET', `/channels/${cid}/messages?limit=50&after=${cur[cur.length - 1]?.id}`); delete msgs.dataset.loading;
+      if (newer?.length) { newer.forEach(x => S.users.set(x.author.id, { ...S.users.get(x.author.id), ...x.author })); cur.push(...newer); renderMessages(true); }
+      if (newer && newer.length < 50) { detached.delete(cid); $('#detached-bar')?.remove(); }
+      return;
+    }
     if (msgs.scrollTop > 40 || S.loaded.get(cid) || msgs.dataset.loading) return;
     msgs.dataset.loading = 1;
     const list = S.messages.get(cid), older = await tryApi('GET', `/channels/${cid}/messages?limit=50&before=${list[0]?.id}`);
@@ -592,7 +623,8 @@ function appendMessage(m) {
   const near = box.scrollHeight - box.scrollTop - box.clientHeight < 160 || m.author_id === S.me.id;
   const prev = list[list.length - 2];
   if (!prev || !sameDay(prev.created_at, m.created_at)) box.append(h('div.daysep', h('span', dayLabel(m.created_at))));
-  box.append(msgEl(m, prev && sameDay(prev.created_at, m.created_at) ? prev : null));
+  const mel = msgEl(m, prev && sameDay(prev.created_at, m.created_at) ? prev : null); mel.classList.add('fresh'); setTimeout(() => mel.classList.remove('fresh'), 700);
+  box.append(mel);
   if (near) { box.stick = true; box.scrollTop = box.scrollHeight; }
 }
 function refreshAuthors(uid) { if ($('#msgs') && S.view.cid && S.messages.get(S.view.cid)?.some(m => m.author_id === uid)) renderMessages(true); }
@@ -622,8 +654,10 @@ function msgEl(m, prev) {
     if (m.edited_at) body.append(h('span.edited', '(editado)'));
     if (S.prefs.embedLinks !== false) for (const url of (m.content.match(/https?:\/\/\S+/g) || []).filter(isImageUrl).slice(0, 3)) body.append(h('div.attach', h('img', { src: url, loading: 'lazy', referrerPolicy: 'no-referrer', onclick: () => lightbox(url) })));
     body.querySelectorAll('.spoiler').forEach(s => (s.onclick = () => s.classList.add('shown')));
-    body.querySelectorAll('.mention[data-uid]').forEach(s => (s.onclick = () => profile(s, s.dataset.uid, gid)));
+    body.querySelectorAll('.mention[data-uid]').forEach(s => { s.onclick = () => profile(s, s.dataset.uid, gid); const u = S.users.get(s.dataset.uid); if (u) s.prepend(mentionAvatar(u)); });
     el.append(body);
+    const tr = translationBlock(m, (t) => { const d = h('div.body'); d.innerHTML = md(t, ctxFor(gid)); return d; });
+    if (tr) el.append(tr);
   }
   appendAttachments(el, m, mine || (gid && can(gid, PERM.MANAGE_MESSAGES)));
   if (m.reactions?.length) el.append(h('div.reactions', m.reactions.map(r => h('div.react' + (r.users.includes(S.me.id) ? '.me' : ''), { title: r.users.map(u => nameOf(u, gid)).join(', '), onclick: () => react(m, r.emoji, !r.users.includes(S.me.id)) }, reactionFace(r.emoji), h('span', r.users.length)))));
@@ -654,6 +688,7 @@ function appendAttachments(el, m, canDel) {
 }
 function attachEl(f) {
   const ext = (f.name.split('.').pop() || '').toLowerCase(), url = f.url;
+  if (f.voice) return voiceEl(f);
   if (isImg(f)) return h('div.attach', h('img', { src: url, alt: f.name, loading: 'lazy', onclick: () => lightbox(url) }));
   if (/^(mp4|webm)$/.test(ext)) return h('div.attach', h('video', { src: url, controls: true, preload: 'metadata' }));
   if (/^(mp3|ogg|wav|m4a)$/.test(ext)) return h('div.attach', h('audio', { src: url, controls: true, preload: 'none' }));
@@ -664,13 +699,20 @@ function msgMenu(e, m) {
   menu(e, [
     { label: 'Adicionar reação', fn: () => emojiPicker(document.querySelector(`[data-mid="${m.id}"]`) || document.body, (em) => react(m, em, true)) },
     { label: 'Responder', fn: () => setReply(m) },
+    !mine && { label: 'Mencionar', fn: () => mentionUser(m.author_id) },
     m.content && { label: 'Copiar texto', fn: () => navigator.clipboard?.writeText(m.content) },
+    m.content && { label: isTranslated(m) ? 'Mostrar original' : 'Traduzir', fn: () => toggleTranslation(m, refreshMsg) },
     mine && { label: 'Editar mensagem', fn: () => { S.editing = m.id; renderMessages(true); } },
     (mod || !gid) && { label: m.pinned ? 'Desafixar mensagem' : 'Fixar mensagem', fn: () => tryApi(m.pinned ? 'DELETE' : 'PUT', `/channels/${m.channel_id}/pins/${m.id}`) },
     S.prefs.devMode && { label: 'Copiar ID da mensagem', fn: () => navigator.clipboard?.writeText(m.id) },
     (mine || mod) && '-',
     (mine || mod) && { label: 'Apagar mensagem', danger: true, fn: async () => { if (await confirmBox('Apagar mensagem', 'Tem certeza?', 'Apagar')) tryApi('DELETE', `/channels/${m.channel_id}/messages/${m.id}`); } },
   ]);
+}
+// redesenha uma única mensagem (por ex. depois de traduzir)
+function refreshMsg(m) {
+  const list = S.messages.get(m.channel_id), i = list?.findIndex(x => x.id === m.id), el = document.querySelector(`[data-mid="${m.id}"]`);
+  if (i >= 0 && el) el.replaceWith(msgEl(m, list[i - 1] && sameDay(list[i - 1].created_at, m.created_at) ? list[i - 1] : null));
 }
 const react = (m, emoji, add) => tryApi(add ? 'PUT' : 'DELETE', `/channels/${m.channel_id}/messages/${m.id}/reactions/${encodeURIComponent(emoji)}`);
 async function saveEdit(m, text) {
@@ -686,6 +728,20 @@ async function jumpTo(mid) {
     S.messages.set(S.view.cid, list); S.loaded.set(S.view.cid, false); renderMessages(false); el = document.querySelector(`[data-mid="${mid}"]`);
   }
   if (el) { $('#msgs').stick = false; el.scrollIntoView({ block: 'center' }); el.classList.add('hl'); setTimeout(() => el.classList.remove('hl'), 2000); }
+}
+async function jumpToTop() {
+  const cid = S.view.cid; if (!cid) return;
+  const list = await tryApi('GET', `/channels/${cid}/messages?oldest=1&limit=50`); if (!list || S.view.cid !== cid) return;
+  list.forEach(m => S.users.set(m.author.id, { ...S.users.get(m.author.id), ...m.author }));
+  S.messages.set(cid, list); S.loaded.set(cid, true); $('#detached-bar')?.remove();
+  renderMessages(false); const box = $('#msgs'); box.stick = false; box.scrollTop = 0;
+  if (list.length >= 50) {
+    detached.add(cid);
+    $('#chat')?.append(h('div#detached-bar', h('span', 'Você está vendo o início do canal'), h('button.btn', { onclick: () => { $('#detached-bar')?.remove(); loadChannel(cid); } }, 'Ir para o presente')));
+  }
+}
+function mentionAvatar(u) {
+  return u.avatar ? h('img.mav', { src: u.avatar, alt: '', loading: 'lazy' }) : h('span.mav.mini', { style: { background: u.color || '#5865f2' } }, (u.display_name || u.username || '?')[0].toUpperCase());
 }
 async function showPins() {
   const list = await tryApi('GET', `/channels/${S.view.cid}/pins`); if (!list) return;
@@ -752,6 +808,8 @@ function composer(ch, label) {
   });
   const wrap = h('div#composer-wrap', h('div#reply-bar.hidden'), h('div#attach-prev.hidden'),
     h('div#composer', h('button.ibtn', { title: 'Anexar arquivo', onclick: () => fileIn.click() }, icon('plus', 24)), fileIn, ta,
+      h('button.ibtn', { title: 'Traduzir o que você escreveu (ou use $en, $es… no início)', onclick: (e) => draftMenu(e, ta) }, icon('translate', 22)),
+      h('button.ibtn', { title: 'Gravar mensagem de voz', onclick: (e) => recordVoiceMessage(ch, e.currentTarget.closest('#composer'), { onSent: () => { S.replyTo = null; renderReplyBar(); } }) }, icon('mic', 22)),
       h('button.ibtn', { title: 'Emoji', onclick: (e) => emojiPicker(e.currentTarget, (em) => { ta.setRangeText(em, ta.selectionStart, ta.selectionEnd, 'end'); ta.focus(); }) }, icon('smile', 24))));
   setTimeout(() => { renderReplyBar(); renderPendingPrev(); ta.focus(); }, 0);
   return wrap;
@@ -777,13 +835,17 @@ function renderPendingPrev() {
 }
 const renderPending = () => { };
 async function sendMsg(ta, ch) {
-  const content = ta.value; const atts = S.pending.filter(p => p.state === 'ok');
+  let content = ta.value; const atts = S.pending.filter(p => p.state === 'ok');
   if (S.pending.some(p => p.state === 'up')) return toast('Aguarde o envio dos anexos…');
   if (!content.trim() && !atts.length) return;
+  const typed = content; content = resolveMentions(ta, content);
+  if (/^\$[a-z]{2,3}(-[A-Z]{2})?\s/.test(content)) {
+    try { const t = await translateOutgoing(content); if (t) content = t; } catch (e) { return toast('Não foi possível traduzir: ' + e.message, true); }
+  }
   ta.value = ''; $('.ac')?.remove();
   const body = { content, reply_to: S.replyTo?.id, attachments: atts.map(({ url, name, size, type }) => ({ url, name, size, type })) };
   S.replyTo = null; S.pending = []; renderReplyBar(); renderPendingPrev();
-  try { await api('POST', `/channels/${ch.id}/messages`, body); } catch (e) { toast(e.message, true); ta.value = content; }
+  try { await api('POST', `/channels/${ch.id}/messages`, body); } catch (e) { toast(e.message, true); ta.value = typed; }
 }
 function autocomplete(ta) {
   $('.ac')?.remove();
@@ -804,7 +866,7 @@ function autocomplete(ta) {
   const extra = 'everyone'.startsWith(q) && ch.guild_id ? [{ id: 'everyone', display_name: '@everyone', username: 'Notifica todos' }] : [];
   const all = [...extra, ...found]; if (!all.length) return;
   const box = h('div.ac', all.map((u, i) => h('div.it' + (i ? '' : '.sel'), { onmousedown: (e) => {
-    e.preventDefault?.(); const start = ta.selectionStart - m[1].length - 1, ins = u.id === 'everyone' ? '@everyone ' : `<@${u.id}> `;
+    e.preventDefault?.(); const start = ta.selectionStart - m[1].length - 1, ins = u.id === 'everyone' ? '@everyone ' : `@${u.display_name} `; if (u.id !== 'everyone') addMention(ta, u.display_name, u.id);
     ta.setRangeText(ins, start, ta.selectionStart, 'end'); box.remove(); ta.focus();
   } }, u.id !== 'everyone' && avatar(u, 24, { status: false }), h('b', u.display_name), h('small', u.username))));
   $('#chat').append(box);
@@ -840,6 +902,9 @@ function renderHome(main) {
   const tab = S.view.tab, rels = [...S.rels.values()];
   const tabs = [['online', 'Online'], ['all', 'Todos'], ['pending', 'Pendentes'], ['blocked', 'Bloqueados']];
   const q = h('input.fsearch', { placeholder: 'Buscar', oninput: () => draw() });
+  const sortBy = S.prefs.friendSort || 'status', ORD = { online: 0, idle: 1, dnd: 2, invisible: 3, offline: 4 };
+  const sorter = h('select.fsort', { title: 'Ordenar', onchange: (e) => { S.prefs.friendSort = e.target.value; savePrefs?.(); draw(); } }, [['status', 'Ordenar: status'], ['name', 'Ordenar: nome']].map(([v, l]) => h('option', { value: v, selected: v === sortBy }, l)));
+  const cnt = (k) => rels.filter(r => k === 'online' ? r.type === 1 && S.users.get(r.user.id)?.status !== 'offline' : k === 'all' ? r.type === 1 : k === 'pending' ? r.type === 3 || r.type === 4 : r.type === 2).length;
   const pane = h('div.pane');
   const draw = () => {
     pane.replaceChildren();
@@ -850,7 +915,9 @@ function renderHome(main) {
     }
     let list = rels.filter(r => tab === 'online' ? r.type === 1 && S.users.get(r.user.id).status !== 'offline' : tab === 'all' ? r.type === 1 : tab === 'pending' ? r.type === 3 || r.type === 4 : r.type === 2);
     list = list.filter(r => r.user.username.toLowerCase().includes(q.value.toLowerCase()) || r.user.display_name.toLowerCase().includes(q.value.toLowerCase()));
-    pane.append(q, h('div.fh', `${{ online: 'Online', all: 'Todos os amigos', pending: 'Pendentes', blocked: 'Bloqueados' }[tab]} — ${list.length}`));
+    const nm = (r) => (r.user.display_name || r.user.username).toLowerCase();
+    list.sort((a, b) => sortBy === 'name' ? nm(a).localeCompare(nm(b)) : (ORD[S.users.get(a.user.id)?.status || 'offline'] - ORD[S.users.get(b.user.id)?.status || 'offline']) || nm(a).localeCompare(nm(b)));
+    pane.append(h('div.fctl', q, sorter), h('div.fh', `${{ online: 'Online', all: 'Todos os amigos', pending: 'Pendentes', blocked: 'Bloqueados' }[tab]} — ${list.length}`));
     if (!list.length) return pane.append(h('div.empty', { style: { marginTop: '60px' } }, h('div', { style: { fontSize: '48px' } }, '🌙'), h('p', tab === 'pending' ? 'Nenhum pedido pendente.' : tab === 'blocked' ? 'Você não bloqueou ninguém.' : 'Ninguém por aqui ainda. Que tal adicionar um amigo?')));
     for (const r of list) {
       const u = S.users.get(r.user.id) || r.user;
@@ -865,7 +932,7 @@ function renderHome(main) {
   const pendingN = rels.filter(r => r.type === 3).length;
   main.replaceChildren(h('div#home',
     h('div#topbar', h('button.ibtn.menu-btn', { onclick: () => $('#app').classList.toggle('nav-open'), style: { display: innerWidth <= 640 ? 'flex' : 'none' } }, icon('more')), icon('users', 24), h('span', 'Amigos'), h('div', { style: { width: '1px', height: '24px', background: 'var(--divider)', margin: '0 8px' } }),
-      h('div.tabs', tabs.map(([k, l]) => h('div.tab' + (tab === k ? '.active' : ''), { onclick: () => { S.view.tab = k; renderHome(main); } }, l, k === 'pending' && pendingN > 0 && h('span.pill', { style: { marginLeft: '6px', background: 'var(--red)', color: '#fff', borderRadius: '8px', padding: '0 5px', fontSize: '12px' } }, pendingN))),
+      h('div.tabs', tabs.map(([k, l]) => h('div.tab' + (tab === k ? '.active' : ''), { onclick: () => { S.view.tab = k; renderHome(main); } }, l, k !== 'pending' && h('span.tcount', cnt(k)), k === 'pending' && pendingN > 0 && h('span.pill', { style: { marginLeft: '6px', background: 'var(--red)', color: '#fff', borderRadius: '8px', padding: '0 5px', fontSize: '12px' } }, pendingN))),
         h('div.tab.green' + (tab === 'add' ? '.active' : ''), { onclick: () => { S.view.tab = 'add'; renderHome(main); } }, 'Adicionar amigo'))),
     pane));
   draw();
@@ -878,6 +945,23 @@ function videoFor(key, stream, muted = true) {
   if (!v || v.srcObject !== stream) { v = h('video', { autoplay: true, playsInline: true, muted }); v.srcObject = stream; vidCache.set(key, v); v.play?.().catch(() => { }); }
   return v;
 }
+// avisa o servidor de quais transmissões estou assistindo (tela visível agora)
+function syncWatching(want) {
+  const cur = S.watching, next = new Set(want || []);
+  for (const id of next) if (!cur.has(id)) gwSend('STREAM_WATCH', { target: id, watching: true });
+  for (const id of cur) if (!next.has(id)) gwSend('STREAM_WATCH', { target: id, watching: false });
+  S.watching = next;
+}
+// selo "N assistindo" com os avatares dos espectadores; clique abre a lista
+function viewersBadge(streamer) {
+  const ids = (S.viewers.get(streamer) || []).filter(id => id !== S.me.id || streamer !== S.me.id), n = ids.length;
+  if (!n) return null;
+  const nm = (id) => nameOf(id, channelById(S.view.cid)?.guild_id);
+  return h('button.viewers', { title: ids.map(nm).join(', '), onclick: (e) => {
+    e.stopPropagation();
+    popout(e.currentTarget, h('div.vwlist', h('h4', `Assistindo (${n})`), ids.map(id => h('div.vwrow', { onclick: (ev) => profile(ev.currentTarget, id, channelById(S.view.cid)?.guild_id) }, avatar(user(id), 28, { status: false }), h('span', nm(id))))), 'right');
+  } }, icon('eye', 14), h('div.vstack', ids.slice(0, 4).map(id => avatar(user(id), 18, { status: false }))), h('span', n > 4 ? `+${n - 4}` : String(n)));
+}
 function renderVoiceUI(speakOnly) {
   if (speakOnly) {
     document.querySelectorAll('.tile[data-uid],.avatar[data-uid]').forEach(e => e.classList.toggle('speaking', voice.speaking.has(e.dataset.uid)));
@@ -886,8 +970,8 @@ function renderVoiceUI(speakOnly) {
     return;
   }
   renderSide();
-  const stage = $('#stage'); if (!stage) return;
-  const ch = channelById(S.view.cid); if (!ch || ![1, 2].includes(ch.type)) return;
+  const stage = $('#stage'); if (!stage) return syncWatching(null);
+  const ch = channelById(S.view.cid); if (!ch || ![1, 2].includes(ch.type)) return syncWatching(null);
   const dm = ch.type === 1, gid = ch.guild_id;
   const members = [...S.voice.values()].filter(v => v.channel_id === ch.id);
   const inRoom = voice.channelId === ch.id;
@@ -903,7 +987,7 @@ function renderVoiceUI(speakOnly) {
       vid.onresize = vid.onloadedmetadata = upd; upd();
       const vol = !mine && h('input', { type: 'range', min: 0, max: 100, value: voice.streamVolumes[uid] ?? 100, title: 'Volume da transmissão', onclick: (e) => e.stopPropagation(), oninput: (e) => voice.setStreamVolume(uid, +e.target.value) });
       tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { 'data-key': key, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); } }, vid,
-        h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info), h('div.tctl', vol, h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); vid.requestFullscreen?.(); } }, icon('expand', 18)))));
+        h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info), viewersBadge(uid), h('div.tctl', vol, h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); vid.requestFullscreen?.(); } }, icon('expand', 18)))));
     }
     const ckey = 'c:' + uid;
     if (cam && v.video) live.add(ckey);
@@ -912,6 +996,7 @@ function renderVoiceUI(speakOnly) {
       h('div.label', v.mute && icon('micoff', 14), v.deaf && icon('headoff', 14), nm(uid))));
   }
   for (const k of [...vidCache.keys()]) if (!live.has(k)) vidCache.delete(k);
+  syncWatching(inRoom ? members.filter(v => v.screen && v.user_id !== S.me.id && voice.peers.get(v.user_id)?.streams.screen).map(v => v.user_id) : null);
   const hasFocus = tiles.some(t => t.dataset.key === S.focus);
   const focusTile = hasFocus ? tiles.find(t => t.dataset.key === S.focus) : tiles.find(t => t.classList.contains('screen'));
   const btn = (ic, title, on, fn, cls = '') => h('button.roundbtn' + (on ? '.off' : '') + cls, { title, onclick: fn, oncontextmenu: cls === '.mic' ? noiseMenu : null }, icon(ic, 24));
@@ -921,6 +1006,7 @@ function renderVoiceUI(speakOnly) {
     btn('video', 'Câmera', !!voice.cam, () => voiceAct(() => voice.toggleCam())),
     btn('screen', voice.screen ? 'Parar transmissão' : 'Transmitir tela', !!voice.screen, startShare),
     btn('voice', 'Soundboard', false, (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) })),
+    !dm && btn('music', 'Música (bot)', false, (e) => openMusic(e.currentTarget, voice)),
     btn('sliders', 'Configurações de voz', false, () => openSettings('voice', ctxSettings())),
     btn('phoneoff', 'Desconectar', false, () => voice.leave(), '.red'),
   ] : h('button.btn.green', { style: { minWidth: '220px', minHeight: '46px', fontSize: '16px' }, onclick: () => joinVoice(ch.id) }, dm ? 'Atender / entrar na chamada' : 'Entrar na sala de voz'));
