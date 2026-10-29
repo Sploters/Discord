@@ -254,3 +254,6 @@ input[type=range] { width: 100%; accent-color: var(--brand); }
 
 @media (max-width: 900px) { #members, #results { display: none; } #side { width: 200px; } }
 @media (max-width: 640px) { #side { position: absolute; z-index: 30; left: 72px; height: 100%; transform: translateX(-130%); transition: transform .2s; } #app.nav-open #side { transform: none; } .msg { padding-right: 12px; } }
+#voice-panel .abr { flex: none; font-size: 11px; font-weight: 700; padding: 1px 5px; border-radius: 4px; color: var(--text-muted); background: var(--bg-mod-hover); font-variant-numeric: tabular-nums; white-space: nowrap; }
+#voice-panel .abr:hover { color: var(--text-strong); background: var(--bg-mod-sel); }
+.abrpop .qpop { width: 300px; } .abrpop .qpop .seg button { flex: 1 1 30%; }

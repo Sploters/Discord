@@ -1,5 +1,6 @@
 // Recursos inspirados em plugins do Discord: abas de canais e favoritos, esconder lista de canais, menção rápida.
 import { h, icon } from './util.js';
+import { chName } from './chnames.js';
 
 const KEY = 'lc_tabs', HIDE_KEY = 'lc_hide_side';
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
@@ -14,7 +15,7 @@ function label(t) {
   const ch = D.channelById(t.cid);
   if (!ch) return 'Canal removido';
   if (ch.type === 1) return '@' + D.user(D.dmPeer(ch).id).display_name;
-  return (ch.type === 2 ? '🔊 ' : '# ') + ch.name;
+  return (ch.type === 2 ? '🔊 ' : '# ') + chName(ch);
 }
 const title = (t) => { const ch = D.channelById(t.cid), g = ch?.guild_id && D.guild(ch.guild_id); return label(t) + (g ? ' — ' + g.name : ''); };
 const here = () => ({ gid: D.S.view.gid || '@me', cid: D.S.view.cid || null });

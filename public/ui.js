@@ -2,9 +2,9 @@
 import { h } from './util.js';
 import { SCREEN_PRESETS } from './voice.js';
 
-export const seg = (opts, val, on) => {
+export const seg = (opts, val, on) => { // opts: objeto ou lista de [valor, rótulo] (para manter a ordem com chaves numéricas)
   const box = h('div.seg');
-  const draw = (v) => box.replaceChildren(...Object.entries(opts).map(([k, l]) => h('button' + (String(k) === String(v) ? '.on' : ''), { onclick: () => { on(isNaN(+k) ? k : +k); draw(k); } }, l)));
+  const draw = (v) => box.replaceChildren(...(Array.isArray(opts) ? opts : Object.entries(opts)).map(([k, l]) => h('button' + (String(k) === String(v) ? '.on' : ''), { onclick: () => { on(isNaN(+k) ? k : +k); draw(k); } }, l)));
   draw(val); return box;
 };
 export const toggle = (on, fn) => { const s = h('div.switch' + (on ? '.on' : ''), { role: 'switch', tabIndex: 0, onclick: () => { on = !on; s.classList.toggle('on', on); fn(on); }, onkeydown: (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); s.click(); } } }); return s; };

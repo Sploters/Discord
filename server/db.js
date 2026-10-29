@@ -46,6 +46,9 @@ const addCol = (t, c, d) => { try { db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${
 addCol('users', 'pronouns', "TEXT DEFAULT ''");
 addCol('users', 'banner', 'TEXT');
 addCol('users', 'status_emoji', "TEXT DEFAULT ''");
+addCol('users', 'theme_primary', 'TEXT'); // tema do perfil: gradiente principal → destaque
+addCol('users', 'theme_accent', 'TEXT');
+addCol('users', 'name_style', 'TEXT'); // estilo do nome: JSON { font, effect, c1, c2 }
 addCol('guilds', 'banner', 'TEXT');
 addCol('guilds', 'description', "TEXT DEFAULT ''");
 addCol('guilds', 'accent', 'TEXT');

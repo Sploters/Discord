@@ -1,6 +1,6 @@
 import { h, icon, avatar } from './util.js';
 import { S, api, tryApi, savePrefs, user, guild, can, PERM, PERM_LABELS, toast, confirmBox, promptBox, modal, nameOf, desktop, applyTheme, emojiPicker, channelById } from './state.js';
-import { createMic, newAudioContext, NOISE_MODES } from './voice.js';
+import { createMic, newAudioContext, NOISE_MODES, VOICE_BITRATES } from './voice.js';
 import { profileCard } from './card.js';
 import { seg, toggle, row, section, slider, qualityPanel, captureKey, comboToAccel } from './ui.js';
 import { playSound, SOUND_DEFS, soundCfg } from './sounds.js';
@@ -8,9 +8,13 @@ import { soundSources, mySounds, addSound, editSound, playLocal, soundVol } from
 import { applyOutput } from './quick.js';
 import { timeoutDialog, removeTimeout, banDialog, timedOutUntil, bansPage, auditPage } from './mod.js';
 import { LANGS, myLang } from './translate.js';
+import { SOLID_THEMES, GRADIENT_THEMES, gradientCss, decodeTheme, PROFILE_THEMES, parseColorPair, isLightPair, NAME_FONTS, NAME_EFFECTS, TWO_COLOR_EFFECTS, styleName } from './themes.js';
+import { openThemeEditor, shareTheme } from './themeeditor.js';
+import { prettyName, DEFAULT_NAME_WORDS } from './chnames.js';
+import { PREVIEW_TRIGGERS } from './chpreview.js';
+import { MAX_VOL } from './quick.js';
 
 const SWATCHES = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55d', '#faa61a', '#9b59b6', '#1abc9c', '#e67e22', '#3498db', '#95a5a6', '#2c2f33', '#ffffff'];
-const THEMES = { dark: 'Escuro', darker: 'Preto (AMOLED)', midnight: 'Meia-noite', light: 'Claro' };
 const save = () => savePrefs();
 
 async function uploadFile(accept = 'image/*', maxMB = 12) {
@@ -46,7 +50,7 @@ const hint = (t) => h('div.hintline', t);
 // ============================ shell ============================
 const USER_GROUPS = [
   ['Configurações do usuário', [['account', 'Minha conta', 'senha usuário nome excluir'], ['profile', 'Perfil', 'avatar banner bio status pronomes'], ['privacy', 'Privacidade e segurança', 'amizade sessões dispositivos links']]],
-  ['Configurações do aplicativo', [['appearance', 'Aparência', 'tema cor fonte compacto hora'], ['accessibility', 'Acessibilidade', 'movimento contraste saturação'], ['voice', 'Voz e vídeo', 'microfone ruído eco câmera dispositivo bitrate'], ['stream', 'Transmissão', 'tela resolução fps qualidade'], ['sounds', 'Sons', 'efeitos silenciar ensurdecer entrar sair'], ['soundboard', 'Soundboard', 'sons pad meme'], ['notifications', 'Notificações', 'avisos menção silenciar servidor'], ['keys', 'Atalhos', 'teclas push-to-talk mutar'], ['advanced', 'Avançado', 'desenvolvedor exportar importar redefinir']]],
+  ['Configurações do aplicativo', [['appearance', 'Aparência', 'tema cor fonte compacto hora'], ['accessibility', 'Acessibilidade', 'movimento contraste saturação'], ['voice', 'Voz e vídeo', 'microfone ruído eco câmera dispositivo bitrate'], ['stream', 'Transmissão', 'tela resolução fps qualidade'], ['sounds', 'Sons', 'efeitos silenciar ensurdecer entrar sair'], ['soundboard', 'Soundboard', 'sons pad meme'], ['extras', 'Recursos extras', 'plugins imagem lente zoom galeria prévia canal nomes volume amplificar'], ['notifications', 'Notificações', 'avisos menção silenciar servidor'], ['keys', 'Atalhos', 'teclas push-to-talk mutar'], ['advanced', 'Avançado', 'desenvolvedor exportar importar redefinir']]],
 ];
 const SERVER_PAGES = [['overview', 'Visão geral', 'nome ícone banner dono'], ['channels', 'Canais', 'ordem renomear'], ['roles', 'Cargos', 'permissões'], ['emojis', 'Emojis', ''], ['sounds', 'Soundboard do servidor', 'sons áudio'], ['members', 'Membros', 'expulsar banir castigo'], ['bans', 'Banimentos', 'banir desbanir'], ['audit', 'Registro de auditoria', 'log moderação histórico'], ['invites', 'Convites', 'link']];
 
@@ -54,12 +58,12 @@ export function openSettings(kind, ctx) {
   document.getElementById('settings')?.remove();
   const root = h('div#settings'), pane = h('div.pane'), nav = h('div.nav'), content = h('div.content', pane);
   const cleanups = []; const reg = (f) => cleanups.push(f);
-  const close = () => { cleanups.forEach(f => f()); cleanups.length = 0; root.remove(); document.removeEventListener('keydown', esc); };
-  const esc = (e) => { if (e.key === 'Escape' && !document.querySelector('.backdrop') && !pane.querySelector('.capturing') && !document.querySelector('.popout,.menu,.emoji-picker')) close(); };
+  const close = () => { cleanups.forEach(f => f()); cleanups.length = 0; root.remove(); document.removeEventListener('keydown', esc); document.dispatchEvent(new Event('settings-closed')); };
+  const esc = (e) => { if (e.key === 'Escape' && !document.getElementById('tedit') && !document.querySelector('.backdrop') && !pane.querySelector('.capturing') && !document.querySelector('.popout,.menu,.emoji-picker')) close(); };
   const isServer = kind === 'server', gid = ctx?.gid;
   const R = {
     account: () => accountPage(close), profile: () => profilePage(), privacy: (r) => privacyPage(r), appearance: () => appearancePage(), accessibility: () => accessibilityPage(),
-    voice: (r) => voicePage(ctx, r), stream: () => streamPage(), sounds: () => soundsPage(), soundboard: () => soundboardPage(), notifications: () => notificationsPage(), keys: () => keysPage(), advanced: () => advancedPage(ctx), app: () => appPage(),
+    voice: (r) => voicePage(ctx, r), stream: () => streamPage(), sounds: () => soundsPage(), soundboard: () => soundboardPage(), notifications: () => notificationsPage(), keys: () => keysPage(), extras: () => extrasPage(ctx), advanced: () => advancedPage(ctx), app: () => appPage(),
     overview: () => overviewPage(gid), channels: () => channelsPage(gid), roles: () => rolesPage(gid), emojis: () => emojisPage(gid), sounds_srv: () => serverSoundsPage(gid), members: () => membersPage(gid), bans: () => bansPage(gid), audit: () => auditPage(gid), invites: () => invitesPage(gid),
   };
   const sKey = (k) => (isServer && k === 'sounds' ? 'sounds_srv' : k);
@@ -78,7 +82,7 @@ export function openSettings(kind, ctx) {
   };
   root.append(nav, content, h('button.close', { onclick: close, title: 'Fechar (Esc)' }, icon('x', 20), h('small', 'ESC')));
   document.getElementById('layer').append(root); document.addEventListener('keydown', esc);
-  const first = isServer ? 'overview' : (['account', 'profile', 'privacy', 'appearance', 'accessibility', 'voice', 'stream', 'sounds', 'soundboard', 'notifications', 'keys', 'advanced', 'app'].includes(kind) ? kind : 'account');
+  const first = isServer ? 'overview' : (['account', 'profile', 'privacy', 'appearance', 'accessibility', 'voice', 'stream', 'sounds', 'soundboard', 'notifications', 'keys', 'extras', 'advanced', 'app'].includes(kind) ? kind : 'account');
   current = first; drawNav(); show(first);
 }
 
@@ -111,7 +115,7 @@ function deleteDialog(close) {
 // ============================ Perfil ============================
 function profilePage() {
   const me = S.me;
-  const base = () => ({ display_name: me.display_name, avatar: me.avatar, banner: me.banner, color: me.color, banner_color: me.banner_color || me.color, pronouns: me.pronouns || '', bio: me.bio || '', custom_status: me.custom_status || '', status_emoji: me.status_emoji || '' });
+  const base = () => ({ name_style: me.name_style ? { ...me.name_style } : null, theme_primary: me.theme_primary || null, theme_accent: me.theme_accent || null, display_name: me.display_name, avatar: me.avatar, banner: me.banner, color: me.color, banner_color: me.banner_color || me.color, pronouns: me.pronouns || '', bio: me.bio || '', custom_status: me.custom_status || '', status_emoji: me.status_emoji || '' });
   const d = base(), wrap = h('div.profile-ed'), prevBox = h('div.preview'), bar = h('div.savebar.hidden');
   const draft = () => ({ ...me, ...d, status: me.status === 'invisible' ? 'invisible' : 'online' });
   const redraw = () => { prevBox.replaceChildren(h('div.popout.static', profileCard(draft(), { accent: d.banner ? null : d.banner_color }))); };
@@ -122,14 +126,71 @@ function profilePage() {
     card(row('Avatar', 'Escolha um dos avatares prontos ou envie PNG, JPG, GIF ou WebP até 12 MB', h('div.btns', h('button.btn', { onclick: () => avatarPicker(d.avatar, (url) => { d.avatar = url; touch(); }) }, 'Trocar'), h('button.btn.grey', { onclick: () => { d.avatar = null; touch(); } }, 'Remover'))),
       row('Banner', 'Imagem de fundo do seu cartão', h('div.btns', h('button.btn', { onclick: async () => { const u = await uploadImage(); if (u) { d.banner = u.url; touch(); } } }, 'Enviar'), h('button.btn.grey', { onclick: () => { d.banner = null; touch(); } }, 'Remover')))),
     card(h('label.f', 'Nome de exibição', bind('display_name', h('input', { maxLength: 32 }))), h('label.f', 'Pronomes', bind('pronouns', h('input', { maxLength: 40, placeholder: 'ele/dele, ela/dela, elu/delu…' }))),
-      h('label.f', 'Cor do avatar'), swatches(d.color, (c) => { d.color = c; touch(); }), h('label.f', { style: { marginTop: '16px' } }, 'Cor do banner / destaque'), swatches(d.banner_color, (c) => { d.banner_color = c; touch(); })),
+      h('label.f', 'Cor do avatar'), swatches(d.color, (c) => { d.color = c; touch(); }), h('label.f', { style: { marginTop: '16px' } }, 'Cor do banner / destaque'), swatches(d.banner_color, (c) => { d.banner_color = c; touch(); }), hint('Com tema do perfil ativo, o banner sem imagem usa a cor principal do tema.')),
+    nameStyleCard(d, touch),
+    profileThemeCard(d, touch),
     card(h('label.f', 'Status personalizado'), h('div.btns', emojiBtn, bind('custom_status', h('input', { maxLength: 100, placeholder: 'O que você está fazendo?', style: { flex: 1, background: 'var(--bg-tert)', border: 0, borderRadius: '3px', padding: '10px', minWidth: 0 } }))),
       h('label.f', { style: { marginTop: '16px' } }, 'Presença', seg({ online: 'Online', idle: 'Ausente', dnd: 'Não perturbe', invisible: 'Invisível' }, me.status, (v) => tryApi('PATCH', '/me', { status: v }))),
       h('label.f', { style: { marginTop: '16px' } }, 'Sobre mim', bind('bio', h('textarea', { rows: 4, maxLength: 300 })))));
   bar.append(h('span', 'Cuidado — você tem alterações não salvas!'), h('div.btns', h('button.btn.link', { onclick: () => { Object.assign(d, base()); bar.classList.add('hidden'); redraw(); wrap.replaceWith(profilePage()); } }, 'Redefinir'),
-    h('button.btn.green', { onclick: async () => { const r = await tryApi('PATCH', '/me', { display_name: d.display_name, avatar: d.avatar || '', banner: d.banner || '', color: d.color, banner_color: d.banner_color, pronouns: d.pronouns, bio: d.bio, custom_status: d.custom_status, status_emoji: d.status_emoji }); if (r) { toast('Perfil salvo!'); bar.classList.add('hidden'); } } }, 'Salvar alterações')));
+    h('button.btn.green', { onclick: async () => { const r = await tryApi('PATCH', '/me', { display_name: d.display_name, avatar: d.avatar || '', banner: d.banner || '', color: d.color, banner_color: d.banner_color, pronouns: d.pronouns, bio: d.bio, custom_status: d.custom_status, status_emoji: d.status_emoji, theme_primary: d.theme_primary || '', theme_accent: d.theme_accent || '', name_style: d.name_style }); if (r) { toast('Perfil salvo!'); bar.classList.add('hidden'); } } }, 'Salvar alterações')));
   wrap.append(h('h2', 'Perfil'), h('div.pgrid', left, h('div.col', h('div.fh', 'Prévia'), prevBox)), bar);
   redraw(); return wrap;
+}
+
+// estilo do nome: fonte, efeito e até duas cores; a prévia ao lado mostra o resultado
+function nameStyleCard(d, touch) {
+  const box = h('div.nstyle'), name = () => d.display_name || S.me.username;
+  const cur = () => d.name_style || { font: 'default', effect: 'solid', c1: '#5865f2', c2: '#eb459e' };
+  const upd = (patch) => { d.name_style = { ...cur(), ...patch }; touch(); draw(); };
+  const sample = (ns) => styleName(h('span', name()), ns);
+  const colorIn = (key, label) => {
+    const val = h('span', { style: { fontFamily: 'Consolas, monospace', fontSize: '14px', color: 'var(--text-strong)' } }, cur()[key].toUpperCase());
+    const pick = h('input', { type: 'color', value: cur()[key], oninput: () => { d.name_style = { ...cur(), [key]: pick.value }; val.textContent = pick.value.toUpperCase(); touch(); box.querySelectorAll('.nsgrid span.ns').forEach(s => s.style.setProperty(key === 'c1' ? '--n1' : '--n2', pick.value)); } });
+    return h('div.pcol', h('label.f', { style: { marginBottom: 0 } }, label), h('div', pick, val));
+  };
+  const draw = () => {
+    const s = cur(), two = TWO_COLOR_EFFECTS.has(s.effect);
+    box.replaceChildren(
+      hint('Muda como seu nome aparece nas mensagens, na lista de membros e no seu perfil. Todo mundo vê.'),
+      h('label.f', { style: { margin: '12px 0 0' } }, 'Fonte'),
+      h('div.nsgrid', Object.entries(NAME_FONTS).map(([k, l]) => h('button' + (s.font === k ? '.on' : ''), { onclick: () => upd({ font: k }) }, sample({ ...s, font: k }), h('small', l)))),
+      h('label.f', { style: { margin: 0 } }, 'Efeito'),
+      h('div.nsgrid', Object.entries(NAME_EFFECTS).map(([k, l]) => h('button' + (s.effect === k ? '.on' : ''), { onclick: () => upd({ effect: k }) }, sample({ ...s, effect: k }), h('small', l)))),
+      s.effect !== 'rainbow' && h('div.ptheme', h('div.pcols', colorIn('c1', two ? 'Cor 1' : 'Cor'), two && colorIn('c2', s.effect === 'gradient' || s.effect === 'shimmer' ? 'Cor 2' : 'Cor do efeito'))),
+      d.name_style && h('div.pfoot', h('span'), h('button.btn.grey', { onclick: () => { d.name_style = null; touch(); draw(); } }, 'Remover estilo')));
+  };
+  draw();
+  return card(h('label.f', { style: { marginBottom: '4px' } }, 'Estilo do nome'), box);
+}
+
+// tema do perfil: duas cores (principal → destaque), prontos ou colados do discordthemes.com
+function profileThemeCard(d, touch) {
+  const ctls = {}, gal = h('div.pgal'), foot = h('div.pfoot');
+  const sync = () => { // atualiza campos, galeria e rodapé sem recriar os seletores (o nativo fecharia no meio do arraste)
+    for (const [k, c] of Object.entries(ctls)) { if (document.activeElement !== c.txt) c.txt.value = d[k]?.toUpperCase() || ''; if (d[k]) c.pick.value = d[k]; }
+    gal.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', d.theme_primary === PROFILE_THEMES[i].p && d.theme_accent === PROFILE_THEMES[i].a));
+    foot.replaceChildren(h('a', { href: 'https://discordthemes.com/', target: '_blank', rel: 'noopener' }, 'Mais temas em discordthemes.com →'),
+      d.theme_primary && h('button.btn.grey', { onclick: () => set(null, null) }, 'Remover tema'));
+  };
+  const set = (p, a) => { d.theme_primary = p; d.theme_accent = a; touch(); sync(); };
+  const colorCtl = (label, key) => {
+    const other = key === 'theme_primary' ? 'theme_accent' : 'theme_primary';
+    // a primeira cor escolhida vale para as duas, para o tema já aparecer
+    const apply = (v) => { d[key] = v; d[other] ||= v; touch(); sync(); };
+    const txt = h('input', { type: 'text', maxLength: 7, placeholder: '#000000', onchange: () => { const v = parseColorPair(txt.value)?.[0]; if (v) apply(v); else sync(); } });
+    const pick = h('input', { type: 'color', value: '#5865f2', oninput: () => apply(pick.value) });
+    ctls[key] = { txt, pick };
+    return h('div.pcol', h('label.f', { style: { marginBottom: 0 } }, label), h('div', pick, txt));
+  };
+  const paste = h('input.ppaste', { placeholder: 'Cole as cores aqui (ex.: #53aba9 #2f4451)', oninput: () => { const pr = parseColorPair(paste.value); if (pr) { paste.value = ''; set(...pr); toast('Cores aplicadas na prévia'); } } });
+  gal.append(...PROFILE_THEMES.map(t => h('button' + (isLightPair(t.p, t.a) ? '.tlight' : '.tdark'),
+    { title: t.name + (t.dt ? ' — discordthemes.com' : '') + `
+${t.p} → ${t.a}`, style: { background: `linear-gradient(${t.p}, ${t.a})` }, onclick: () => set(t.p, t.a) }, t.name)));
+  const box = h('div.ptheme', hint('Duas cores viram o fundo do seu cartão: a principal no topo e a de destaque embaixo. Todo mundo vê.'),
+    h('div.pcols', colorCtl('Principal', 'theme_primary'), colorCtl('Destaque', 'theme_accent')), paste, gal, foot);
+  sync();
+  return card(h('label.f', { style: { marginBottom: '4px' } }, 'Tema do perfil'), box);
 }
 
 // ============================ Privacidade ============================
@@ -138,6 +199,17 @@ const agentName = (a) => {
   const o = /Windows/.test(a) ? 'Windows' : /Android/.test(a) ? 'Android' : /iPhone|iPad/.test(a) ? 'iOS' : /Mac/.test(a) ? 'macOS' : /Linux/.test(a) ? 'Linux' : '';
   return `${b}${o ? ' em ' + o : ''}`;
 };
+// lista de bloqueados (antes era uma aba em Amigos)
+function blockedCard() {
+  const box = card();
+  const draw = () => {
+    const list = [...S.rels.values()].filter(r => r.type === 2);
+    box.replaceChildren(...(list.length ? list.map(r => { const u = S.users.get(r.user.id) || r.user; return h('div.frow.blk', { style: { cursor: 'default' } }, avatar(u, 36, { status: false }), h('div.fn', h('b', u.display_name), h('small', '@' + u.username)),
+      h('button.btn.grey', { onclick: async () => { if (await tryApi('DELETE', `/relationships/${u.id}`)) { S.rels.delete(u.id); draw(); toast(`${u.display_name} desbloqueado`); } } }, 'Desbloquear')); })
+      : [hint('Você não bloqueou ninguém. Para bloquear, clique com o botão direito em alguém → Bloquear.')]));
+  };
+  draw(); return box;
+}
 function privacyPage(reg) {
   const sessions = h('div');
   const draw = async () => {
@@ -148,16 +220,31 @@ function privacyPage(reg) {
   draw();
   return h('div', h('h2', 'Privacidade e segurança'),
     section('Pedidos de amizade'), card(seg({ all: 'Qualquer pessoa pode enviar', none: 'Ninguém pode enviar' }, S.friendPolicy || 'all', (v) => { S.friendPolicy = v; api('PUT', '/me/settings', { friend_policy: v }).catch(e => toast(e.message, true)); })),
+    section('Usuários bloqueados'), blockedCard(),
     section('Links'), card(row('Confirmar antes de abrir links externos', 'Mostra o endereço antes de abrir.', toggle(!!S.prefs.confirmLinks, v => { S.prefs.confirmLinks = v; save(); }))),
     section('Dispositivos conectados'), card(hint('Encerre sessões que você não reconhece.'), sessions, h('button.btn.red', { style: { marginTop: '12px' }, onclick: async () => { if (await confirmBox('Sair de todos os outros dispositivos', 'Essas sessões precisarão entrar de novo.', 'Encerrar todas')) { await tryApi('DELETE', '/sessions'); draw(); } } }, 'Encerrar todas as outras sessões')));
 }
 
 // ============================ Aparência / acessibilidade ============================
 function appearancePage() {
-  const th = h('div.cards'), drawTh = () => th.replaceChildren(...Object.entries(THEMES).map(([k, l]) => h('div.ncard.theme-' + k + (S.prefs.theme === k ? '.on' : ''), { onclick: () => { S.prefs.theme = k; save(); applyTheme(); drawTh(); } }, h('b', l))));
+  const th = h('div.cards'), gr = h('div.cards'), mine = h('div.cards');
+  const pick = (k) => { S.prefs.theme = k; save(); applyTheme(); drawTh(); };
+  const gcard = (k, t, extra) => h('div.ncard.tgrad' + (t.base === 'light' ? '.light' : '') + (S.prefs.theme === k ? '.on' : ''), { style: { background: gradientCss(t) }, onclick: () => pick(k) }, extra, h('b', t.name));
+  const drawTh = () => {
+    th.replaceChildren(...Object.entries(SOLID_THEMES).map(([k, l]) => h('div.ncard.theme-' + k + (S.prefs.theme === k ? '.on' : ''), { onclick: () => pick(k) }, h('b', l))));
+    gr.replaceChildren(...Object.entries(GRADIENT_THEMES).map(([k, t]) => gcard('g:' + k, t, h('div.tact', h('button', { title: 'Personalizar uma cópia', onclick: (e) => { e.stopPropagation(); openThemeEditor({ ...t, name: t.name + ' (cópia)' }, { onExit: drawTh }); } }, icon('edit', 14))))));
+    mine.replaceChildren(...(S.prefs.customThemes || []).map(t => gcard('c:' + t.id, t, h('div.tact',
+      h('button', { title: 'Copiar código para compartilhar', onclick: (e) => { e.stopPropagation(); shareTheme(t); } }, icon('link', 14)),
+      h('button', { title: 'Editar', onclick: (e) => { e.stopPropagation(); openThemeEditor(t, { onExit: drawTh }); } }, icon('edit', 14)),
+      h('button', { title: 'Excluir', onclick: async (e) => { e.stopPropagation(); if (await confirmBox('Excluir tema', `"${t.name}" será removido.`, 'Excluir')) { S.prefs.customThemes = S.prefs.customThemes.filter(x => x !== t); if (S.prefs.theme === 'c:' + t.id) S.prefs.theme = t.base; save(); applyTheme(); drawTh(); } } }, icon('trash', 14))))),
+      h('div.ncard.tnew', { onclick: () => openThemeEditor(null, { onExit: drawTh }) }, icon('plus', 20), h('small', 'Criar tema')),
+      h('div.ncard.tnew', { onclick: async () => { const code = await promptBox('Importar tema', 'Cole o código do tema', '', 'Importar'); if (code == null) return; const t = decodeTheme(code); if (!t) return toast('Código de tema inválido', true); openThemeEditor(t, { onExit: drawTh }); } }, icon('dl', 20), h('small', 'Importar código')));
+  };
   drawTh();
   const set = (k) => (v) => { S.prefs[k] = v; save(); applyTheme(); };
   return h('div', h('h2', 'Aparência'), section('Tema'), card(th),
+    section('Temas em gradiente'), card(gr, hint('Passe o mouse num tema e clique no lápis para criar uma versão sua a partir dele.')),
+    section('Seus temas'), card(mine, hint('Crie um gradiente com até 5 cores e compartilhe: o código colado no chat vira um cartão com o botão "Usar tema".')),
     section('Cor de destaque'), card(swatches(S.prefs.accent, (c) => { S.prefs.accent = c; save(); applyTheme(); })),
     section('Fonte'), card(h('label.f', 'Família da fonte', seg({ default: 'Padrão', rounded: 'Arredondada', serif: 'Serifada', mono: 'Monoespaçada', dyslexia: 'Legível (dislexia)' }, S.prefs.fontFamily, set('fontFamily'))),
       h('label.f', 'Tamanho da interface', slider(80, 140, S.prefs.zoom, 5, set('zoom'), v => v + '%'))),
@@ -173,6 +260,55 @@ function appearancePage() {
       row('Manter o original ao enviar com $idioma', 'Ex.: "$en bom dia" envia "good morning" e, em spoiler, o texto original.', toggle(!!S.prefs.trSendOriginal, v => { S.prefs.trSendOriginal = v; save(); }))),
     hint('Clique direito numa mensagem → Traduzir. No compositor, o botão de tradução converte o rascunho. O texto passa pelo servidor, que usa o tradutor configurado (LIBRETRANSLATE_URL ou Google).'));
 }
+// ============================ Recursos extras (inspirados em plugins) ============================
+function extrasPage(ctx) {
+  const P = S.prefs, set = (k, after) => (v) => { P[k] = v; save(); after?.(); };
+  // nomes de canais: prévia ao vivo com exemplos
+  const SAMPLES = ['bate-papo', 'regras_e_avisos', '🎮-jogos-de-rpg', 'faq-do-servidor'];
+  const demo = h('div.chdemo');
+  const drawDemo = () => demo.replaceChildren(...SAMPLES.map(n => h('div.chdemo-row', h('span.from', '# ' + n), h('span.arrow', '→'), h('b', '# ' + prettyName(n)))));
+  const words = h('input', { value: P.chNameWords ?? DEFAULT_NAME_WORDS, placeholder: DEFAULT_NAME_WORDS, oninput: () => { P.chNameWords = words.value; save(); drawDemo(); } });
+  drawDemo();
+  // volumes salvos
+  const vols = h('div');
+  const drawVols = () => {
+    const ent = Object.entries(P.userVolumes || {});
+    vols.replaceChildren(row('Volumes salvos por pessoa', ent.length ? ent.map(([id, v]) => `${nameOf(id)}: ${v}%`).join(' • ') : 'Nenhum — todos em 100%.',
+      ent.length > 0 && h('button.btn.grey', { onclick: () => { P.userVolumes = {}; P.streamVolumes = {}; save(); ctx?.voice?.peers.forEach((_, id) => ctx.voice.applyVolume(id)); drawVols(); toast('Volumes redefinidos para 100%'); } }, 'Redefinir')));
+  };
+  drawVols();
+  return h('div', h('h2', 'Recursos extras'),
+    hint('Recursos inspirados em plugins populares da comunidade, feitos do zero para o LocalCord.'),
+    section('Visualizador de imagens'),
+    card(
+      row('Lente de zoom no clique', 'Desligado: segure o botão do mouse sobre a imagem. Ligado: um clique liga e outro desliga.', toggle(!!P.lensClick, set('lensClick'))),
+      row('Lente pixelada', 'Mostra os pixels nítidos ao ampliar, em vez de suavizar.', toggle(!!P.lensPixel, set('lensPixel'))),
+      h('label.f', { style: { marginTop: '12px' } }, 'Tamanho da lente', slider(100, 500, P.lensSize ?? 220, 10, set('lensSize'), v => v + ' px')),
+      h('label.f', 'Ampliação da lente', slider(1.5, 12, P.lensZoom ?? 3, .5, set('lensZoom'), v => v + '×'))),
+    hint('No visualizador: ← → trocam de imagem do canal, R gira, F alterna tamanho real, roda do mouse com a lente muda o zoom e Shift + roda muda o tamanho. Clique com o botão direito numa imagem para copiar, salvar ou abrir no navegador.'),
+    section('Prévia de canais'),
+    card(
+      h('label.f', 'Como abrir a prévia', seg(PREVIEW_TRIGGERS, P.chPreview ?? 'hover', set('chPreview'))),
+      h('label.f', { style: { marginTop: '12px' } }, 'Atraso ao passar o mouse', slider(100, 2000, P.chPreviewDelay ?? 450, 50, set('chPreviewDelay'), v => (v / 1000).toFixed(2).replace('.', ',') + ' s')),
+      h('label.f', 'Quantidade de mensagens', slider(10, 100, P.chPreviewCount ?? 20, 5, set('chPreviewCount'))),
+      h('label.f', 'Altura da prévia', slider(20, 90, P.chPreviewHeight ?? 45, 5, set('chPreviewHeight'), v => v + '% da janela')),
+      h('label.f', 'Escurecer o chat atrás da prévia', slider(0, 70, P.chPreviewDim ?? 0, 5, set('chPreviewDim'), v => v + '%')),
+      row('Mostrar quem está digitando', null, toggle(P.chPreviewTyping !== false, set('chPreviewTyping')))),
+    hint('A prévia não abre o canal nem marca as mensagens como lidas.'),
+    section('Nomes de canais'),
+    card(
+      row('Maiúscula no início das palavras', null, toggle(!!P.chCaps, set('chCaps', drawDemo))),
+      row('Trocar hífens e sublinhados por espaços', null, toggle(!!P.chDashes, set('chDashes', drawDemo))),
+      row('Remover emojis do nome', null, toggle(!!P.chNoEmoji, set('chNoEmoji', drawDemo))),
+      row('Aplicar também em canais de voz', null, toggle(!!P.chNamesVoice, set('chNamesVoice'))),
+      h('label.f', { style: { marginTop: '12px' } }, 'Palavras com grafia fixa (separadas por vírgula)', words),
+      demo),
+    hint('Só muda como os nomes aparecem para você: na lista, no topo, na caixa de mensagem e nas abas. O nome real do canal continua o mesmo.'),
+    section('Volume das pessoas'),
+    card(vols),
+    hint(`Clique com o botão direito em alguém na chamada → "Volume do usuário" para digitar valores até ${MAX_VOL}% (acima de 100% o som é amplificado). Também dá para ajustar cada pessoa no menu de saída de áudio (seta ao lado do fone).`));
+}
+
 function accessibilityPage() {
   const set = (k) => (v) => { S.prefs[k] = v; save(); applyTheme(); };
   return h('div', h('h2', 'Acessibilidade'),
@@ -229,7 +365,7 @@ function voicePage(ctx, reg) {
       row('Ganho automático', 'Equaliza o volume da sua voz.', toggle(S.prefs.agc !== false, v => { S.prefs.agc = v; save(); restartTest(); }))),
     section('Teste de microfone'), card(h('div.btns', testBtn, h('span', { style: { color: 'var(--text-muted)' } }, 'Ouvir a mim mesmo (use fones!)'), toggle(false, (v) => { loopback = v; test?.setLoopback(v); })), meterWrap),
     section('Modo de entrada'), card(seg({ vad: 'Atividade de voz', ptt: 'Push-to-talk' }, S.prefs.inputMode, v => { S.prefs.inputMode = v; save(); voice.applyMute(); }), h('div', { style: { marginTop: '12px' } }, pttBtn), hint('O push-to-talk funciona com a janela do app em foco.')),
-    section('Qualidade da voz'), card(h('label.f', 'Taxa de bits do áudio', slider(8, 128, S.prefs.voiceBitrate, 8, v => { S.prefs.voiceBitrate = v; save(); voice.peers.forEach(p => voice.tuneAudio(p)); }, v => v + ' kbps')), hint('Mais kbps = voz mais fiel, usando mais rede. 64 kbps é um bom padrão.')),
+    section('Qualidade da voz'), card(h('label.f', 'Taxa de bits do áudio', seg(VOICE_BITRATES, S.prefs.voiceBitrate ?? 'auto', v => { S.prefs.voiceBitrate = v; save(); voice?.retuneAudio(); })), hint('Automático começa em 128 kbps e sobe até 384 kbps quando a rede aguenta (desce na hora se houver perda). O nível atual aparece no painel de voz.')),
     section('Câmera'), card(sel('videoinput', 'videoId', 'Câmera'), h('label.f', 'Resolução', seg({ 360: '360p', 720: '720p', 1080: '1080p' }, S.prefs.camRes, v => { S.prefs.camRes = v; save(); })), h('label.f', 'Quadros por segundo', seg({ 15: '15', 30: '30', 60: '60' }, S.prefs.camFps, v => { S.prefs.camFps = v; save(); })), camBtn, camPrev),
     section('Diagnóstico'), card(h('button.btn.grey', { onclick: async () => { const st = voice.active ? await voice.stats() : []; modal('Diagnóstico de voz', voice.active ? 'Conexões com os outros participantes' : 'Você não está em uma sala de voz', h('div', ...st.map(s => row(user(s.uid).display_name, `estado: ${s.state}`, h('b', s.rtt != null ? s.rtt + ' ms' : '—'))), !st.length && hint('Entre em uma sala de voz para ver os dados.')), [{ label: 'Fechar' }]); } }, 'Ver conexões agora'),
       h('button.btn.grey', { style: { marginLeft: '8px' }, onclick: () => { voice.active ? voice.rebuildMic().then(() => toast('Áudio reiniciado')) : toast('Entre em uma sala primeiro', true); } }, 'Reiniciar áudio')),

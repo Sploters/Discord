@@ -18,6 +18,13 @@ export const SCREEN_PRESETS = {
   res: { 720: '720p', 1080: '1080p', 1440: '1440p', source: 'Fonte (original)' },
   fps: { 15: '15 fps', 30: '30 fps', 60: '60 fps', 120: '120 fps' },
 };
+export const VOICE_BITRATES = [['auto', 'Automático'], [64, '64 kbps'], [128, '128 kbps'], [256, '256 kbps'], [384, '384 kbps']];
+const OPUS_MAX = 384; // teto anunciado no SDP; a taxa real é limitada por encodings[].maxBitrate
+// pede Opus em estéreo e até 384 kbps ao outro lado (mono do Opus para em ~256 kbps)
+const opusHi = (sdp) => {
+  const pt = sdp.match(/a=rtpmap:(\d+) opus\/48000/i)?.[1]; if (!pt) return sdp;
+  return sdp.replace(new RegExp(`a=fmtp:${pt} (.*)`), (_, f) => `a=fmtp:${pt} ${f.replace(/;?(maxaveragebitrate|stereo|sprop-stereo)=\d+/g, '')};stereo=1;sprop-stereo=1;maxaveragebitrate=${OPUS_MAX * 1000}`);
+};
 const bitrateFor = (res, fps) => {
   const base = { 720: 2.5, 1080: 5, 1440: 9, source: 10 }[res] || 5;
   return Math.round(base * (fps >= 120 ? 2.4 : fps >= 60 ? 1.6 : fps <= 15 ? .6 : 1) * 1e6);
@@ -87,8 +94,9 @@ export const newAudioContext = () => new (window.AudioContext || window.webkitAu
 export class Voice {
   constructor({ send, ice, myId, onUpdate, prefs }) {
     this.send = send; this.ice = ice; this.myId = myId; this.onUpdate = onUpdate; this.prefs = prefs;
+    this.autoKbps = 128; // nível escolhido pelo modo automático
     this.channelId = null; this.peers = new Map(); this.micGraph = null; this.mic = null; this.cam = null; this.screen = null;
-    this.muted = false; this.deafened = false; this.ptt = false; this.speaking = new Set(); this.sbActive = new Set(); this.volumes = {}; this.streamVolumes = {};
+    this.muted = false; this.deafened = false; this.ptt = false; this.speaking = new Set(); this.sbActive = new Set();
     this.ctx = null; this.analysers = new Map(); this.timer = null; this.screenOpts = null;
   }
   get active() { return !!this.channelId; }
@@ -198,7 +206,7 @@ export class Voice {
   }
   sfuEncodings(source) {
     const o = this.screenOpts || {};
-    if (source === 'mic') return [{ maxBitrate: (this.prefs.voiceBitrate || 64) * 1000, priority: 'high', networkPriority: 'high' }];
+    if (source === 'mic') return [{ maxBitrate: this.micKbps() * 1000, priority: 'high', networkPriority: 'high' }];
     if (source === 'cam') return [ // simulcast: o servidor escolhe a camada que cabe na banda de cada um
       { rid: 'r0', scaleResolutionDownBy: 4, maxBitrate: 150_000 },
       { rid: 'r1', scaleResolutionDownBy: 2, maxBitrate: 500_000 },
@@ -216,7 +224,7 @@ export class Voice {
     const cur = s.producers[source];
     if (cur && !cur.closed) return cur.replaceTrack({ track });
     const opts = { track, appData: { source }, encodings: this.sfuEncodings(source), stopTracks: false };
-    if (source === 'mic') opts.codecOptions = { opusStereo: false, opusDtx: true, opusFec: true, opusMaxAverageBitrate: (this.prefs.voiceBitrate || 64) * 1000 };
+    if (source === 'mic') opts.codecOptions = { opusStereo: true, opusDtx: true, opusFec: true, opusMaxAverageBitrate: OPUS_MAX * 1000 };
     if (source === 'screenaudio') opts.codecOptions = { opusStereo: true, opusFec: true, opusMaxAverageBitrate: 128000 };
     if (source === 'screen') opts.codecOptions = { videoGoogleStartBitrate: 1000 };
     const p = await s.send.produce(opts);
@@ -284,7 +292,7 @@ export class Voice {
     this.peers.set(uid, p);
     pc.onicecandidate = (e) => e.candidate && this.send('VOICE_SIGNAL', { to: uid, data: { cand: e.candidate } });
     pc.onnegotiationneeded = async () => {
-      try { p.making = true; await pc.setLocalDescription(); this.send('VOICE_SIGNAL', { to: uid, data: { desc: pc.localDescription } }); }
+      try { p.making = true; await this.setLocal(pc); this.send('VOICE_SIGNAL', { to: uid, data: { desc: pc.localDescription } }); }
       catch (e) { console.warn('negotiation', e); } finally { p.making = false; }
     };
     pc.ontrack = (e) => {
@@ -310,9 +318,48 @@ export class Voice {
     if (!this.mic && !p.pc.getTransceivers().length) p.pc.addTransceiver('audio', { direction: 'recvonly' });
     if (this.screen) this.tuneSender(p, 'screenvideo', 'screen'); if (this.cam) this.tuneSender(p, 'camvideo', 'cam');
   }
-  tuneAudio(p) { // taxa de bits da voz (kbps) e prioridade
-    const s = this.sfu ? this.sfu.producers.mic?.rtpSender : p.senders.micaudio; if (!s) return;
-    setTimeout(async () => { try { const prm = s.getParameters(); if (!prm.encodings?.length) prm.encodings = [{}]; prm.encodings[0].maxBitrate = (this.prefs.voiceBitrate || 64) * 1000; prm.encodings[0].priority = 'high'; await s.setParameters(prm); } catch { } }, 800);
+  async setLocal(pc) {
+    const d = pc.signalingState === 'have-remote-offer' ? await pc.createAnswer() : await pc.createOffer();
+    await pc.setLocalDescription({ type: d.type, sdp: opusHi(d.sdp) });
+  }
+  // taxa de bits da voz em kbps: a escolhida ou, no automático, a do último ajuste
+  micKbps() { const v = this.prefs.voiceBitrate; return v === 'auto' || v == null ? this.autoKbps : Math.min(+v || 64, OPUS_MAX); }
+  tuneAudio(p, delay = 800) { // taxa de bits da voz (kbps) e prioridade
+    const s = this.sfu ? this.sfu.producers.mic?.rtpSender : p?.senders.micaudio; if (!s) return;
+    setTimeout(async () => { try { const prm = s.getParameters(); if (!prm.encodings?.length) prm.encodings = [{}]; prm.encodings[0].maxBitrate = this.micKbps() * 1000; prm.encodings[0].priority = 'high'; await s.setParameters(prm); } catch { } }, delay);
+  }
+  retuneAudio() { if (this.sfu) this.tuneAudio(null, 0); else this.peers.forEach(p => this.tuneAudio(p, 0)); }
+  // modo automático: escolhe 64/128/256/384 kbps pela banda disponível, perda e latência do envio
+  async adaptAudio() {
+    if (this.prefs.voiceBitrate !== 'auto' && this.prefs.voiceBitrate != null) return;
+    const pcs = this.sfu ? [this.sfu.send].filter(Boolean) : [...this.peers.values()].map(p => p.pc);
+    let avail = Infinity, loss = 0, rtt = 0, seen = false, sent = 0;
+    for (const pc of pcs) {
+      try {
+        for (const r of (await pc.getStats()).values()) {
+          if (r.type === 'candidate-pair' && (r.nominated || r.state === 'succeeded')) {
+            seen = true; if (r.availableOutgoingBitrate) avail = Math.min(avail, r.availableOutgoingBitrate); if (r.currentRoundTripTime) rtt = Math.max(rtt, r.currentRoundTripTime * 1000);
+          }
+          if (r.type === 'remote-inbound-rtp' && r.kind === 'audio' && r.fractionLost != null) loss = Math.max(loss, r.fractionLost);
+          if (r.type === 'outbound-rtp' && r.kind === 'audio' && r.bytesSent != null) sent += r.bytesSent;
+        }
+      } catch { }
+    }
+    const now = Date.now();
+    if (this.lastSent && now > this.lastSent.t) this.sentKbps = Math.max(0, Math.round((sent - this.lastSent.b) * 8 / (now - this.lastSent.t)));
+    this.lastSent = { t: now, b: sent };
+    if (!seen) { this.adaptFrom = null; return; }
+    if (this.adaptFrom == null) { this.adaptFrom = now; this.autoAt = now; } // nova conexão: espera estabilizar antes de subir
+    // a voz não deve passar de ~1/4 da banda (vídeo e tela dividem o mesmo link).
+    // A estimativa de banda começa baixa e sobe nos primeiros segundos: só vale depois de 10 s e se repetir duas leituras seguidas
+    const share = avail === Infinity || now - this.adaptFrom < 10000 ? Infinity : avail / 4000;
+    const byBw = [384, 256, 128, 64].find(k => k <= share) || 64, bwLow = byBw < this.autoKbps && this.bwLowPrev;
+    this.bwLowPrev = byBw < this.autoKbps;
+    const want = loss > .08 || rtt > 400 ? 64 : loss > .03 || rtt > 250 ? 128 : bwLow || byBw >= this.autoKbps ? byBw : this.autoKbps;
+    // sobe um nível por vez e só depois de estabilizar; desce na hora
+    const next = want < this.autoKbps ? want : want > this.autoKbps && now - (this.autoAt || 0) > 10000 ? [64, 128, 256, 384].find(k => k > this.autoKbps) : this.autoKbps;
+    if (next !== this.autoKbps) { this.autoKbps = next; this.autoAt = now; this.retuneAudio(); }
+    else if (want <= this.autoKbps) this.autoAt = now;
   }
   sendMeta(uid) {
     const streams = {};
@@ -350,7 +397,7 @@ export class Voice {
         p.ignore = !p.polite && collision;
         if (p.ignore) return;
         await pc.setRemoteDescription(data.desc);
-        if (data.desc.type === 'offer') { await pc.setLocalDescription(); this.send('VOICE_SIGNAL', { to: from, data: { desc: pc.localDescription } }); }
+        if (data.desc.type === 'offer') { await this.setLocal(pc); this.send('VOICE_SIGNAL', { to: from, data: { desc: pc.localDescription } }); }
       } else if (data.cand) {
         try { await pc.addIceCandidate(data.cand); } catch (e) { if (!p.ignore) throw e; }
       }
@@ -358,7 +405,7 @@ export class Voice {
   }
   drop(uid) {
     const p = this.peers.get(uid); if (!p) return;
-    p.pc?.close(); p.audioEl?.remove(); p.screenAudioEl?.remove();
+    p.pc?.close(); p.audioEl?.remove(); p.screenAudioEl?.remove(); this.unboost(p, 'audioEl'); this.unboost(p, 'screenAudioEl');
     for (const id of p.consumers?.keys() || []) { this.sfu?.consumers.get(id)?.c.close(); this.sfu?.consumers.delete(id); }
     this.analysers.get(uid)?.src.disconnect(); this.analysers.delete(uid); this.speaking.delete(uid);
     this.peers.delete(uid);
@@ -366,8 +413,8 @@ export class Voice {
 
   attachAudio(p, stream, kind) {
     const key = kind === 'screen' ? 'screenAudioEl' : 'audioEl';
-    p[key]?.remove();
-    const a = document.createElement('audio'); a.autoplay = true; a.srcObject = stream; a.style.display = 'none';
+    p[key]?.remove(); this.unboost(p, key);
+    const a = document.createElement('audio'); a.autoplay = true; a.srcObject = stream; a.style.display = 'none'; a.raw = stream;
     if (this.prefs.outputId && a.setSinkId) a.setSinkId(this.prefs.outputId).catch(() => { });
     document.body.append(a); p[key] = a; this.applyVolume(p.uid); a.play?.().catch(() => { });
     if (kind === 'mic') this.watch(p.uid, stream);
@@ -375,11 +422,35 @@ export class Voice {
   applyVolume(uid) {
     const p = this.peers.get(uid); if (!p) return;
     const master = (this.prefs.volume ?? 100) / 100;
-    if (p.audioEl) { p.audioEl.volume = Math.min(1, (this.volumes[uid] ?? 100) / 100 * master); p.audioEl.muted = this.deafened; }
-    if (p.screenAudioEl) { p.screenAudioEl.volume = Math.min(1, (this.streamVolumes[uid] ?? 100) / 100 * master); p.screenAudioEl.muted = this.deafened; }
+    this.setLevel(p, 'audioEl', this.prefs.mutedUsers?.[uid] ? 0 : (this.volumes[uid] ?? 100) / 100 * master); // "Mute" do menu do usuário
+    this.setLevel(p, 'screenAudioEl', (this.streamVolumes[uid] ?? 100) / 100 * master);
   }
-  setVolume(uid, v) { this.volumes[uid] = v; this.applyVolume(uid); }
-  setStreamVolume(uid, v) { this.streamVolumes[uid] = v; this.applyVolume(uid); }
+  // até 100% usa o volume do elemento; acima disso o áudio passa por um ganho WebAudio (com limitador para não estourar)
+  setLevel(p, key, f) {
+    const a = p[key]; if (!a) return;
+    a.muted = this.deafened;
+    const b = p[key + 'Boost'];
+    if (f <= 1 && !b) { a.volume = f; return; }
+    if (!b) {
+      try {
+        const ctx = this.getCtx(), src = ctx.createMediaStreamSource(a.raw), gain = ctx.createGain(), lim = ctx.createDynamicsCompressor(), dest = ctx.createMediaStreamDestination();
+        lim.threshold.value = -3; lim.knee.value = 3; lim.ratio.value = 20; lim.attack.value = .002; lim.release.value = .15;
+        src.connect(gain).connect(lim).connect(dest);
+        // o Chrome só entrega o áudio remoto ao WebAudio se o fluxo original estiver tocando em algum elemento (mudo)
+        const hold = document.createElement('audio'); hold.muted = true; hold.srcObject = a.raw; hold.play?.().catch(() => { });
+        p[key + 'Boost'] = { src, gain, hold };
+        a.srcObject = dest.stream; a.play?.().catch(() => { });
+      } catch { a.volume = Math.min(1, f); return; }
+    }
+    a.volume = 1; p[key + 'Boost'].gain.gain.value = f;
+  }
+  unboost(p, key) { const b = p[key + 'Boost']; if (!b) return; b.src.disconnect(); b.hold.srcObject = null; delete p[key + 'Boost']; }
+  // volumes por usuário ficam nas preferências (salvas e sincronizadas)
+  get volumes() { return (this.prefs.userVolumes ||= {}); }
+  get streamVolumes() { return (this.prefs.streamVolumes ||= {}); }
+  // volume por usuário (0–1000%); 100% apaga o valor salvo
+  setVolume(uid, v) { if (v === 100) delete this.volumes[uid]; else this.volumes[uid] = v; this.applyVolume(uid); }
+  setStreamVolume(uid, v) { if (v === 100) delete this.streamVolumes[uid]; else this.streamVolumes[uid] = v; this.applyVolume(uid); }
   watch(uid, stream) {
     try {
       const ctx = this.getCtx(), src = ctx.createMediaStreamSource(stream), an = ctx.createAnalyser();

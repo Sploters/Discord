@@ -19,7 +19,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB || 50) * 1024 * 1024;
 const OPEN_REGISTRATION = process.env.OPEN_REGISTRATION !== '0';
 // avatares padrão (public/avatars): um é sorteado para cada conta nova
-const DEFAULT_AVATARS = (() => { try { return fs.readdirSync(path.join(__dirname, '..', 'public', 'avatars')).filter(f => /\.(png|jpe?g|webp|gif)$/i.test(f)).sort().map(f => '/avatars/' + f); } catch { return []; } })();
+const DEFAULT_AVATARS = (() => { try { return fs.readdirSync(path.join(__dirname, '..', 'public', 'avatars')).filter(f => /\.(png|jpe?g|webp|gif)$/i.test(f)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(f => '/avatars/' + f); } catch { return []; } })();
 
 const P = { ADMIN: 1, MANAGE_GUILD: 2, MANAGE_CHANNELS: 4, MANAGE_MESSAGES: 8, KICK: 16, CREATE_INVITE: 32, MANAGE_ROLES: 64, BAN: 128, MODERATE: 256 };
 const COLORS = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55d', '#faa61a', '#9b59b6', '#1abc9c'];
@@ -29,9 +29,19 @@ const hashPw = (pw, salt) => crypto.scryptSync(pw, salt, 64).toString('hex');
 const conns = new Map(); // userId -> Set<ws>
 const voice = new Map(); // channelId -> Map<userId, {ws, mute, deaf, video, screen}>
 
+const NAME_FONTS = ['default', 'serif', 'mono', 'rounded', 'script', 'display', 'comic', 'type'];
+const NAME_EFFECTS = ['solid', 'gradient', 'neon', 'toon', 'pop', 'shimmer', 'rainbow'];
+// estilo do nome vindo do cliente: só valores conhecidos e cores hex
+const cleanNameStyle = (v) => {
+  if (!v || typeof v !== 'object') return null;
+  const hex = (c, d) => (/^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : d);
+  const s = { font: NAME_FONTS.includes(v.font) ? v.font : 'default', effect: NAME_EFFECTS.includes(v.effect) ? v.effect : 'solid', c1: hex(v.c1, '#ffffff'), c2: hex(v.c2, hex(v.c1, '#ffffff')) };
+  return s.font === 'default' && s.effect === 'solid' && !hex(v.c1) ? null : s;
+};
+const parseNameStyle = (t) => { try { return t ? JSON.parse(t) : null; } catch { return null; } };
 const pubUser = (u) => u && ({
   id: u.id, username: u.username, display_name: u.display_name || u.username, avatar: u.avatar, color: u.color,
-  banner_color: u.banner_color, banner: u.banner, pronouns: u.pronouns, status_emoji: u.status_emoji,
+  banner_color: u.banner_color, banner: u.banner, pronouns: u.pronouns, status_emoji: u.status_emoji, theme_primary: u.theme_primary, theme_accent: u.theme_accent, name_style: parseNameStyle(u.name_style),
   bio: u.bio, custom_status: u.custom_status, created_at: u.created_at,
   status: (conns.has(u.id) || u.username?.startsWith('bot_music_')) ? (u.status === 'invisible' ? 'offline' : u.status) : 'offline',
 });
@@ -181,6 +191,7 @@ app.post('/api/logout', auth, wrap((req, res) => { run('DELETE FROM sessions WHE
 
 app.patch('/api/me', auth, wrap((req, res) => {
   const b = req.body, u = getUser(req.uid);
+  const hex = (v) => (/^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : null);
   const f = {
     display_name: b.display_name !== undefined ? clean(b.display_name, 32) || u.username : u.display_name,
     bio: b.bio !== undefined ? clean(b.bio, 300) : u.bio,
@@ -192,10 +203,14 @@ app.patch('/api/me', auth, wrap((req, res) => {
     pronouns: b.pronouns !== undefined ? clean(b.pronouns, 40) : u.pronouns,
     banner: b.banner !== undefined ? (String(b.banner).startsWith('/files/') ? b.banner : null) : u.banner,
     status_emoji: b.status_emoji !== undefined ? clean(b.status_emoji, 16) : u.status_emoji,
+    theme_primary: b.theme_primary !== undefined ? hex(b.theme_primary) : u.theme_primary,
+    theme_accent: b.theme_accent !== undefined ? hex(b.theme_accent) : u.theme_accent,
+    name_style: b.name_style !== undefined ? JSON.stringify(cleanNameStyle(b.name_style)) : u.name_style,
   };
+  if (!f.theme_primary || !f.theme_accent) f.theme_primary = f.theme_accent = null; // tema só com as duas cores
   if (f.avatar && !String(f.avatar).startsWith('/files/') && !DEFAULT_AVATARS.includes(f.avatar)) f.avatar = u.avatar;
-  run('UPDATE users SET display_name=?,bio=?,avatar=?,color=?,banner_color=?,custom_status=?,status=?,pronouns=?,banner=?,status_emoji=? WHERE id=?',
-    f.display_name, f.bio, f.avatar, f.color, f.banner_color, f.custom_status, f.status, f.pronouns, f.banner, f.status_emoji, req.uid);
+  run('UPDATE users SET display_name=?,bio=?,avatar=?,color=?,banner_color=?,custom_status=?,status=?,pronouns=?,banner=?,status_emoji=?,theme_primary=?,theme_accent=?,name_style=? WHERE id=?',
+    f.display_name, f.bio, f.avatar, f.color, f.banner_color, f.custom_status, f.status, f.pronouns, f.banner, f.status_emoji, f.theme_primary, f.theme_accent, f.name_style, req.uid);
   broadcastPresence(req.uid);
   res.json(userPub(req.uid));
 }));
@@ -441,9 +456,12 @@ app.post('/api/guilds/:id/invites', auth, wrap((req, res) => {
   res.json({ code });
 }));
 app.get('/api/invites/:code', wrap((req, res) => {
-  const i = get('SELECT i.*,g.name,g.icon FROM invites i JOIN guilds g ON g.id=i.guild_id WHERE code=?', req.params.code);
+  const i = get('SELECT i.*,g.name,g.icon,g.banner,g.accent FROM invites i JOIN guilds g ON g.id=i.guild_id WHERE code=?', req.params.code);
   if (!i) return bad(res, 'Convite inválido ou expirado', 404);
-  res.json({ code: i.code, guild: { id: i.guild_id, name: i.name, icon: i.icon }, members: guildMemberIds(i.guild_id).length });
+  // online: conectados que não estão invisíveis (o cartão de convite mostra os dois números)
+  const ms = all('SELECT u.id,u.status FROM members m JOIN users u ON u.id=m.user_id WHERE m.guild_id=?', i.guild_id);
+  const online = ms.filter(u => conns.has(u.id) && u.status !== 'invisible').length;
+  res.json({ code: i.code, guild: { id: i.guild_id, name: i.name, icon: i.icon, banner: i.banner, accent: i.accent }, members: ms.length, online });
 }));
 app.post('/api/invites/:code', auth, wrap((req, res) => {
   const i = get('SELECT * FROM invites WHERE code=?', req.params.code);

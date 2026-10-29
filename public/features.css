@@ -95,3 +95,167 @@ html.anim .btn:active, html.anim .roundbtn:active { transform: scale(.95); }
 .ch:hover:not(.active), .mem:hover, .frow:hover, .vuser:hover, #settings .ni:hover:not(.active), .ct-tab:hover:not(.active) { background: var(--hov); }
 .ch.active, #settings .ni.active { background: var(--hov-sel); }
 .ch.active:hover { background: var(--hov-sel); }
+
+/* ---------- visualizador de imagens ---------- */
+body:has(#lightbox) #layer { z-index: 130; } /* menus de clique direito por cima do visualizador */
+#lightbox.viewer { display: block; cursor: default; overflow: auto; background: rgba(0,0,0,.9); }
+#lightbox.viewer .vwrap { position: absolute; inset: 0; margin: auto; display: flex; align-items: center; justify-content: center; }
+#lightbox.viewer.real .vwrap { position: relative; margin: 70px auto 40px; }
+#lightbox.viewer .vimg { position: relative; flex: none; line-height: 0; transition: transform .2s; cursor: zoom-in; touch-action: none; }
+#lightbox.viewer .vimg img { max-width: 90vw; max-height: calc(100vh - 140px); border-radius: 4px; user-select: none; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
+#lightbox.viewer .vimg.lensing { cursor: none; }
+.vlens { display: none; position: absolute; border-radius: 50%; border: 3px solid rgba(255,255,255,.85); box-shadow: 0 6px 24px rgba(0,0,0,.6), inset 0 0 0 1px rgba(0,0,0,.4); background-repeat: no-repeat; background-color: #000; pointer-events: none; z-index: 2; }
+.vimg.lensing .vlens { display: block; }
+.vlens.pixel { image-rendering: pixelated; }
+.vbar { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 16px; padding: 10px 16px; background: linear-gradient(rgba(0,0,0,.75), transparent); color: #fff; z-index: 3; }
+.vinfo { display: flex; align-items: baseline; gap: 12px; min-width: 0; flex: 1; font-size: 13px; color: rgba(255,255,255,.75); }
+.vinfo b { color: #fff; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+.vinfo .vcount { margin-left: auto; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,.15); color: #fff; font-weight: 600; white-space: nowrap; }
+.vtools { display: flex; gap: 4px; }
+.vtools .ibtn { color: #ddd; width: 36px; height: 36px; border-radius: 6px; } .vtools .ibtn:hover, .vtools .ibtn.sel { color: #fff; background: rgba(255,255,255,.15); }
+.vnav { position: fixed; top: 50%; transform: translateY(-50%); width: 48px; height: 72px; border: 0; border-radius: 8px; background: rgba(0,0,0,.45); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 3; }
+.vnav:hover { background: rgba(0,0,0,.75); } .vnav.prev { left: 16px; } .vnav.next { right: 16px; }
+.vhint { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); font-size: 12px; color: rgba(255,255,255,.55); white-space: nowrap; pointer-events: none; }
+@media (max-width: 640px) { .vhint { display: none; } .vinfo b { max-width: 30vw; } .vnav { width: 36px; height: 56px; } }
+
+/* ---------- prévia de canais ---------- */
+#chprev { position: fixed; z-index: 75; width: min(440px, calc(100vw - 280px)); min-width: 300px; display: flex; flex-direction: column; background: var(--bg-pri); border-radius: 8px; box-shadow: 0 10px 32px rgba(0,0,0,.45); border: 1px solid var(--divider); overflow: hidden; animation: chprev-in .12s ease-out; }
+@keyframes chprev-in { from { opacity: 0; transform: translateX(-6px); } }
+#chprev-dim { position: fixed; z-index: 74; pointer-events: none; }
+#chprev .phd { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--divider); color: var(--header); flex: none; }
+#chprev .phd b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } #chprev .phd .hash { color: var(--text-muted); font-weight: 700; }
+#chprev .phd small { margin-left: auto; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); font-weight: 700; }
+#chprev .phd .ibtn { width: 26px; height: 26px; }
+#chprev .plist { flex: 1; overflow-y: auto; padding: 6px 0 10px; overscroll-behavior: contain; display: flex; flex-direction: column; } #chprev .plist > * { flex: none; } #chprev .plist > .pcount { margin-top: auto; } /* poucas mensagens ficam embaixo, como no chat */
+#chprev .pcount { text-align: center; font-size: 11px; color: var(--text-muted); margin: 4px 12px 8px; display: flex; align-items: center; gap: 8px; } #chprev .pcount::before, #chprev .pcount::after { content: ''; flex: 1; height: 1px; background: var(--divider); }
+#chprev .ploading { padding: 20px; text-align: center; color: var(--text-muted); }
+#chprev .pmsg { display: flex; gap: 10px; padding: 6px 12px 2px; font-size: 14px; } #chprev .pmsg.grouped { padding-top: 1px; }
+#chprev .pmsg.sys { color: var(--text-muted); gap: 6px; } #chprev .pmsg.sys b { color: var(--header); }
+#chprev .pav { width: 28px; flex: none; } #chprev .pm { min-width: 0; flex: 1; }
+#chprev .phead { display: flex; align-items: baseline; gap: 8px; } #chprev .phead b { color: var(--header); } #chprev .phead .ts { font-size: 11px; color: var(--text-muted); }
+#chprev .pbody { color: var(--text); word-wrap: break-word; overflow-wrap: anywhere; line-height: 1.35; } #chprev .pbody pre { max-height: 120px; overflow: hidden; }
+#chprev .preply { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#chprev .pthumbs { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; } #chprev .pthumb { max-width: 160px; max-height: 110px; border-radius: 4px; object-fit: cover; }
+#chprev .pfile { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-link, var(--brand)); margin-top: 2px; }
+#chprev .ptyping { flex: none; min-height: 0; padding: 0 12px; font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; } #chprev .ptyping:not(:empty) { padding: 6px 12px 8px; }
+
+/* ---------- volume por usuário ---------- */
+.volctl { --vc: var(--brand); display: flex; flex-direction: column; gap: 8px; min-width: 240px; }
+.volctl.boost { --vc: #f0b232; } .volctl.muted { --vc: var(--red, #ed4245); }
+.vchead { display: flex; align-items: center; gap: 8px; }
+.vlab { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.vlab .icon { flex: none; color: var(--vc); }
+.vtag { font-size: 11px; font-weight: 700; color: var(--vc); text-transform: uppercase; margin-left: auto; white-space: nowrap; } .vtag:empty { display: none; }
+.volbox { display: flex; align-items: center; margin-left: auto; background: var(--bg-tert); border-radius: 6px; padding-right: 8px; box-shadow: inset 0 0 0 1px var(--divider); transition: box-shadow .15s; }
+.vtag:not(:empty) + .volbox { margin-left: 0; }
+.volbox:focus-within { box-shadow: inset 0 0 0 2px var(--vc); }
+.volbox .volnum { width: 52px; border: 0; background: transparent; color: var(--header); padding: 5px 2px 5px 8px; text-align: right; outline: none; font: inherit; font-weight: 700; font-size: 14px; -moz-appearance: textfield; }
+.volbox .volnum::-webkit-inner-spin-button, .volbox .volnum::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.volbox span { color: var(--text-muted); font-size: 13px; font-weight: 600; }
+.volctl.boost .volnum, .volctl.muted .volnum { color: var(--vc); }
+.vtrack { position: relative; height: 20px; display: flex; align-items: center; }
+.volctl input.vrange { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; margin: 0; border-radius: 3px; cursor: pointer; outline: none;
+  background: linear-gradient(to right, var(--vc) var(--p), var(--bg-mod-sel, rgba(128,128,128,.3)) var(--p)); }
+.vrange::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 3px solid var(--vc); box-shadow: 0 1px 4px rgba(0,0,0,.4); position: relative; z-index: 2; transition: transform .1s; }
+.vrange:hover::-webkit-slider-thumb, .vrange:focus-visible::-webkit-slider-thumb { transform: scale(1.15); }
+.vrange::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 3px solid var(--vc); }
+.vmark { position: absolute; left: 50%; top: 50%; width: 2px; height: 14px; margin: -7px 0 0 -1px; border-radius: 1px; background: var(--text-muted); opacity: .6; pointer-events: none; }
+.vchips { display: flex; gap: 4px; }
+.vchips button { flex: 1; border: 0; border-radius: 4px; padding: 4px 0; font: inherit; font-size: 12px; font-weight: 600; color: var(--text-muted); background: var(--bg-mod-hover, rgba(128,128,128,.15)); cursor: pointer; }
+.vchips button:hover { color: var(--header); background: var(--bg-mod-sel, rgba(128,128,128,.25)); }
+.vchips button.on { color: #fff; background: var(--vc); }
+.menu .mnode { padding: 8px 8px 10px; cursor: default; } .menu .mnode + .mnode { border-top: 1px solid var(--divider); }
+.menu:has(.mnode) { min-width: 272px; }
+.qpop .volctl + .volctl { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--divider); }
+#results[data-kind] { } .pins-btn.sel, .inbox-btn.sel { color: var(--header); }
+
+/* ---------- prévia de nomes de canais (configurações) ---------- */
+.chdemo { margin-top: 12px; display: grid; gap: 4px; }
+.chdemo-row { display: flex; align-items: center; gap: 10px; font-size: 14px; padding: 6px 10px; border-radius: 4px; background: var(--bg-sec); }
+.chdemo-row .from { color: var(--text-muted); } .chdemo-row .arrow { color: var(--text-muted); } .chdemo-row b { color: var(--header); }
+
+/* ---------- tema compartilhado: bloco no chat e seletor ---------- */
+.themeshare .tsdots { display: flex; gap: 4px; margin-top: 6px; } .themeshare .tsdots i { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); }
+.themeshare .btn:disabled { opacity: .8; cursor: default; }
+.tpicker h5 { margin: 4px 0 8px; font-size: 12px; text-transform: uppercase; color: var(--text-muted); letter-spacing: .03em; } .tpicker h5:not(:first-child) { margin-top: 16px; }
+.tpgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.tpick { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 6px; border: 2px solid transparent; border-radius: 8px; background: var(--bg-sec); color: var(--text); cursor: pointer; font: inherit; font-size: 13px; text-align: left; }
+.tpick:hover { border-color: var(--brand); } .tpick.cur { border-color: var(--green, #23a55a); }
+.tpick i { height: 54px; border-radius: 5px; } .tpick span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .tpick small { color: var(--green, #23a55a); font-size: 11px; margin-top: -4px; }
+.tpempty { color: var(--text-muted); font-size: 13px; margin: 0; }
+.msg .toolbar .tdel:hover { color: var(--red, #ed4245); }
+
+/* ---------- quadros da chamada: cabem no palco e usam as cores do perfil ---------- */
+#stage .grid.fit { align-content: center; overflow: hidden; }
+#stage .grid.fit > .tile { flex: none; width: var(--tw, 320px); min-width: 0; max-width: none; --av: clamp(36px, calc(var(--tw, 320px) * .2), 140px); }
+#stage .spot .tile { --av: clamp(64px, 20vh, 160px); }
+#stage .tile > .avatar { width: var(--av, 96px) !important; height: var(--av, 96px) !important; font-size: calc(var(--av, 96px) * .42) !important; flex: none; position: relative; z-index: 1; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+.utile[data-bg] { background: #1e1f22; }
+.utile[data-bg]:not([data-bg=""])::before { content: ''; position: absolute; inset: 0; background: var(--tbg); z-index: 0; }
+.utile[data-bg="banner"]::before { filter: blur(6px) brightness(.75); inset: -12px; } /* banner suavizado para o avatar se destacar */
+.utile[data-bg]:not([data-bg=""])::after { content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,.32)); }
+.utile[data-bg="theme"] > .avatar { box-shadow: 0 0 0 4px var(--ring), 0 6px 24px rgba(0,0,0,.35); }
+.utile > video { z-index: 1; }
+.utile .label { z-index: 2; }
+.utile .label .ns { font-size: 14px; }
+/* sala de voz com chat ao lado: em área estreita o chat vai para baixo do palco (antes espremia o palco a zero) */
+#main:has(#chat.side) { container-type: inline-size; container-name: vcontent; }
+#chat.side { width: min(380px, 42%); }
+@container vcontent (max-width: 760px) {
+  #content:has(> #chat.side) { flex-direction: column; }
+  #content > #chat.side { width: auto; flex: 0 0 42%; min-height: 0; border-left: 0; border-top: 1px solid var(--divider); }
+  #content > #stage { min-height: 0; }
+}
+
+/* botão do chat da sala de voz: bolinha quando chega mensagem com o chat fechado */
+#vc-chat-btn { position: relative; }
+#vc-chat-btn.unread::after { content: ''; position: absolute; top: 4px; right: 3px; width: 9px; height: 9px; border-radius: 50%; background: var(--red, #ed4245); box-shadow: 0 0 0 2px var(--bg-pri); }
+
+/* ---------- amigos: barra do topo e "Adicionar amigo" um pouco maiores ---------- */
+#home > #topbar { height: 58px; gap: 10px; }
+#home .tabs { gap: 10px; }
+#home .tab { padding: 5px 12px; font-size: 16px; }
+#home .tab.green { display: flex; align-items: center; gap: 6px; padding: 6px 16px 6px 12px; font-weight: 600; border-radius: 6px; }
+#home .tab.green .icon { flex: none; }
+#home .addf { height: 60px; padding: 0 10px 0 16px; } #home .addf .btn { padding: 10px 18px; }
+
+/* ---------- campo de mensagem maior e mais espaçado ---------- */
+#composer-wrap { padding: 0 20px 22px; }
+#composer { border-radius: 10px; padding: 0 6px; align-items: flex-end; }
+#composer textarea { padding: 15px 4px; height: 54px; line-height: 24px; }
+#composer .ibtn { width: 42px; height: 54px; }
+#reply-bar:not(.hidden), #attach-prev:not(.hidden) { margin: 0; }
+
+/* ---------- área do usuário (embaixo à esquerda) maior ---------- */
+#userbar { height: 62px; padding: 0 10px; gap: 4px; }
+#userbar .me { gap: 10px; padding: 6px 8px; border-radius: 6px; }
+#userbar .dn { font-size: 15px; } #userbar .un { font-size: 13px; margin-top: 1px; }
+#userbar .ibtn { width: 34px; height: 36px; } #userbar .ubtn .ibtn:first-child { width: 32px; } #userbar .ibtn.caret { width: 18px; height: 36px; }
+#user-area { border-radius: 10px; }
+
+/* ---------- menu do usuário: fixar, convite, mute ---------- */
+.dmpin { margin-left: auto; color: var(--text-muted); display: flex; }
+.ch .pill + .dmpin { margin-left: 6px; }
+.tile .label .lmute { color: var(--red, #ed4245); display: flex; }
+.gplist { display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow-y: auto; }
+.gpick { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 0; border-radius: 8px; background: var(--bg-sec); color: var(--text); font: inherit; cursor: pointer; text-align: left; }
+.gpick:hover:not(:disabled) { background: var(--bg-mod-hover); } .gpick:disabled { opacity: .55; cursor: default; }
+.gpick img, .gpick .gi { width: 40px; height: 40px; border-radius: 12px; object-fit: cover; flex: none; display: flex; align-items: center; justify-content: center; background: var(--bg-tert); font-weight: 700; font-size: 14px; color: var(--header); }
+.gpick b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--header); }
+.gpick small { color: var(--brand); font-weight: 600; } .gpick.in small { color: var(--text-muted); }
+.frow.blk { padding: 8px 4px; } .frow.blk + .frow.blk { border-top: 1px solid var(--divider); }
+
+/* ---------- cartão de convite de servidor ---------- */
+.invcard { margin-top: 6px; max-width: 432px; background: var(--bg-sec); border: 1px solid var(--divider); border-radius: 10px; overflow: hidden; }
+.invcard .ivbanner { height: 64px; background-size: cover; background-position: center; }
+.invcard .ivh { padding: 12px 16px 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; color: var(--text-muted); }
+.invcard .ivbody { display: flex; align-items: center; gap: 14px; padding: 10px 16px 16px; }
+.invcard .ivicon { width: 52px; height: 52px; border-radius: 16px; flex: none; object-fit: cover; background: var(--bg-tert); color: var(--header); font-weight: 700; font-size: 18px; display: flex; align-items: center; justify-content: center; }
+.invcard .ivbanner + .ivh + .ivbody .ivicon { margin-top: -2px; box-shadow: 0 0 0 4px var(--bg-sec); }
+.invcard .ivinfo { flex: 1; min-width: 0; } .invcard .ivinfo b { display: block; font-size: 16px; color: var(--header); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.invcard .ivinfo small { color: var(--text-muted); font-size: 13px; }
+.invcard .ivstats { display: flex; gap: 14px; margin-top: 3px; font-size: 13px; color: var(--text-muted); }
+.invcard .ivstats span { display: flex; align-items: center; gap: 5px; } .invcard .ivstats i { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); } .invcard .ivstats i.on { background: var(--green, #23a55a); }
+.invcard .btn { flex: none; min-width: 96px; } .invcard .btn.green { background: var(--green, #23a55a); color: #fff; }
+.invcard.loading .ivinfo b { color: var(--text-muted); }
+.invcard.bad .ivicon { color: var(--red, #ed4245); } .invcard.bad .ivinfo b { color: var(--red, #ed4245); }

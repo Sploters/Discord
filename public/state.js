@@ -1,4 +1,6 @@
 import { h, icon, EMOJIS, setHour12 } from './util.js';
+import { themeDef, paintTheme, SOLID_THEMES } from './themes.js';
+import { openViewer } from './viewer.js';
 
 export const PERM = { ADMIN: 1, MANAGE_GUILD: 2, MANAGE_CHANNELS: 4, MANAGE_MESSAGES: 8, KICK: 16, CREATE_INVITE: 32, MANAGE_ROLES: 64, BAN: 128, MODERATE: 256 };
 export const PERM_LABELS = [
@@ -25,7 +27,7 @@ export const S = {
     zoom: 100, compact: false, desktopNotif: true, sounds: true, callSounds: true, inputId: '', outputId: '', videoId: '', theme: 'dark', accent: '#5865f2', reduceMotion: false,
     screen: { res: 1080, fps: 30, audio: true, hint: 'motion' },
     soundVolume: 80, fontFamily: 'default', msgGap: 17, radius: 8, hour12: false, highContrast: false, saturation: 100, underlineLinks: false, embedLinks: true, roleColors: true,
-    confirmLinks: false, devMode: false, notifPreview: true, voiceBitrate: 64, camRes: 720, camFps: 30, keyMute: 'Ctrl+Shift+KeyM', keyDeafen: 'Ctrl+Shift+KeyD' },
+    confirmLinks: false, devMode: false, notifPreview: true, voiceBitrate: 'auto', camRes: 720, camFps: 30, keyMute: 'Ctrl+Shift+KeyM', keyDeafen: 'Ctrl+Shift+KeyD' },
     JSON.parse(localStorage.getItem('lc_prefs') || '{}')),
   replyTo: null, editing: null, pending: [], membersOpen: true, viewers: new Map(), watching: new Set(),
 };
@@ -39,7 +41,8 @@ export const savePrefs = () => {
 export const desktop = window.lcDesktop || null; // ponte do app Electron (preload)
 export function applyTheme() {
   const r = document.documentElement;
-  r.dataset.theme = S.prefs.theme; r.style.fontSize = S.prefs.zoom + '%';
+  const grad = themeDef(S.prefs.theme, S.prefs.customThemes);
+  r.dataset.theme = grad ? grad.base : (SOLID_THEMES[S.prefs.theme] ? S.prefs.theme : 'dark'); paintTheme(r, grad); r.style.fontSize = S.prefs.zoom + '%';
   const a = S.prefs.accent || '#5865f2';
   r.style.setProperty('--brand', a); r.style.setProperty('--brand-hover', `color-mix(in srgb, ${a} 80%, black)`);
   r.classList.toggle('reduce-motion', !!S.prefs.reduceMotion); r.classList.toggle('anim', S.prefs.animations !== false && !S.prefs.reduceMotion);
@@ -126,7 +129,7 @@ export function promptBox(title, label, value = '', okLabel = 'Salvar') {
 }
 export function closeFloating() { layer().querySelectorAll('.menu,.popout,.emoji-picker').forEach(e => e.remove()); }
 document.addEventListener('mousedown', (e) => { if (!e.target.closest('.menu,.popout,.emoji-picker')) closeFloating(); }, true);
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeFloating(); document.getElementById('lightbox')?.remove(); } });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFloating(); }); // o visualizador de imagens trata o próprio Esc
 window.addEventListener('blur', closeFloating);
 
 function place(el, x, y) {
@@ -137,7 +140,7 @@ function place(el, x, y) {
 }
 export function menu(e, items) {
   e.preventDefault(); closeFloating();
-  const el = h('div.menu', items.filter(Boolean).map(i => i === '-' ? h('div.sp') : h('div.it' + (i.danger ? '.danger' : ''), { onclick: () => { closeFloating(); i.fn(); } }, i.label)));
+  const el = h('div.menu', items.filter(Boolean).map(i => i === '-' ? h('div.sp') : i.node ? h('div.mnode', i.node) : h('div.it' + (i.danger ? '.danger' : ''), { onclick: () => { closeFloating(); i.fn(); } }, i.label)));
   place(el, e.clientX, e.clientY);
 }
 export function popout(anchor, node, side = 'right') {
@@ -168,10 +171,7 @@ export function emojiPicker(anchor, onPick, opts = {}) {
   const el = h('div.emoji-picker', q, grid), r = anchor.getBoundingClientRect();
   place(el, r.right - 352, r.top - 348); if (parseFloat(el.style.top) < 8) el.style.top = (r.bottom + 8) + 'px';
 }
-export function lightbox(src) {
-  const lb = h('div#lightbox', { onclick: () => lb.remove() }, h('img', { src }));
-  document.body.append(lb);
-}
+export const lightbox = (src, opts) => openViewer(src, opts);
 
 // ---------- som / notificação ----------
 let actx;

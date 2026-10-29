@@ -26,6 +26,11 @@ const I = {
   headoff: 'M12 2a9 9 0 0 0-9 9v7a3 3 0 0 0 3 3h1a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2H5v-1a7 7 0 0 1 14 0v1h-2a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h1a3 3 0 0 0 3-3v-7a9 9 0 0 0-9-9ZM3.7 2.3 2.3 3.7l18 18 1.4-1.4Z',
   gear: 'M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.3 7.3 0 0 0-1.69-.98l-.38-2.65A.49.49 0 0 0 14 2h-4a.49.49 0 0 0-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.05.24.26.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z',
   plus: 'M13 5a1 1 0 1 0-2 0v6H5a1 1 0 1 0 0 2h6v6a1 1 0 1 0 2 0v-6h6a1 1 0 1 0 0-2h-6V5Z',
+  minus: 'M5 11h14v2H5z',
+  sun: 'M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM11 1h2v3h-2zM11 20h2v3h-2zM1 11h3v2H1zM20 11h3v2h-3zM4.2 5.6l1.4-1.4 2.1 2.1-1.4 1.4zM16.3 17.7l1.4-1.4 2.1 2.1-1.4 1.4zM4.2 18.4l2.1-2.1 1.4 1.4-2.1 2.1zM16.3 6.3l2.1-2.1 1.4 1.4-2.1 2.1z',
+  moon: 'M21 14.5A9 9 0 0 1 9.5 3a9 9 0 1 0 11.5 11.5z',
+  pipette: 'M19.4 2.6a2.1 2.1 0 0 0-3 0l-2.6 2.6-1.4-1.4-1.4 1.4 1.4 1.4-8 8V19h4.4l8-8 1.4 1.4 1.4-1.4-1.4-1.4 2.6-2.6a2.1 2.1 0 0 0 0-3zM7.6 17H6v-1.6l7.4-7.4 1.6 1.6z',
+  sparkle: 'M12 2l2.2 6.6L21 11l-6.8 2.4L12 20l-2.2-6.6L3 11l6.8-2.4z',
   x: 'M18.4 4L12 10.4 5.6 4 4 5.6l6.4 6.4L4 18.4 5.6 20l6.4-6.4 6.4 6.4 1.6-1.6-6.4-6.4L20 5.6z',
   caret: 'M7 10l5 5 5-5z',
   reply: 'M10 8.26V4.46a.5.5 0 0 0-.82-.38L2.2 9.8a.5.5 0 0 0 0 .77l6.98 5.72a.5.5 0 0 0 .82-.38v-3.86c6 0 9.39 1.73 11.5 5.67.15.27.5-.1.5-.25C22 11.62 17.5 8.26 10 8.26Z',
@@ -63,6 +68,11 @@ const I = {
   send: 'M3 20.5v-6.2l9-2.3-9-2.3V3.5L22 12Z',
   eye: 'M12 5C7 5 2.7 8.1 1 12.5 2.7 16.9 7 20 12 20s9.3-3.100 11-7.500C21.300 8.100 17 5 12 5Zm0 12.500a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
   translate: 'M12.870 15.070l-2.540-2.510.030-.030A17.520 17.520 0 0 0 14.070 6H17V4h-7V2H8v2H1v2h11.170C11.500 7.920 10.440 9.750 9 11.350 8.070 10.320 7.300 9.190 6.690 8h-2c.730 1.630 1.730 3.170 2.980 4.560l-5.090 5.020L4 19l5-5 3.110 3.110.76-2.040ZM18.500 10h-2L12 22h2l1.120-3h4.750L21 22h2l-4.500-12Zm-2.620 7 1.620-4.330L19.120 17h-3.240Z',
+  rotate: 'M12 4V1l4 4-4 4V6a6 6 0 1 0 6 6h2a8 8 0 1 1-8-8Z',
+  copy: 'M16 1H4a2 2 0 0 0-2 2v14h2V3h12Zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 16H8V7h11Z',
+  external: 'M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2ZM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3Z',
+  chevl: 'M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12Z',
+  chevr: 'M8.6 16.6 10 18l6-6-6-6-1.4 1.4 4.6 4.6Z',
   link: 'M3.9 12a3.1 3.1 0 0 1 3.1-3.1h4V7H7a5 5 0 0 0 0 10h4v-1.9H7A3.1 3.1 0 0 1 3.9 12ZM8 13h8v-2H8Zm9-6h-4v1.9h4a3.1 3.1 0 0 1 0 6.2h-4V17h4a5 5 0 0 0 0-10Z',
 };
 export const icon = (name, size) => {
@@ -121,6 +131,11 @@ export function md(src, ctx = {}) {
   return s;
 }
 export const SHORT = { smile: '😄', grin: '😁', joy: '😂', rofl: '🤣', wink: '😉', heart_eyes: '😍', kiss: '😘', thinking: '🤔', sunglasses: '😎', cry: '😢', sob: '😭', angry: '😠', rage: '😡', scream: '😱', sleepy: '😴', skull: '💀', ghost: '👻', poop: '💩', clown: '🤡', robot: '🤖', thumbsup: '👍', '+1': '👍', thumbsdown: '👎', '-1': '👎', ok_hand: '👌', wave: '👋', clap: '👏', pray: '🙏', muscle: '💪', fire: '🔥', star: '⭐', sparkles: '✨', zap: '⚡', boom: '💥', '100': '💯', heart: '❤️', broken_heart: '💔', tada: '🎉', gift: '🎁', trophy: '🏆', rocket: '🚀', eyes: '👀', check: '✅', x: '❌', warning: '⚠️', question: '❓', pizza: '🍕', beer: '🍺', coffee: '☕', cake: '🎂', dog: '🐶', cat: '🐱', sun: '☀️', moon: '🌙', rainbow: '🌈', lol: '😆', ok: '👌', shrug: '🤷', facepalm: '🤦' };
+// links de convite (/invite/CODIGO, com ou sem endereço) viram cartão no chat
+const INVITE_G = /(?:https?:\/\/[^\s/]+|(?<![\w./]))\/invite\/([A-Za-z0-9_-]{4,32})\b/g;
+export const inviteCodes = (s) => [...new Set([...String(s || '').matchAll(INVITE_G)].map(m => m[1]))].slice(0, 3);
+export const stripInvites = (s) => String(s || '').replace(INVITE_G, '').replace(/[ \t]+$/gm, '').trim();
+export const inviteText = (s) => String(s || '').replace(INVITE_G, '📨 Convite de servidor');
 export const isImageUrl = (u) => /^https?:\/\/\S+\.(png|jpe?g|gif|webp|avif)(\?\S*)?$/i.test(u);
 export const onlyEmoji = (s) => /^(\s*(\p{Extended_Pictographic}|\p{Emoji_Presentation})(️|‍|\p{Emoji_Modifier})*\s*){1,27}$/u.test(s.trim()) && s.trim().length > 0;
 

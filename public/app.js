@@ -1,12 +1,16 @@
-import { h, icon, avatar, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyEmoji, isImageUrl, SHORT } from './util.js';
+import { h, icon, avatar, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyEmoji, isImageUrl, SHORT, inviteCodes, stripInvites, inviteText } from './util.js';
 import { S, api, tryApi, user, guild, channelById, member, nameOf, roleColor, can, perms, PERM, dmPeer, relType, toast, modal, confirmBox, promptBox, menu, popout, emojiPicker, lightbox, closeFloating, beep, notify, notifPolicy, desktop, applyTheme, emojiUrl, allEmojis, savePrefs } from './state.js';
-import { Voice, SCREEN_PRESETS } from './voice.js';
+import { Voice, SCREEN_PRESETS, VOICE_BITRATES } from './voice.js';
 import { playSound } from './sounds.js';
 import { initMusic, onState as musicOnState, onRes as musicOnRes, openMusic } from './music.js';
 import { openSoundboard, onIncoming as sbIncoming, handleKey as sbKey } from './soundboard.js';
-import { openAudioPanel, openStatusPanel, openMicPanel } from './quick.js';
+import { openAudioPanel, openStatusPanel, openMicPanel, volumeControl } from './quick.js';
+import { previewHooks, hidePreview, paintTyping as previewTyping, previewMessage } from './chpreview.js';
+import { chName } from './chnames.js';
 import { seg, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
 import { openSettings } from './settings.js';
+import { saveCustomTheme } from './themeeditor.js';
+import { THEME_CODE_RE, decodeTheme, gradientCss, styleName, stripThemeCodes, themeText, encodeTheme, GRADIENT_THEMES, themeDef } from './themes.js';
 import { profileCard, STATUS_TXT } from './card.js';
 import { timeoutDialog, removeTimeout, banDialog, timedOutUntil } from './mod.js';
 import { recordVoiceMessage, voiceEl } from './voicemsg.js';
@@ -175,7 +179,7 @@ function onEvent(t, d) {
     case 'SFU_CONSUMER_CLOSED': voice.onSfuConsumerClosed(d); break;
     case 'TYPING': {
       let m = S.typing.get(d.channel_id); if (!m) S.typing.set(d.channel_id, m = new Map());
-      m.set(d.user_id, Date.now() + 8000); renderTyping(); setTimeout(renderTyping, 8100); break;
+      m.set(d.user_id, Date.now() + 8000); renderTyping(); previewTyping(); setTimeout(() => { renderTyping(); previewTyping(); }, 8100); break;
     }
     case 'MESSAGE_CREATE': onMessage(d); break;
     case 'MESSAGE_UPDATE': {
@@ -197,8 +201,10 @@ function onMessage(m) {
   const list = S.messages.get(m.channel_id), gap = detached.has(m.channel_id);
   if (list && !gap && !list.some(x => x.id === m.id)) list.push(m);
   S.users.set(m.author.id, { ...S.users.get(m.author.id), ...m.author });
-  const mine = m.author_id === S.me.id, viewing = S.view.cid === m.channel_id && document.hasFocus();
-  const t = S.typing.get(m.channel_id); if (t) { t.delete(m.author_id); renderTyping(); }
+  const mine = m.author_id === S.me.id, viewing = S.view.cid === m.channel_id && document.hasFocus() && !vcChatHidden(channelById(m.channel_id));
+  const t = S.typing.get(m.channel_id); if (t) { t.delete(m.author_id); renderTyping(); previewTyping(); }
+  previewMessage(m);
+  if (S.view.cid === m.channel_id && m.author_id !== S.me.id) $('#vc-chat-btn:not(.sel)')?.classList.add('unread'); // chat da sala fechado
   if (S.view.cid === m.channel_id && list && !gap) appendMessage(m);
   if (mine) return;
   const ch = channelById(m.channel_id), isDM = ch?.type === 1, pol = notifPolicy(ch);
@@ -209,7 +215,7 @@ function onMessage(m) {
     if (counts) { const u = S.unread[m.channel_id] ||= { count: 0 }; u.count++; }
     if (isMention && pol.level !== 'none') {
       S.mentions[m.channel_id] = (S.mentions[m.channel_id] || 0) + 1;
-      playSound('mention'); notify(isDM ? m.author.display_name : `${m.author.display_name} (#${ch?.name})`, S.prefs.notifPreview === false ? 'Nova mensagem' : (text || 'Anexo'), () => go(ch.guild_id || '@me', ch.id));
+      playSound('mention'); notify(isDM ? m.author.display_name : `${m.author.display_name} (#${ch?.name})`, S.prefs.notifPreview === false ? 'Nova mensagem' : (inviteText(themeText(text)) || 'Anexo'), () => go(ch.guild_id || '@me', ch.id));
     } else if (counts) playSound('message');
     renderRail(); renderSide(); updateTitle();
   } else ack(m.channel_id);
@@ -225,14 +231,18 @@ function ack(cid) {
   delete S.unread[cid]; delete S.mentions[cid]; api('POST', `/channels/${cid}/ack`).catch(() => { });
   renderRail(); renderSide(); updateTitle();
 }
-window.addEventListener('focus', () => S.view.cid && ack(S.view.cid));
+window.addEventListener('focus', () => S.view.cid && !vcChatHidden(channelById(S.view.cid)) && ack(S.view.cid));
 
 // =============== Navegação ===============
 function go(gid, cid) {
   const hash = `#/${gid || '@me'}${cid ? '/' + cid : ''}`;
   if (location.hash === hash) applyRoute(); else location.hash = hash;
 }
-window.addEventListener('hashchange', () => ready && applyRoute());
+// nomes de canais mudaram nas configurações: redesenha onde eles aparecem
+const chNameKey = () => ['chCaps', 'chDashes', 'chNoEmoji', 'chNamesVoice', 'chNameWords'].map(k => S.prefs[k]).join('|');
+let lastChNames = chNameKey();
+document.addEventListener('settings-closed', () => { if (!ready || chNameKey() === lastChNames) return; lastChNames = chNameKey(); renderSide(); if (S.view.cid) renderMain(); });
+window.addEventListener('hashchange', () => { hidePreview(); if (ready) applyRoute(); });
 function applyRoute(first) {
   let [, gid, cid] = location.hash.match(/^#\/([^/]+)(?:\/(.+))?$/) || [];
   gid ||= '@me';
@@ -296,7 +306,7 @@ function voiceCard(anchor, g) {
   document.getElementById('vcard')?.remove();
   const r = anchor.getBoundingClientRect();
   const card = h('div#vcard', { style: { top: Math.max(8, r.top) + 'px' } }, h('div.vct', g.name),
-    voiceRooms(g).map(({ ch, users }) => h('div.vcroom', h('div.vcname', icon('voice', 14), h('span', ch.name), callTimer(users)),
+    voiceRooms(g).map(({ ch, users }) => h('div.vcroom', h('div.vcname', icon('voice', 14), h('span', chName(ch)), callTimer(users)),
       h('div.vcusers', users.map(v => h('span.vcu', { title: nameOf(v.user_id, g.id), oncontextmenu: (e) => userMenu(e, v.user_id, g.id) }, avatar(user(v.user_id), 24, { status: false }), h('span', nameOf(v.user_id, g.id))))))));
   document.body.append(card);
 }
@@ -364,12 +374,17 @@ function renderSide() {
     const pending = [...S.rels.values()].filter(r => r.type === 3).length;
     list = h('div#side-list',
       h('div.ch' + (S.view.kind === 'home' ? '.active' : ''), { onclick: () => go('@me') }, icon('users'), h('span.name', 'Amigos'), pending > 0 && h('span.pill', pending)),
-      h('div.cat', { style: { cursor: 'default' } }, 'Mensagens diretas'),
-      ...[...S.dms.values()].sort((a, b) => (lastActivity(b) > lastActivity(a) ? 1 : -1)).map(dm => {
-        const p = dmPeer(dm), un = S.mentions[dm.id];
-        return h('div.ch' + (S.view.cid === dm.id ? '.active' : '') + (S.unread[dm.id] ? '.unread' : ''), { style: { height: '42px' }, onclick: () => go('@me', dm.id), oncontextmenu: (e) => userMenu(e, p.id) },
-          avatar(user(p.id), 32, { ring: 'var(--bg-sec)' }), h('span.name', user(p.id).display_name), un > 0 && h('span.pill', un));
-      }));
+      ...(() => {
+        const pins = pinnedDMs(), all = [...S.dms.values()].sort((a, b) => (lastActivity(b) > lastActivity(a) ? 1 : -1));
+        const pinned = pins.map(id => all.find(d => dmPeer(d)?.id === id)).filter(Boolean), rest = all.filter(d => !pinned.includes(d));
+        const dmRow = (dm, pin) => {
+          const p = dmPeer(dm), un = S.mentions[dm.id];
+          return h('div.ch' + (S.view.cid === dm.id ? '.active' : '') + (S.unread[dm.id] ? '.unread' : ''), { style: { height: '42px' }, onclick: () => go('@me', dm.id), oncontextmenu: (e) => userMenu(e, p.id), ...previewHooks(dm) },
+            avatar(user(p.id), 32, { ring: 'var(--bg-sec)' }), styleName(h('span.name', user(p.id).display_name), user(p.id).name_style), un > 0 && h('span.pill', un), pin && h('span.dmpin', { title: 'Fixada' }, icon('pin', 14)));
+        };
+        return [pinned.length > 0 && h('div.cat', { style: { cursor: 'default' } }, 'Fixadas'), ...pinned.map(d => dmRow(d, true)),
+          h('div.cat', { style: { cursor: 'default' } }, 'Mensagens diretas'), ...rest.map(d => dmRow(d, false))];
+      })());
   } else {
     const g = guild(S.view.gid);
     head = h('div#side-head' + (g.banner ? '.banner' : ''), { style: g.banner ? { backgroundImage: `linear-gradient(transparent 40%, rgba(0,0,0,.65)), url("${g.banner}")` } : (g.accent ? { borderBottom: `3px solid ${g.accent}` } : null), onclick: (e) => guildMenu({ preventDefault() { }, clientX: e.clientX, clientY: e.clientY + 10 }, g) }, h('span', g.name), icon('caret'));
@@ -377,13 +392,13 @@ function renderSide() {
     const chRow = (c) => {
       const vs = c.type === 2 ? [...S.voice.values()].filter(v => v.channel_id === c.id) : [];
       return h('div', h('div.ch' + (S.view.cid === c.id ? '.active' : '') + (S.unread[c.id] && c.type === 0 ? '.unread' : ''),
-        { onclick: () => { go(g.id, c.id); }, oncontextmenu: (e) => channelMenu(e, g, c) },
-        chIcon(c), h('span.name', c.name), vs.length > 0 && callTimer(vs), S.mentions[c.id] > 0 && h('span.pill', S.mentions[c.id]),
+        { onclick: () => { go(g.id, c.id); }, oncontextmenu: (e) => channelMenu(e, g, c), ...previewHooks(c) },
+        chIcon(c), h('span.name', chName(c)), vs.length > 0 && callTimer(vs), S.mentions[c.id] > 0 && h('span.pill', S.mentions[c.id]),
         can(g.id, PERM.MANAGE_CHANNELS) && h('span.actions', { onclick: (e) => { e.stopPropagation(); channelSettings(g, c); } }, icon('gear', 16))),
         vs.length > 0 && h('div.vusers', vs.map(v => vuserRow(g, v))));
     };
     const catRow = (c) => h('div', h('div.cat' + (S.collapsed.has(c.id) ? '.collapsed' : ''), { onclick: () => { S.collapsed.has(c.id) ? S.collapsed.delete(c.id) : S.collapsed.add(c.id); localStorage.setItem('lc_collapsed', JSON.stringify([...S.collapsed])); renderSide(); }, oncontextmenu: (e) => channelMenu(e, g, c) },
-      h('span', { style: { display: 'flex', alignItems: 'center' } }, icon('caret', 12), c.name),
+      h('span', { style: { display: 'flex', alignItems: 'center' } }, icon('caret', 12), chName(c)),
       can(g.id, PERM.MANAGE_CHANNELS) && h('span.add', { title: 'Criar canal', onclick: (e) => { e.stopPropagation(); channelModal(g, 0, c.id); } }, icon('plus', 16))),
       !S.collapsed.has(c.id) && kids(c.id).map(chRow),
       S.collapsed.has(c.id) && kids(c.id).filter(k => k.id === S.view.cid || S.unread[k.id]).map(chRow));
@@ -431,7 +446,7 @@ function voicePanel() {
   if (!voice?.active) return h('div.hidden');
   const ch = channelById(voice.channelId), g = guild(ch?.guild_id);
   return h('div#voice-panel',
-    h('div.t', h('span', { style: { display: 'flex', gap: '6px', alignItems: 'center' } }, pingEl(), 'Voz conectada', voice.joinedAt && h('span.vtimer.vp-time', { 'data-start': voice.joinedAt, title: 'Tempo na chamada' }, fmtDur(Date.now() - voice.joinedAt))),
+    h('div.t', h('span', { style: { display: 'flex', gap: '6px', alignItems: 'center' } }, pingEl(), 'Voz conectada', voice.joinedAt && h('span.vtimer.vp-time', { 'data-start': voice.joinedAt, title: 'Tempo na chamada' }, fmtDur(Date.now() - voice.joinedAt)), abrEl()),
       h('span.vp-btns', h('button.ibtn', { title: 'Testar microfone, ruído e eco', onclick: (e) => openMicPanel(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) }) }, icon('waves', 20)),
         h('button.ibtn', { title: 'Desconectar', onclick: () => voice.leave() }, icon('phoneoff', 20)))),
     h('div.sub', { title: 'Ir para a sala', onclick: () => ch && (ch.type === 1 ? go('@me', ch.id) : go(ch.guild_id, ch.id)) }, `${ch?.type === 1 ? 'Chamada com ' + user(dmPeer(ch).id).display_name : (ch?.name || '')}${g ? ' / ' + g.name : ''}`),
@@ -450,8 +465,8 @@ function joinVoice(cid) {
 function userbar() {
   const me = S.me, ctx = () => ({ voice, logout, go });
   return h('div#userbar',
-    h('div.me', { onclick: (e) => openStatusPanel(e.currentTarget, { openSettings: (k) => openSettings(k, ctx()), openProfile: () => profile($('#userbar .me'), me.id, S.view.gid) }), oncontextmenu: (e) => statusMenu(e), title: 'Status e perfil' }, avatar(me, 32, { ring: 'var(--bg-user)' }),
-      h('div.names', h('div.dn', me.display_name), h('div.un', me.custom_status || STATUS_TXT[me.status]))),
+    h('div.me', { onclick: (e) => openStatusPanel(e.currentTarget, { openSettings: (k) => openSettings(k, ctx()), openProfile: () => profile($('#userbar .me'), me.id, S.view.gid) }), oncontextmenu: (e) => statusMenu(e), title: 'Status e perfil' }, avatar(me, 38, { ring: 'var(--bg-user)' }),
+      h('div.names', styleName(h('div.dn', me.display_name), me.name_style), h('div.un', me.custom_status || STATUS_TXT[me.status]))),
     h('div.ubtn', h('button.ibtn' + (voice?.muted ? '.on' : ''), { title: voice?.muted ? 'Ativar microfone' : 'Silenciar', onclick: () => voiceToggle('mute') }, icon(voice?.muted ? 'micoff' : 'mic')),
       h('button.ibtn.caret', { title: 'Dispositivo de entrada, ruído e eco', onclick: (e) => openAudioPanel(e.currentTarget, voice, 'in', { openSettings: (k) => openSettings(k, ctx()) }) }, icon('caret', 14))),
     h('div.ubtn', h('button.ibtn' + (voice?.deafened ? '.on' : ''), { title: voice?.deafened ? 'Ativar áudio' : 'Ensurdecer', onclick: () => voiceToggle('deaf') }, icon(voice?.deafened ? 'headoff' : 'headset')),
@@ -468,10 +483,10 @@ function statusMenu(e) {
 function quickSwitch() {
   const inp = h('input', { placeholder: 'Para onde você quer ir?', style: { width: '100%' } }), res = h('div');
   const items = [...[...S.dms.values()].map(d => ({ label: '@' + user(dmPeer(d).id).display_name, fn: () => go('@me', d.id) })),
-    ...[...S.guilds.values()].flatMap(g => g.channels.filter(c => c.type !== 4).map(c => ({ label: `${c.type === 2 ? '🔊' : '#'} ${c.name}`, hint: g.name, fn: () => go(g.id, c.id) }))),
+    ...[...S.guilds.values()].flatMap(g => g.channels.filter(c => c.type !== 4).map(c => ({ label: `${c.type === 2 ? '🔊' : '#'} ${chName(c)}`, alt: c.name, hint: g.name, fn: () => go(g.id, c.id) }))),
     ...[...S.guilds.values()].map(g => ({ label: g.name, hint: 'servidor', fn: () => go(g.id) }))];
   const m = modal('Busca rápida', '', h('div', h('label.f', inp), res), [], {});
-  const draw = () => { res.replaceChildren(...items.filter(i => i.label.toLowerCase().includes(inp.value.toLowerCase())).slice(0, 10).map(i => h('div.role-row', { onclick: () => { m.close(); i.fn(); } }, i.label, h('small', { style: { marginLeft: 'auto', color: 'var(--text-muted)' } }, i.hint || '')))); };
+  const draw = () => { res.replaceChildren(...items.filter(i => (i.label + ' ' + (i.alt || '')).toLowerCase().includes(inp.value.toLowerCase())).slice(0, 10).map(i => h('div.role-row', { onclick: () => { m.close(); i.fn(); } }, i.label, h('small', { style: { marginLeft: 'auto', color: 'var(--text-muted)' } }, i.hint || '')))); };
   inp.oninput = draw; draw();
   inp.onkeydown = (e) => { if (e.key === 'Enter') res.firstChild?.click(); };
 }
@@ -493,31 +508,74 @@ async function profile(anchor, uid, gid) {
   const node = profileCard(u, { nickname: m?.nickname, roles, extra });
   popout(anchor, node, anchor.closest('#members') || anchor.closest('.msg') ? 'left' : 'right');
 }
+// ---------- ações do menu do usuário ----------
+const pinnedDMs = () => (S.prefs.pinnedDMs ||= []);
+const isPinnedDM = (uid) => pinnedDMs().includes(uid);
+const dmWith = (uid) => [...S.dms.values()].find(d => dmPeer(d)?.id === uid);
+async function ensureDM(uid) {
+  const dm = dmWith(uid) || await tryApi('POST', '/dms', { user_id: uid }); if (!dm) return null;
+  S.dms.set(dm.id, dm); return dm;
+}
+// fixar: a conversa fica no topo das mensagens diretas
+async function togglePinDM(uid) {
+  const list = pinnedDMs(), i = list.indexOf(uid);
+  if (i >= 0) list.splice(i, 1); else { if (!await ensureDM(uid)) return; list.push(uid); }
+  savePrefs(); renderSide(); toast(i >= 0 ? 'Conversa desafixada' : `Conversa com ${user(uid).display_name} fixada no topo`);
+}
+// ligação: abre a DM e já entra na chamada dela
+async function callUser(uid) {
+  const dm = await ensureDM(uid); if (!dm) return;
+  closeFloating(); go('@me', dm.id); if (voice?.channelId !== dm.id) joinVoice(dm.id);
+}
+// convite: escolhe um servidor seu e o link vai por mensagem direta
+function inviteToServer(uid) {
+  const gs = [...S.guilds.values()];
+  if (!gs.length) return toast('Você ainda não está em nenhum servidor', true);
+  const send = async (g) => {
+    dlg.close();
+    const r = await tryApi('POST', `/guilds/${g.id}/invites`); if (!r) return;
+    const dm = await ensureDM(uid); if (!dm) return;
+    if (await tryApi('POST', `/channels/${dm.id}/messages`, { content: `${location.origin}/invite/${r.code}` })) toast(`Convite para ${g.name} enviado a ${user(uid).display_name}`);
+  };
+  const row = (g) => {
+    const inside = g.members?.has(uid);
+    return h('button.gpick' + (inside ? '.in' : ''), { disabled: inside, title: inside ? 'Já está neste servidor' : `Convidar para ${g.name}`, onclick: () => send(g) },
+      g.icon ? h('img', { src: g.icon, alt: '' }) : h('span.gi', initialsOf(g.name)), h('b', g.name), h('small', inside ? 'Já é membro' : 'Convidar'));
+  };
+  const dlg = modal(`Convidar ${user(uid).display_name}`, 'Escolha o servidor. O convite vai por mensagem direta.', h('div.gplist', gs.map(row)), [{ label: 'Cancelar', cls: 'link' }]);
+}
+const initialsOf = (s) => (s || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 3).toUpperCase();
+// mute: silencia a voz da pessoa só para você (nas chamadas)
+const isLocalMuted = (uid) => !!S.prefs.mutedUsers?.[uid];
+function toggleLocalMute(uid) {
+  const m = (S.prefs.mutedUsers ||= {});
+  if (m[uid]) delete m[uid]; else m[uid] = true;
+  savePrefs(); voice?.applyVolume(uid); renderVoiceUI();
+  toast(m[uid] ? `${user(uid).display_name} silenciado para você` : `${user(uid).display_name} não está mais silenciado`);
+}
+
 async function openDM(uid) {
   const dm = await tryApi('POST', '/dms', { user_id: uid }); if (!dm) return;
   S.dms.set(dm.id, dm); closeFloating(); go('@me', dm.id);
 }
 // quem está em voz numa sala que dá para entrar (e que não é a minha)
-function joinableCall(uid) {
-  const vs = S.voice.get(uid); if (!vs || uid === S.me.id || vs.channel_id === voice?.channelId) return null;
-  return channelById(vs.channel_id) || null;
-}
-function joinCallOf(uid) {
-  const ch = joinableCall(uid); if (!ch) return toast('Essa pessoa não está mais em uma chamada', true);
-  go(ch.guild_id || '@me', ch.id); joinVoice(ch.id);
-}
 function userMenu(e, uid, gid) {
   if (uid === S.me.id) return menu(e, [{ label: 'Perfil', fn: () => profile(e.target, uid, gid) }, S.prefs.devMode && { label: 'Copiar ID do usuário', fn: () => navigator.clipboard?.writeText(uid) }]);
-  const g = gid && gid !== '@me' ? guild(gid) : null, rt = relType(uid);
+  const g = gid && gid !== '@me' ? guild(gid) : null, rt = relType(uid), muted = isLocalMuted(uid);
   menu(e, [
+    { label: isPinnedDM(uid) ? 'Desafixar' : 'Fixar', fn: () => togglePinDM(uid) },
     { label: 'Perfil', fn: () => profile(e.target, uid, gid) },
-    { label: 'Enviar mensagem', fn: () => openDM(uid) },
-    joinableCall(uid) && { label: 'Entrar na chamada', fn: () => joinCallOf(uid) },
-    rt === 0 && { label: 'Adicionar amigo', fn: () => tryApi('POST', '/relationships', { username: user(uid).username }).then(r => r && toast('Pedido enviado')) },
-    rt === 1 && { label: 'Remover amigo', danger: true, fn: () => tryApi('DELETE', `/relationships/${uid}`) },
+    { label: 'Iniciar Ligação', fn: () => callUser(uid) },
+    { label: 'Convidar para Servidor', fn: () => inviteToServer(uid) },
+    rt === 1 ? { label: 'Remover Amizade', danger: true, fn: async () => { if (await confirmBox('Remover amizade', `Remover ${user(uid).display_name} dos seus amigos?`, 'Remover')) tryApi('DELETE', `/relationships/${uid}`); } }
+      : rt === 3 ? { label: 'Aceitar Amizade', fn: () => tryApi('PUT', `/relationships/${uid}`, {}) }
+      : rt === 4 ? { label: 'Cancelar Pedido de Amizade', fn: () => tryApi('DELETE', `/relationships/${uid}`) }
+      : rt === 0 && { label: 'Adicionar Amizade', fn: () => tryApi('POST', '/relationships', { username: user(uid).username }).then(r => r && toast('Pedido enviado')) },
     rt !== 2 ? { label: 'Bloquear', danger: true, fn: () => tryApi('PUT', `/relationships/${uid}`, { type: 2 }) } : { label: 'Desbloquear', fn: () => tryApi('DELETE', `/relationships/${uid}`) },
+    { label: muted ? 'Desmutar' : 'Mute', fn: () => toggleLocalMute(uid) },
     voice?.peers.has(uid) && '-',
-    voice?.peers.has(uid) && { label: `Volume do usuário (${voice.volumes[uid] ?? 100}%)`, fn: async () => { const v = await promptBox('Volume do usuário', 'Volume (0-200)', String(voice.volumes[uid] ?? 100), 'Definir'); if (v != null) voice.setVolume(uid, Math.max(0, Math.min(200, +v || 100))); } },
+    voice?.peers.has(uid) && { node: volumeControl(voice, uid, 'mic', 'Volume do usuário') },
+    voice?.peers.get(uid)?.screenAudioEl && { node: volumeControl(voice, uid, 'screen', 'Áudio da transmissão') },
     g && '-',
     g && can(gid, PERM.MANAGE_ROLES) && { label: 'Apelido…', fn: async () => { const n = await promptBox('Alterar apelido', 'Apelido', member(gid, uid)?.nickname || ''); if (n != null) tryApi('PATCH', `/guilds/${gid}/members/${uid}`, { nickname: n }); } },
     g && can(gid, PERM.MODERATE) && g.owner_id !== uid && (timedOutUntil(gid, uid) ? { label: 'Remover castigo', fn: () => removeTimeout(gid, uid) } : { label: 'Castigo…', danger: true, fn: () => timeoutDialog(gid, uid) }),
@@ -541,25 +599,32 @@ function renderMain() {
   if (!ch) return main.replaceChildren(h('div.empty', { style: { margin: 'auto' } }, h('h2', 'Sem canais'), h('p', 'Este servidor ainda não tem canais.')));
   const dm = ch.type === 1, vc = ch.type === 2, peer = dm && dmPeer(ch);
   const search = h('input.search', { placeholder: 'Buscar', title: 'Filtros: de:nome  tem:imagem|arquivo|link|video  em:canal', onkeydown: (e) => { if (e.key === 'Enter') doSearch(search.value); if (e.key === 'Escape') { search.value = ''; closeResults(); } } });
-  const inCall = dm && callActive(ch.id);
+  const inCall = dm && callActive(ch.id), chatOpen = !vcChatHidden(ch);
   main.replaceChildren(
     h('div#topbar',
       h('button.ibtn.menu-btn', { onclick: () => $('#app').classList.toggle('nav-open'), style: { display: innerWidth <= 640 ? 'flex' : 'none' } }, icon('more')),
       dm ? [h('span.hash', '@'), h('span', user(peer.id).display_name), h('div.status.s-' + user(peer.id).status, { style: { position: 'static', borderColor: 'transparent', width: '10px', height: '10px', minWidth: 0, minHeight: 0 } })]
-        : [h('span.hash', icon(vc ? 'voice' : 'hash', 24)), h('span', ch.name), ch.topic && h('span.topic', ch.topic)],
+        : [h('span.hash', icon(vc ? 'voice' : 'hash', 24)), h('span', { title: ch.name }, chName(ch)), ch.topic && h('span.topic', ch.topic)],
       h('div.spacer'),
-      dm && h('button.ibtn', { title: voice.channelId === ch.id ? 'Desligar' : 'Iniciar chamada de voz', onclick: () => voice.channelId === ch.id ? voice.leave() : joinVoice(ch.id) }, icon(voice.channelId === ch.id ? 'phoneoff' : 'phone')),
-      h('button.ibtn', { title: 'Ir para a primeira mensagem', onclick: jumpToTop }, icon('totop')),
-      h('button.ibtn', { title: 'Mensagens fixadas', onclick: showPins }, icon('pin')),
-      h('button.ibtn.inbox-btn', { title: 'Caixa de entrada (menções e respostas)', onclick: showInbox }, icon('bell'), inboxBadge()),
-      !dm && h('button.ibtn' + (S.membersOpen ? '.sel' : ''), { title: 'Lista de membros', onclick: () => { S.membersOpen = !S.membersOpen; renderMain(); } }, icon('users')),
-      search),
+      // sala de voz: só o botão que mostra/esconde o chat, como no Discord
+      vc ? h('button#vc-chat-btn.ibtn' + (chatOpen ? '.sel' : '') + (!chatOpen && S.unread[ch.id] ? '.unread' : ''), { title: chatOpen ? 'Ocultar chat' : 'Mostrar chat', onclick: () => toggleVcChat(ch) }, icon('dm')) : [
+        dm && h('button.ibtn', { title: voice.channelId === ch.id ? 'Desligar' : 'Iniciar chamada de voz', onclick: () => voice.channelId === ch.id ? voice.leave() : joinVoice(ch.id) }, icon(voice.channelId === ch.id ? 'phoneoff' : 'phone')),
+        h('button.ibtn', { title: 'Ir para a primeira mensagem', onclick: jumpToTop }, icon('totop')),
+        h('button.ibtn.pins-btn', { title: 'Mensagens fixadas', onclick: showPins }, icon('pin')),
+        h('button.ibtn.inbox-btn', { title: 'Caixa de entrada (menções e respostas)', onclick: showInbox }, icon('bell'), inboxBadge()),
+        !dm && h('button.ibtn' + (S.membersOpen ? '.sel' : ''), { title: 'Lista de membros', onclick: () => { S.membersOpen = !S.membersOpen; renderMain(); } }, icon('users')),
+        search]),
     h('div#content',
       vc && h('div#stage'),
-      h('div#chat' + (vc ? '.side' : ''), inCall && h('div#stage.dmstage'), h('div#msgs'), h('div#typing'), composer(ch, dm ? '@' + user(peer.id).display_name : (vc ? 'chat de ' : '#') + ch.name)),
+      chatOpen && h('div#chat' + (vc ? '.side' : ''), inCall && h('div#stage.dmstage'), h('div#msgs'), h('div#typing'), composer(ch, dm ? '@' + user(peer.id).display_name : (vc ? 'chat de ' : '#') + chName(ch))),
       !dm && !vc && S.membersOpen && h('div#members')));
-  stickToBottom($('#msgs'));
-  renderMembers(); loadChannel(ch.id); if (vc || inCall) renderVoiceUI();
+  if (chatOpen) { stickToBottom($('#msgs')); loadChannel(ch.id); }
+  renderMembers(); if (vc || inCall) renderVoiceUI();
+}
+// chat da sala de voz: aberto/fechado fica salvo; ao abrir marca como lido
+const vcChatHidden = (ch) => ch?.type === 2 && S.prefs.vcChat === false;
+function toggleVcChat(ch) {
+  S.prefs.vcChat = S.prefs.vcChat === false; savePrefs(); renderMain();
 }
 // imagens/vídeos carregam depois da rolagem: se estava no fim, continua no fim
 // (só rolagens da pessoa contam: o scroll anchoring do navegador também dispara 'scroll')
@@ -602,7 +667,7 @@ async function loadChannel(cid) {
 }
 function welcomeBlock(ch) {
   if (ch.type === 1) { const p = user(dmPeer(ch).id); return h('div.welcome', avatar(p, 80, { status: false }), h('h1', p.display_name), h('p', `Este é o início do seu histórico de mensagens diretas com ${p.display_name}.`)); }
-  return h('div.welcome', h('div.big', icon('hash', 40)), h('h1', `Bem-vindo(a) a #${ch.name}!`), h('p', 'Este é o começo do canal.'));
+  return h('div.welcome', h('div.big', icon('hash', 40)), h('h1', `Bem-vindo(a) a #${chName(ch)}!`), h('p', 'Este é o começo do canal.'));
 }
 function renderMessages(keepPos) {
   const box = $('#msgs'); if (!box) return;
@@ -641,18 +706,22 @@ function msgEl(m, prev) {
   if (!grouped) el.append(h('div.av', { onclick: (e) => profile(e.currentTarget, m.author_id, gid) }, avatar(a, 40, { status: false })));
   else el.append(h('div.time-s', clock(m.created_at)));
   if (m.reply) el.append(h('div.reply-ref', { onclick: () => jumpTo(m.reply.id) },
-    m.reply.deleted ? h('i', 'A mensagem original foi excluída') : [avatar(user(m.reply.author.id), 16, { status: false }), h('span.rn', '@' + nameOf(m.reply.author.id, gid)), h('span.rt', m.reply.content || 'Clique para ver o anexo')]));
-  if (!grouped) el.append(h('div.head', h('span.author', { style: col ? { color: col } : null, onclick: (e) => profile(e.currentTarget, m.author_id, gid), oncontextmenu: (e) => { e.stopPropagation(); userMenu(e, m.author_id, gid); } }, nameOf(m.author_id, gid)), h('span.ts', stamp(m.created_at)), m.pinned && h('span.pin', icon('pin', 12))));
+    m.reply.deleted ? h('i', 'A mensagem original foi excluída') : [avatar(user(m.reply.author.id), 16, { status: false }), h('span.rn', '@' + nameOf(m.reply.author.id, gid)), h('span.rt', inviteText(themeText(m.reply.content)) || 'Clique para ver o anexo')]));
+  if (!grouped) el.append(h('div.head', styleName(h('span.author', { style: col ? { color: col } : null, onclick: (e) => profile(e.currentTarget, m.author_id, gid), oncontextmenu: (e) => { e.stopPropagation(); userMenu(e, m.author_id, gid); } }, nameOf(m.author_id, gid)), a.name_style), h('span.ts', stamp(m.created_at)), m.pinned && h('span.pin', icon('pin', 12))));
   if (S.editing === m.id) {
     const ta = h('textarea', { value: m.content, rows: 1, onkeydown: (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(m, ta.value); } if (e.key === 'Escape') { S.editing = null; renderMessages(true); } } });
     el.append(h('div.edit-box', ta, h('div.edit-hint', 'esc para ', h('a', { href: '#', onclick: (e) => { e.preventDefault(); S.editing = null; renderMessages(true); } }, 'cancelar'), ' • enter para ', h('a', { href: '#', onclick: (e) => { e.preventDefault(); saveEdit(m, ta.value); } }, 'salvar'))));
     setTimeout(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }, 0);
   } else if (m.content) {
-    const body = h('div.body');
-    body.innerHTML = md(m.content, ctxFor(gid));
-    if (onlyEmoji(m.content.replace(/<:\w+:\d+>/g, '😀'))) body.classList.add('emoji-big');
+    const body = h('div.body'), shared = THEME_CODE_RE.test(m.content) && decodeTheme(m.content), invites = inviteCodes(m.content);
+    let shown = shared ? stripThemeCodes(m.content) : m.content; // o código do tema não aparece, só o bloco
+    if (invites.length) shown = stripInvites(shown); // o link do convite também vira só o cartão
+    if (shown) body.innerHTML = md(shown, ctxFor(gid));
+    if (shown && onlyEmoji(shown.replace(/<:\w+:\d+>/g, '😀'))) body.classList.add('emoji-big');
     if (m.edited_at) body.append(h('span.edited', '(editado)'));
-    if (S.prefs.embedLinks !== false) for (const url of (m.content.match(/https?:\/\/\S+/g) || []).filter(isImageUrl).slice(0, 3)) body.append(h('div.attach', h('img', { src: url, loading: 'lazy', referrerPolicy: 'no-referrer', onclick: () => lightbox(url) })));
+    if (shared) body.append(themeCard(shared));
+    for (const code of invites) body.append(inviteCard(code));
+    if (S.prefs.embedLinks !== false) for (const url of (shown.match(/https?:\/\/\S+/g) || []).filter(isImageUrl).slice(0, 3)) body.append(h('div.attach', h('img', { src: url, loading: 'lazy', referrerPolicy: 'no-referrer', onclick: () => lightbox(url) })));
     body.querySelectorAll('.spoiler').forEach(s => (s.onclick = () => s.classList.add('shown')));
     body.querySelectorAll('.mention[data-uid]').forEach(s => { s.onclick = () => profile(s, s.dataset.uid, gid); const u = S.users.get(s.dataset.uid); if (u) s.prepend(mentionAvatar(u)); });
     el.append(body);
@@ -665,9 +734,87 @@ function msgEl(m, prev) {
     h('button', { title: 'Reagir', onclick: (e) => emojiPicker(e.currentTarget, (em) => react(m, em, true)) }, icon('smile', 18)),
     h('button', { title: 'Responder', onclick: () => setReply(m) }, icon('reply', 18)),
     mine && h('button', { title: 'Editar', onclick: () => { S.editing = m.id; renderMessages(true); } }, icon('edit', 18)),
+    (mine || (gid && can(gid, PERM.MANAGE_MESSAGES))) && h('button.tdel', { title: 'Excluir (Shift: sem confirmar)', onclick: (e) => deleteMenu(e, m) }, icon('trash', 18)),
     h('button', { title: 'Mais', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); msgMenu({ preventDefault() { }, clientX: r.left, clientY: r.bottom }, m); } }, icon('more', 18))));
   return el;
 }
+// lixeira da barra da mensagem: apaga a mensagem; com áudio/arquivo junto de outro conteúdo, pergunta o que remover
+const removeAtt = (m, i) => tryApi('DELETE', `/channels/${m.channel_id}/messages/${m.id}/attachments/${i}`);
+const deleteMsg = async (m, quick) => { if (quick || await confirmBox('Apagar mensagem', 'Tem certeza?', 'Apagar')) tryApi('DELETE', `/channels/${m.channel_id}/messages/${m.id}`); };
+function deleteMenu(e, m) {
+  const files = (m.attachments || []).map((f, i) => ({ f, i })).filter(a => !isImg(a.f));
+  const alone = !m.content && (m.attachments || []).length <= 1; // só um áudio/arquivo: apagar a mensagem é o mesmo que remover o anexo
+  if (!files.length || alone) return deleteMsg(m, e.shiftKey);
+  const r = e.currentTarget.getBoundingClientRect(), what = (f) => (f.voice ? 'a mensagem de voz' : `"${f.name}"`);
+  menu({ preventDefault() { }, clientX: r.left, clientY: r.bottom + 4 }, [
+    ...files.map(({ f, i }) => ({ label: 'Remover ' + what(f), danger: true, fn: async () => { if (e.shiftKey || await confirmBox('Remover anexo', `Remover ${what(f)} desta mensagem?`, 'Remover')) removeAtt(m, i); } })),
+    '-', { label: 'Apagar mensagem inteira', danger: true, fn: () => deleteMsg(m, e.shiftKey) },
+  ]);
+}
+
+// cartão de convite de servidor no chat (no lugar do link)
+const inviteInfo = new Map();
+const fetchInvite = (code) => { if (!inviteInfo.has(code)) inviteInfo.set(code, api('GET', `/invites/${encodeURIComponent(code)}`).catch(() => null)); return inviteInfo.get(code); };
+function inviteCard(code) {
+  const card = h('div.invcard.loading', h('div.ivh', 'Convite para um servidor'), h('div.ivbody', h('div.ivicon'), h('div.ivinfo', h('b', 'Carregando…'))));
+  fetchInvite(code).then(info => {
+    if (!info) {
+      card.className = 'invcard bad';
+      return card.replaceChildren(h('div.ivh', 'Convite para um servidor'), h('div.ivbody', h('div.ivicon', '✕'), h('div.ivinfo', h('b', 'Convite inválido'), h('small', 'Pode ter expirado ou sido apagado.'))));
+    }
+    const g = info.guild, inside = () => S.guilds.has(g.id);
+    const btn = h('button.btn');
+    const paint = () => { btn.textContent = inside() ? 'Ir para o servidor' : 'Entrar'; btn.className = 'btn ' + (inside() ? 'grey' : 'green'); };
+    btn.onclick = async () => {
+      if (inside()) return go(g.id);
+      btn.disabled = true; btn.textContent = 'Entrando…';
+      if (await joinInvite(code) === false) { btn.disabled = false; paint(); return; }
+      inviteInfo.delete(code); document.querySelectorAll(`.invcard[data-code="${code}"]`).forEach(c => c.replaceWith(inviteCard(code)));
+    };
+    paint();
+    const top = h('div.ivbanner'), ic = g.icon ? h('img.ivicon', { src: g.icon, alt: '' }) : h('div.ivicon', initialsOf(g.name));
+    if (g.banner) top.style.backgroundImage = `url("${g.banner.replace(/"/g, '%22')}")`;
+    else top.style.background = `linear-gradient(120deg, ${g.accent || '#5865f2'}, color-mix(in srgb, ${g.accent || '#5865f2'} 40%, #000))`;
+    card.className = 'invcard'; card.dataset.code = code;
+    card.replaceChildren(top, h('div.ivh', inside() ? 'Você já está neste servidor' : 'Você foi convidado para entrar em um servidor'),
+      h('div.ivbody', ic, h('div.ivinfo', h('b', { title: g.name }, g.name),
+        h('div.ivstats', h('span', h('i.on'), `${info.online} online`), h('span', h('i'), `${info.members} ${info.members === 1 ? 'membro' : 'membros'}`))), btn));
+  });
+  return card;
+}
+
+// bloco de tema compartilhado no chat
+function themeCard(t) {
+  const inUse = () => { const cur = themeDef(S.prefs.theme, S.prefs.customThemes || []); return !!cur && cur.base === t.base && cur.colors.join() === t.colors.join() && (cur.angle ?? 180) === t.angle; };
+  const btn = h('button.btn', { onclick: () => { saveCustomTheme(t); toast(`Tema "${t.name}" aplicado e salvo em Aparência`); document.querySelectorAll('.themeshare').forEach(c => c.dispatchEvent(new Event('repaint'))); } });
+  const paint = () => { const on = inUse(); btn.textContent = on ? 'Em uso' : 'Usar tema'; btn.disabled = on; btn.classList.toggle('grey', on); };
+  const card = h('div.themeshare', { onrepaint: paint }, h('i.sw', { style: { background: gradientCss(t) } }),
+    h('div', h('b', t.name), h('small', `Tema ${t.base === 'light' ? 'claro' : 'escuro'} em gradiente`), h('div.tsdots', t.colors.map(c => h('i', { style: { background: c } })))), btn);
+  paint(); return card;
+}
+// "+" do campo de mensagem: enviar arquivo ou compartilhar um tema (vai só o bloco do tema)
+function shareThemePicker(ch) {
+  const mine = S.prefs.customThemes || [], presets = Object.values(GRADIENT_THEMES);
+  const cur = themeDef(S.prefs.theme, mine);
+  const send = (t) => {
+    dlg.close();
+    tryApi('POST', `/channels/${ch.id}/messages`, { content: encodeTheme({ ...t, angle: t.angle ?? 180, intensity: t.intensity ?? 50 }), reply_to: S.replyTo?.id });
+    S.replyTo = null; renderReplyBar();
+  };
+  const tile = (t) => h('button.tpick' + (t === cur ? '.cur' : ''), { title: `Enviar "${t.name}"`, onclick: () => send(t) }, h('i', { style: { background: gradientCss(t) } }), h('span', t.name), t === cur && h('small', 'em uso'));
+  const body = h('div.tpicker',
+    h('h5', 'Seus temas'), mine.length ? h('div.tpgrid', mine.map(tile)) : h('p.tpempty', 'Você ainda não criou temas. Crie em Configurações → Aparência → Criar tema.'),
+    h('h5', 'Temas prontos'), h('div.tpgrid', presets.map(tile)));
+  const dlg = modal('Compartilhar tema', 'Quem receber vê o bloco do tema e pode usá-lo com um clique.', body, [{ label: 'Cancelar', cls: 'link' }], { width: '540px' });
+}
+function plusMenu(e, ch, fileIn) {
+  const r = e.currentTarget.getBoundingClientRect();
+  menu({ preventDefault() { }, clientX: r.left, clientY: r.top - 84 }, [
+    { label: 'Enviar arquivo', fn: () => fileIn.click() },
+    { label: 'Compartilhar tema', fn: () => shareThemePicker(ch) },
+  ]);
+}
+
 function reactionFace(e) {
   const m = e.match(/^<:(\w+):(\d+)>$/);
   if (m) { const u = emojiUrl(m[2]); return u ? h('img.cemoji', { src: u, alt: ':' + m[1] + ':', style: { height: '16px' } }) : h('span', ':' + m[1] + ':'); }
@@ -683,13 +830,13 @@ function appendAttachments(el, m, canDel) {
   } }, icon('trash', 16));
   const imgs = atts.filter(a => isImg(a.f));
   if (imgs.length) el.append(h('div.mgrid.n' + Math.min(imgs.length, 5), imgs.map(({ f, i }) =>
-    h('div.mtile', h('img', { src: f.url, alt: f.name, loading: 'lazy', onclick: () => lightbox(f.url) }), del(f, i)))));
-  for (const { f, i } of atts.filter(a => !isImg(a.f))) { const a = attachEl(f); a.classList.add('mtile'); const d = del(f, i); if (d) a.append(d); el.append(a); }
+    h('div.mtile', h('img', { src: f.url, alt: f.name, title: f.size ? `${f.name} • ${bytes(f.size)}` : f.name, 'data-size': f.size || '', loading: 'lazy', onclick: () => lightbox(f.url) }), del(f, i)))));
+  for (const { f } of atts.filter(a => !isImg(a.f))) { const a = attachEl(f); a.classList.add('mtile'); el.append(a); } // áudio/arquivo: excluir fica na barra da mensagem
 }
 function attachEl(f) {
   const ext = (f.name.split('.').pop() || '').toLowerCase(), url = f.url;
   if (f.voice) return voiceEl(f);
-  if (isImg(f)) return h('div.attach', h('img', { src: url, alt: f.name, loading: 'lazy', onclick: () => lightbox(url) }));
+  if (isImg(f)) return h('div.attach', h('img', { src: url, alt: f.name, 'data-size': f.size || '', loading: 'lazy', onclick: () => lightbox(url) }));
   if (/^(mp4|webm)$/.test(ext)) return h('div.attach', h('video', { src: url, controls: true, preload: 'metadata' }));
   if (/^(mp3|ogg|wav|m4a)$/.test(ext)) return h('div.attach', h('audio', { src: url, controls: true, preload: 'none' }));
   return h('div.file', icon('file', 32), h('div', h('a.fn', { href: url + '?download=1', download: f.name }, f.name), h('div.fs', bytes(f.size))), h('a.ibtn', { href: url + '?download=1', download: f.name, style: { marginLeft: 'auto' } }, icon('dl')));
@@ -743,9 +890,13 @@ async function jumpToTop() {
 function mentionAvatar(u) {
   return u.avatar ? h('img.mav', { src: u.avatar, alt: '', loading: 'lazy' }) : h('span.mav.mini', { style: { background: u.color || '#5865f2' } }, (u.display_name || u.username || '?')[0].toUpperCase());
 }
+// o mesmo botão abre e fecha o painel da direita (fixadas / caixa de entrada)
+const resultsOpen = (kind) => $('#results')?.dataset.kind === kind;
+function markResultBtns() { const k = $('#results')?.dataset.kind; $('.pins-btn')?.classList.toggle('sel', k === 'pins'); $('.inbox-btn')?.classList.toggle('sel', k === 'inbox'); }
 async function showPins() {
+  if (resultsOpen('pins')) return closeResults();
   const list = await tryApi('GET', `/channels/${S.view.cid}/pins`); if (!list) return;
-  showResults('Mensagens fixadas', list);
+  showResults('Mensagens fixadas', list, 'pins');
 }
 async function doSearch(q) {
   if (!q.trim()) return closeResults();
@@ -759,9 +910,10 @@ const inboxCount = () => Object.values(S.mentions).reduce((n, v) => n + (v || 0)
 const inboxBadge = () => { const n = inboxCount(); return n ? h('span.ibadge', n > 99 ? '99+' : n) : null; };
 const KIND_TXT = { mention: 'mencionou você', reply: 'respondeu você', everyone: 'mencionou @everyone' };
 async function showInbox() {
+  if (resultsOpen('inbox')) return closeResults();
   closeResults();
   const box = h('div'), more = h('button.btn.grey', { style: { width: '100%', marginTop: '4px', display: 'none' } }, 'Carregar mais');
-  const panel = h('div#results.inbox', h('div.rh', 'Caixa de entrada', h('button.ibtn', { style: { width: '20px', height: '20px' }, onclick: closeResults }, icon('x', 14))), box, more);
+  const panel = h('div#results.inbox', { 'data-kind': 'inbox' }, h('div.rh', 'Caixa de entrada', h('button.ibtn', { style: { width: '20px', height: '20px' }, onclick: closeResults }, icon('x', 14))), box, more);
   $('#content')?.append(panel);
   const load = async (before) => {
     const list = await tryApi('GET', '/inbox' + (before ? '?before=' + before : '')); if (!list) return;
@@ -776,14 +928,14 @@ async function showInbox() {
     more.style.display = list.length === 30 ? '' : 'none';
     more.onclick = () => load(list.at(-1).id);
   };
-  load();
+  markResultBtns(); load();
 }
-function closeResults() { $('#results')?.remove(); }
-function showResults(title, list) {
+function closeResults() { $('#results')?.remove(); markResultBtns(); }
+function showResults(title, list, kind = 'search') {
   closeResults();
-  const panel = h('div#results', h('div.rh', title, h('button.ibtn', { style: { width: '20px', height: '20px' }, onclick: closeResults }, icon('x', 14))),
+  const panel = h('div#results', { 'data-kind': kind }, h('div.rh', title, h('button.ibtn', { style: { width: '20px', height: '20px' }, onclick: closeResults }, icon('x', 14))),
     list.length ? list.map(m => { const e = msgEl(m, null); e.querySelector('.toolbar')?.remove(); e.onclick = () => { const ch = channelById(m.channel_id); closeResults(); if (S.view.cid !== m.channel_id) { go(ch.guild_id || '@me', m.channel_id); setTimeout(() => jumpTo(m.id), 600); } else jumpTo(m.id); }; return e; }) : h('div.empty', { style: { marginTop: '20px' } }, 'Nada encontrado.'));
-  $('#content')?.append(panel);
+  $('#content')?.append(panel); markResultBtns();
 }
 
 // ---------- compositor ----------
@@ -807,7 +959,7 @@ function composer(ch, label) {
     else if (e.key === 'ArrowUp' && !ta.value) { const mine = [...(S.messages.get(ch.id) || [])].reverse().find(m => m.author_id === S.me.id); if (mine) { S.editing = mine.id; renderMessages(true); } }
   });
   const wrap = h('div#composer-wrap', h('div#reply-bar.hidden'), h('div#attach-prev.hidden'),
-    h('div#composer', h('button.ibtn', { title: 'Anexar arquivo', onclick: () => fileIn.click() }, icon('plus', 24)), fileIn, ta,
+    h('div#composer', h('button.ibtn', { title: 'Enviar arquivo ou compartilhar tema', onclick: (e) => plusMenu(e, ch, fileIn) }, icon('plus', 24)), fileIn, ta,
       h('button.ibtn', { title: 'Traduzir o que você escreveu (ou use $en, $es… no início)', onclick: (e) => draftMenu(e, ta) }, icon('translate', 22)),
       h('button.ibtn', { title: 'Gravar mensagem de voz', onclick: (e) => recordVoiceMessage(ch, e.currentTarget.closest('#composer'), { onSent: () => { S.replyTo = null; renderReplyBar(); } }) }, icon('mic', 22)),
       h('button.ibtn', { title: 'Emoji', onclick: (e) => emojiPicker(e.currentTarget, (em) => { ta.setRangeText(em, ta.selectionStart, ta.selectionEnd, 'end'); ta.focus(); }) }, icon('smile', 24))));
@@ -890,7 +1042,7 @@ function renderMembers() {
   const order = [...g.roles.filter(r => groups.has(r.id)).map(r => [r.id, r.name]), ['online', 'Online']];
   const row = ({ m, u }, offline) => h('div.mem' + (offline ? '.off' : ''), { onclick: (e) => profile(e.currentTarget, u.id, g.id), oncontextmenu: (e) => userMenu(e, u.id, g.id) },
     avatar(u, 32, { ring: 'var(--bg-sec)' }),
-    h('div', { style: { minWidth: 0 } }, h('div.mn', { style: { color: roleColor(g.id, u.id) || (offline ? '' : 'var(--header)') } }, m.nickname || u.display_name, g.owner_id === u.id && h('span.crown', { title: 'Dono do servidor', style: { marginLeft: '4px' } }, icon('crown', 12))), u.custom_status && h('div.cs', u.custom_status)));
+    h('div', { style: { minWidth: 0 } }, h('div.mn', { style: { color: roleColor(g.id, u.id) || (offline ? '' : 'var(--header)') } }, styleName(h('span.mnn', m.nickname || u.display_name), u.name_style), g.owner_id === u.id && h('span.crown', { title: 'Dono do servidor', style: { marginLeft: '4px' } }, icon('crown', 12))), u.custom_status && h('div.cs', u.custom_status)));
   const by = (a, b) => (a.m.nickname || a.u.display_name).localeCompare(b.m.nickname || b.u.display_name);
   box.replaceChildren(
     ...order.flatMap(([k, name]) => groups.has(k) ? [h('div.mgroup', `${name} — ${groups.get(k).length}`), ...groups.get(k).sort(by).map(x => row(x))] : []),
@@ -899,8 +1051,9 @@ function renderMembers() {
 
 // =============== Início / amigos ===============
 function renderHome(main) {
+  if (S.view.tab === 'blocked') S.view.tab = 'online'; // bloqueados ficam em Configurações → Privacidade e segurança
   const tab = S.view.tab, rels = [...S.rels.values()];
-  const tabs = [['online', 'Online'], ['all', 'Todos'], ['pending', 'Pendentes'], ['blocked', 'Bloqueados']];
+  const tabs = [['online', 'Online'], ['all', 'Todos'], ['pending', 'Pendentes']];
   const q = h('input.fsearch', { placeholder: 'Buscar', oninput: () => draw() });
   const sortBy = S.prefs.friendSort || 'status', ORD = { online: 0, idle: 1, dnd: 2, invisible: 3, offline: 4 };
   const sorter = h('select.fsort', { title: 'Ordenar', onchange: (e) => { S.prefs.friendSort = e.target.value; savePrefs?.(); draw(); } }, [['status', 'Ordenar: status'], ['name', 'Ordenar: nome']].map(([v, l]) => h('option', { value: v, selected: v === sortBy }, l)));
@@ -923,7 +1076,7 @@ function renderHome(main) {
       const u = S.users.get(r.user.id) || r.user;
       const btn = (ic, title, fn, cls = '') => h('button.circle' + cls, { title, onclick: (e) => { e.stopPropagation(); fn(); } }, icon(ic, 20));
       pane.append(h('div.frow', { onclick: () => openDM(u.id), oncontextmenu: (e) => userMenu(e, u.id) }, avatar(u, 36, { ring: 'var(--bg-pri)' }),
-        h('div.fn', h('b', u.display_name), h('small', r.type === 3 ? 'Pedido de amizade recebido' : r.type === 4 ? 'Pedido de amizade enviado' : r.type === 2 ? 'Bloqueado' : (u.custom_status || STATUS_TXT[u.status]))),
+        h('div.fn', styleName(h('b', u.display_name), u.name_style), h('small', r.type === 3 ? 'Pedido de amizade recebido' : r.type === 4 ? 'Pedido de amizade enviado' : r.type === 2 ? 'Bloqueado' : (u.custom_status || STATUS_TXT[u.status]))),
         r.type === 1 && btn('dm', 'Mensagem', () => openDM(u.id)),
         r.type === 3 && btn('check', 'Aceitar', () => tryApi('PUT', `/relationships/${u.id}`, {}), '.ok'),
         (r.type === 3 || r.type === 4 || r.type === 2 || r.type === 1) && btn('x', r.type === 1 ? 'Remover' : r.type === 2 ? 'Desbloquear' : 'Ignorar', () => tryApi('DELETE', `/relationships/${u.id}`), '.no')));
@@ -933,7 +1086,7 @@ function renderHome(main) {
   main.replaceChildren(h('div#home',
     h('div#topbar', h('button.ibtn.menu-btn', { onclick: () => $('#app').classList.toggle('nav-open'), style: { display: innerWidth <= 640 ? 'flex' : 'none' } }, icon('more')), icon('users', 24), h('span', 'Amigos'), h('div', { style: { width: '1px', height: '24px', background: 'var(--divider)', margin: '0 8px' } }),
       h('div.tabs', tabs.map(([k, l]) => h('div.tab' + (tab === k ? '.active' : ''), { onclick: () => { S.view.tab = k; renderHome(main); } }, l, k !== 'pending' && h('span.tcount', cnt(k)), k === 'pending' && pendingN > 0 && h('span.pill', { style: { marginLeft: '6px', background: 'var(--red)', color: '#fff', borderRadius: '8px', padding: '0 5px', fontSize: '12px' } }, pendingN))),
-        h('div.tab.green' + (tab === 'add' ? '.active' : ''), { onclick: () => { S.view.tab = 'add'; renderHome(main); } }, 'Adicionar amigo'))),
+        h('div.tab.green' + (tab === 'add' ? '.active' : ''), { onclick: () => { S.view.tab = 'add'; renderHome(main); } }, icon('plus', 18), 'Adicionar amigo'))),
     pane));
   draw();
 }
@@ -962,6 +1115,65 @@ function viewersBadge(streamer) {
     popout(e.currentTarget, h('div.vwlist', h('h4', `Assistindo (${n})`), ids.map(id => h('div.vwrow', { onclick: (ev) => profile(ev.currentTarget, id, channelById(S.view.cid)?.guild_id) }, avatar(user(id), 28, { status: false }), h('span', nm(id))))), 'right');
   } }, icon('eye', 14), h('div.vstack', ids.slice(0, 4).map(id => avatar(user(id), 18, { status: false }))), h('span', n > 4 ? `+${n - 4}` : String(n)));
 }
+// ---------- quadros da chamada ----------
+// fundo com as cores do perfil: tema (degradê) > banner > cor do banner > cor predominante do avatar
+const avTint = new Map();
+function avatarTint(u) {
+  if (!u.avatar) return null;
+  if (avTint.has(u.avatar)) return avTint.get(u.avatar);
+  avTint.set(u.avatar, null);
+  const img = new Image(); img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    try {
+      const c = document.createElement('canvas'); c.width = c.height = 24;
+      const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0, 24, 24);
+      const d = x.getImageData(0, 0, 24, 24).data; let r = 0, g = 0, b = 0, w = 0;
+      for (let i = 0; i < d.length; i += 4) { // pesa as cores vivas: média de cinza não diz nada
+        const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]), k = (d[i + 3] / 255) * (0.15 + (mx - mn) / 255);
+        r += d[i] * k; g += d[i + 1] * k; b += d[i + 2] * k; w += k;
+      }
+      if (!w) return;
+      const hex = '#' + [r, g, b].map(v => Math.round(v / w).toString(16).padStart(2, '0')).join('');
+      avTint.set(u.avatar, hex);
+      document.querySelectorAll(`.utile[data-uid="${u.id}"]`).forEach(t => paintTile(t, u));
+    } catch { /* imagem de outro domínio sem CORS: fica o fundo padrão */ }
+  };
+  img.src = u.avatar;
+  return null;
+}
+function paintTile(t, u) {
+  const tp = u.theme_primary, ta = u.theme_accent;
+  let bg = null, kind = '';
+  if (tp && ta) { bg = `linear-gradient(160deg, ${tp}, ${ta})`; kind = 'theme'; t.style.setProperty('--ring', ta); }
+  else if (u.banner) { bg = `center / cover url("${u.banner.replace(/"/g, '%22')}")`; kind = 'banner'; }
+  else { const c = u.banner_color || avatarTint(u); if (c) { bg = `linear-gradient(160deg, ${c}, color-mix(in srgb, ${c} 45%, #000))`; kind = 'color'; } }
+  t.dataset.bg = kind;
+  if (bg) t.style.setProperty('--tbg', bg); else t.style.removeProperty('--tbg');
+  return t;
+}
+// grade que cabe no palco: testa de 1 a n colunas e fica com o maior quadro 16:9 que cabe sem rolar
+function fitStage() {
+  const grid = document.querySelector('#stage .grid.fit'); if (!grid) return;
+  const n = grid.querySelectorAll(':scope > .tile').length; if (!n) return;
+  const gap = 12, W = grid.clientWidth - 32, H = grid.clientHeight - 32;
+  if (W <= 0 || H <= 0) return;
+  let best = 0;
+  for (let c = 1; c <= n; c++) {
+    const r = Math.ceil(n / c), w = Math.min((W - gap * (c - 1)) / c, ((H - gap * (r - 1)) / r) * 16 / 9);
+    if (w > best) best = w;
+  }
+  lastTw = Math.max(120, Math.floor(Math.min(best, 1280))) + 'px';
+  grid.style.setProperty('--tw', lastTw);
+}
+let lastTw = null; // tamanho calculado na última vez: a grade redesenhada já nasce com ele (sem piscar)
+const stageObs = new ResizeObserver(() => fitStage());
+let observedStage = null;
+function watchStage() {
+  const st = document.getElementById('stage');
+  if (st !== observedStage) { if (observedStage) stageObs.unobserve(observedStage); if (st) stageObs.observe(st); observedStage = st; }
+  fitStage();
+}
+
 function renderVoiceUI(speakOnly) {
   if (speakOnly) {
     document.querySelectorAll('.tile[data-uid],.avatar[data-uid]').forEach(e => e.classList.toggle('speaking', voice.speaking.has(e.dataset.uid)));
@@ -985,15 +1197,16 @@ function renderVoiceUI(speakOnly) {
       const vid = videoFor(key, scr), info = h('span.sinfo');
       const upd = () => (info.textContent = vid.videoWidth ? `${vid.videoWidth}×${vid.videoHeight}` : '');
       vid.onresize = vid.onloadedmetadata = upd; upd();
-      const vol = !mine && h('input', { type: 'range', min: 0, max: 100, value: voice.streamVolumes[uid] ?? 100, title: 'Volume da transmissão', onclick: (e) => e.stopPropagation(), oninput: (e) => voice.setStreamVolume(uid, +e.target.value) });
-      tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { 'data-key': key, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); } }, vid,
+      const vol = !mine && h('input', { type: 'range', min: 0, max: 200, value: voice.streamVolumes[uid] ?? 100, title: 'Volume da transmissão', onclick: (e) => e.stopPropagation(), oninput: (e) => { voice.setStreamVolume(uid, +e.target.value); savePrefs(); } });
+      tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { 'data-key': key, 'data-sid': uid, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid,
         h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info), viewersBadge(uid), h('div.tctl', vol, h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); vid.requestFullscreen?.(); } }, icon('expand', 18)))));
     }
     const ckey = 'c:' + uid;
     if (cam && v.video) live.add(ckey);
-    tiles.push(h('div.tile' + (voice.speaking.has(uid) ? '.speaking' : '') + (voice.sbActive.has(uid) ? '.sbplay' : ''), { 'data-uid': uid, 'data-key': ckey, oncontextmenu: (e) => userMenu(e, uid, gid), onclick: () => { if (cam && v.video) { S.focus = S.focus === ckey ? null : ckey; renderVoiceUI(); } } },
-      cam && v.video ? videoFor(ckey, cam) : avatar(user(uid), dm ? 110 : 96, { status: false }),
-      h('div.label', v.mute && icon('micoff', 14), v.deaf && icon('headoff', 14), nm(uid))));
+    const t = h('div.tile.utile' + (voice.speaking.has(uid) ? '.speaking' : '') + (voice.sbActive.has(uid) ? '.sbplay' : ''), { 'data-uid': uid, 'data-key': ckey, oncontextmenu: (e) => userMenu(e, uid, gid), onclick: () => { if (cam && v.video) { S.focus = S.focus === ckey ? null : ckey; renderVoiceUI(); } } },
+      cam && v.video ? videoFor(ckey, cam) : avatar(user(uid), 96, { status: false }),
+      h('div.label', v.mute && icon('micoff', 14), v.deaf && icon('headoff', 14), isLocalMuted(uid) && h('span.lmute', { title: 'Silenciado por você' }, icon('headoff', 14)), styleName(h('span', nm(uid)), user(uid).name_style)));
+    tiles.push(paintTile(t, user(uid)));
   }
   for (const k of [...vidCache.keys()]) if (!live.has(k)) vidCache.delete(k);
   syncWatching(inRoom ? members.filter(v => v.screen && v.user_id !== S.me.id && voice.peers.get(v.user_id)?.streams.screen).map(v => v.user_id) : null);
@@ -1012,9 +1225,10 @@ function renderVoiceUI(speakOnly) {
   ] : h('button.btn.green', { style: { minWidth: '220px', minHeight: '46px', fontSize: '16px' }, onclick: () => joinVoice(ch.id) }, dm ? 'Atender / entrar na chamada' : 'Entrar na sala de voz'));
   const rest = focusTile ? tiles.filter(t => t !== focusTile) : tiles;
   stage.replaceChildren(...[
-    tiles.length ? (focusTile ? [h('div.spot', focusTile), h('div.strip', rest)] : h('div.grid', tiles)) : h('div.grid', h('div.empty', { style: { color: '#fff' } }, h('h2', dm ? 'Chamada' : ch.name), h('p', dm ? 'Ninguém está na chamada.' : 'Ninguém está nesta sala de voz ainda.'))),
+    tiles.length ? (focusTile ? [h('div.spot', focusTile), h('div.strip', rest)] : (() => { const gr = h('div.grid.fit', tiles); if (lastTw) gr.style.setProperty('--tw', lastTw); return gr; })()) : h('div.grid', h('div.empty', { style: { color: '#fff' } }, h('h2', dm ? 'Chamada' : chName(ch)), h('p', dm ? 'Ninguém está na chamada.' : 'Ninguém está nesta sala de voz ainda.'))),
     voice.error && inRoom && h('div.verr', voice.error),
     bar].flat().filter(Boolean));
+  watchStage();
 }
 const ctxSettings = () => ({ voice, logout, go });
 function noiseMenu(e) {
@@ -1093,6 +1307,23 @@ function updatePing() {
   });
 }
 setInterval(() => (voice?.active ? updatePing() : (pingHist.length = 0)), 1000);
+// qualidade da voz: selo no painel (nível atual) e ajuste automático a cada 3 s
+const isAutoAbr = () => S.prefs.voiceBitrate === 'auto' || S.prefs.voiceBitrate == null;
+const abrEl = () => { const el = h('button#vp-abr.abr', { onclick: (e) => openAbrPicker(e.currentTarget) }); paintAbr(el); return el; };
+function paintAbr(el) {
+  const k = voice.micKbps(), auto = isAutoAbr();
+  el.textContent = (auto ? 'Auto · ' : '') + k + 'k';
+  el.title = `Qualidade da voz: ${k} kbps${auto ? ' (automático)' : ''}${voice.sentKbps != null ? ` — enviando ~${voice.sentKbps} kbps agora` : ''}. Clique para mudar.`;
+}
+function openAbrPicker(anchor) {
+  const body = h('div.qpop', h('h4', 'Qualidade da voz'), seg(VOICE_BITRATES, isAutoAbr() ? 'auto' : S.prefs.voiceBitrate, (v) => { S.prefs.voiceBitrate = v; savePrefs(); voice.retuneAudio(); paintAbr(anchor); }),
+    h('div.hintline', 'Automático começa em 128 kbps e sobe ou desce conforme a rede. Mais kbps = voz mais fiel, usando mais banda.'));
+  const el = popout(anchor, body, 'up'); el.classList.add('quick', 'abrpop');
+}
+setInterval(() => {
+  if (!voice?.active) return;
+  voice.adaptAudio().catch(() => { }).then(() => { const el = document.getElementById('vp-abr'); if (el) paintAbr(el); });
+}, 3000);
 function openPingChart(anchor) {
   const W = 300, H = 120, L = 34, R = 8, T = 10, B = 20;
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');

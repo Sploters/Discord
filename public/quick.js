@@ -1,6 +1,6 @@
 // Painéis rápidos: dispositivos de áudio, cancelamento de eco/ruído e status — sem abrir as configurações.
 import { h, icon } from './util.js';
-import { S, api, tryApi, toast, savePrefs, popout, closeFloating } from './state.js';
+import { S, api, tryApi, toast, savePrefs, popout, closeFloating, user, nameOf } from './state.js';
 import { seg, toggle, slider } from './ui.js';
 import { NOISE_MODES } from './voice.js';
 
@@ -24,6 +24,39 @@ function deviceList(kind, key, onPick) {
   return box;
 }
 
+// ---------- volume por usuário: controle deslizante até 200% + campo numérico até 1000% ----------
+export const MAX_VOL = 1000;
+const VOL_STEPS = [[0, 'Mudo'], [50, '50%'], [100, '100%'], [200, '200%'], [400, '400%']];
+export function volumeControl(voice, uid, kind = 'mic', label) {
+  const get = () => (kind === 'screen' ? voice.streamVolumes : voice.volumes)[uid] ?? 100;
+  const set = (v) => {
+    v = Math.round(Math.max(0, Math.min(MAX_VOL, Number.isFinite(v) ? v : 100)));
+    kind === 'screen' ? voice.setStreamVolume(uid, v) : voice.setVolume(uid, v); savePrefs(); sync();
+  };
+  // escala do controle deslizante: 0–100% na primeira metade, 100–400% na segunda (mais precisão perto do normal)
+  const toPos = (v) => (v <= 100 ? v / 2 : 50 + (Math.min(v, 400) - 100) / 6);
+  const fromPos = (p) => (p <= 50 ? p * 2 : 100 + (p - 50) * 6);
+  const snap = (v) => (Math.abs(v - 100) < 4 ? 100 : v > 100 ? Math.round(v / 10) * 10 : Math.round(v));
+  const rg = h('input.vrange', { type: 'range', min: 0, max: 100, step: .5, 'aria-label': label || 'Volume', oninput: () => set(snap(fromPos(+rg.value))) });
+  const num = h('input.volnum', { type: 'number', min: 0, max: MAX_VOL, step: 1, title: `0 a ${MAX_VOL}% (vazio = 100%)`,
+    onchange: () => set(num.value.trim() === '' ? 100 : +num.value), onkeydown: (e) => { e.stopPropagation(); if (e.key === 'Enter') num.blur(); } });
+  const chips = h('div.vchips', VOL_STEPS.map(([v, l]) => h('button', { 'data-v': v, onclick: () => set(v) }, l)));
+  const tag = h('span.vtag');
+  const el = h('div.volctl',
+    h('div.vchead', h('span.vlab', icon(kind === 'screen' ? 'screen' : 'voice', 16), label || 'Volume'), tag, h('label.volbox', num, h('span', '%'))),
+    h('div.vtrack', rg, h('i.vmark', { title: '100%' })),
+    chips);
+  const sync = () => {
+    const v = get(), p = toPos(v);
+    rg.value = p; num.value = v;
+    el.style.setProperty('--p', p + '%');
+    el.classList.toggle('boost', v > 100); el.classList.toggle('muted', v === 0);
+    tag.textContent = v === 0 ? 'mudo' : v > 100 ? 'amplificado' : '';
+    chips.querySelectorAll('button').forEach(b => b.classList.toggle('on', +b.dataset.v === v));
+  };
+  sync(); return el;
+}
+
 export function openAudioPanel(anchor, voice, kind, { openSettings } = {}) {
   const body = h('div.qpop');
   if (kind === 'in') {
@@ -41,6 +74,7 @@ export function openAudioPanel(anchor, voice, kind, { openSettings } = {}) {
       h('h4', 'Volume geral da voz'), slider(0, 100, S.prefs.volume ?? 100, 5, v => { S.prefs.volume = v; savePrefs(); voice.peers.forEach((_, id) => voice.applyVolume(id)); }, v => v + '%'),
       h('h4', 'Volume dos sons do app'), slider(0, 100, S.prefs.soundVolume ?? 80, 5, v => { S.prefs.soundVolume = v; savePrefs(); }, v => v + '%'),
       h('h4', 'Volume do soundboard'), slider(0, 100, S.prefs.sbVolume ?? 70, 5, v => { S.prefs.sbVolume = v; savePrefs(); }, v => v + '%'),
+      voice.peers.size > 0 && h('h4', 'Volume de cada pessoa'), ...[...voice.peers.keys()].filter(id => id !== voice.myId).map(id => volumeControl(voice, id, 'mic', nameOf(id, S.view.gid))),
       h('div.qrow', h('span', 'Silenciar sons do app'), toggle(!!S.prefs.soundsMuted, v => { S.prefs.soundsMuted = v; savePrefs(); })),
       h('div.qrow', h('span', 'Silenciar soundboard'), toggle(!!S.prefs.sbMuted, v => { S.prefs.sbMuted = v; savePrefs(); })));
   }
