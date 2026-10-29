@@ -52,8 +52,21 @@ function loadServer() {
 }
 function createWindow(forceShow) {
   win = new BrowserWindow({
-    ...cfg.bounds, minWidth: 940, minHeight: 600, show: false, backgroundColor: '#1e1f22', title: 'LocalCord', icon: icon(), autoHideMenuBar: true,
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, backgroundThrottling: false },
+    ...cfg.bounds, minWidth: 940, minHeight: 600, show: false, titleBarStyle: 'hidden', titleBarOverlay: { color: '#1e1f22', symbolColor: '#b5bac1', height: 28 }, backgroundColor: '#1e1f22', title: 'LocalCord', icon: icon(), autoHideMenuBar: true,
+    webPreferences: { devTools: false, preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, backgroundThrottling: false },
+  });
+  win.removeMenu(); Menu.setApplicationMenu(null);
+  const CSS = 'html.lc-desk #app{margin-top:28px;height:calc(100vh - 28px)} html.lc-desk #settings{top:28px} html.lc-desk #settings .close{top:40px} body.lc-connect{padding-top:28px} #lc-titlebar{position:fixed;top:0;left:0;right:0;height:28px;z-index:2147483000;-webkit-app-region:drag;background:#1e1f22;display:flex;align-items:center;padding-left:12px;font:600 12px "Segoe UI",sans-serif;color:#b5bac1;user-select:none}';
+  win.webContents.on('dom-ready', () => {
+    win.webContents.insertCSS(CSS).catch(() => { });
+    win.webContents.executeJavaScript("document.documentElement.classList.add('lc-desk');if(location.protocol==='file:')document.body.classList.add('lc-connect');if(!document.getElementById('lc-titlebar')){const t=document.createElement('div');t.id='lc-titlebar';t.textContent='LocalCord';document.documentElement.appendChild(t)}").catch(() => { });
+  });
+  // força o repaint depois de trocar de tela (evita artefatos que só somem ao trocar de janela)
+  win.webContents.on('did-navigate-in-page', () => [0, 60, 300].forEach(t => setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.invalidate(); }, t)));
+  win.webContents.on('devtools-opened', () => win.webContents.closeDevTools());
+  win.webContents.on('before-input-event', (e, i) => {
+    const k = String(i.key).toLowerCase();
+    if (k === 'alt' || k === 'f12' || k === 'f11' || (i.control && i.shift && ['i', 'j', 'c'].includes(k))) e.preventDefault();
   });
   win.once('ready-to-show', () => { if (!(process.argv.includes('--hidden') || cfg.startMinimized) || forceShow) win.show(); });
   win.on('close', (e) => {

@@ -7,6 +7,7 @@ import { playSound, SOUND_DEFS, soundCfg } from './sounds.js';
 import { soundSources, mySounds, addSound, editSound, playLocal, soundVol } from './soundboard.js';
 import { applyOutput } from './quick.js';
 import { timeoutDialog, removeTimeout, banDialog, timedOutUntil, bansPage, auditPage } from './mod.js';
+import { LANGS, myLang } from './translate.js';
 
 const SWATCHES = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55d', '#faa61a', '#9b59b6', '#1abc9c', '#e67e22', '#3498db', '#95a5a6', '#2c2f33', '#ffffff'];
 const THEMES = { dark: 'Escuro', darker: 'Preto (AMOLED)', midnight: 'Meia-noite', light: 'Claro' };
@@ -63,7 +64,7 @@ export function openSettings(kind, ctx) {
   };
   const sKey = (k) => (isServer && k === 'sounds' ? 'sounds_srv' : k);
   let current;
-  const show = (key) => { cleanups.forEach(f => f()); cleanups.length = 0; current = key; pane.replaceChildren(R[sKey(key)](reg)); nav.querySelectorAll('.ni').forEach(n => n.classList.toggle('active', n.dataset.k === key)); content.scrollTop = 0; };
+  const show = (key) => { cleanups.forEach(f => f()); cleanups.length = 0; current = key; pane.replaceChildren(); pane.replaceChildren(R[sKey(key)](reg)); nav.querySelectorAll('.ni').forEach(n => n.classList.toggle('active', n.dataset.k === key)); content.scrollTop = 0; };
   const search = h('input.nsearch', { placeholder: 'Buscar configuração…', oninput: () => drawNav() });
   const groups = isServer ? [[guild(gid)?.name || 'Servidor', SERVER_PAGES]] : USER_GROUPS.map(([t, l]) => [t, desktop && t.includes('aplicativo') ? [...l, ['app', 'Aplicativo (desktop)', 'iniciar bandeja hardware']] : l]);
   const drawNav = () => {
@@ -165,7 +166,12 @@ function appearancePage() {
       h('label.f', 'Arredondamento dos cartões', slider(0, 20, S.prefs.radius, 1, set('radius'), v => v + 'px')),
       h('label.f', 'Formato da hora', seg({ 0: '24 horas', 1: '12 horas (AM/PM)' }, S.prefs.hour12 ? 1 : 0, (v) => { S.prefs.hour12 = !!v; save(); applyTheme(); })),
       row('Mostrar imagens de links no chat', 'Pré-visualiza links que terminam em .png/.jpg/.gif.', toggle(S.prefs.embedLinks !== false, v => { S.prefs.embedLinks = v; save(); })),
-      row('Cores dos cargos nos nomes', null, toggle(S.prefs.roleColors !== false, v => { S.prefs.roleColors = v; save(); }))));
+      row('Cores dos cargos nos nomes', null, toggle(S.prefs.roleColors !== false, v => { S.prefs.roleColors = v; save(); }))),
+    section('Animações'), card(row('Animações aprimoradas', 'Transições suaves ao trocar de canal, abrir janelas e menus e receber mensagens. "Reduzir animações" em Acessibilidade tem prioridade.', toggle(S.prefs.animations !== false, set('animations')))),
+    section('Tradução'), card(
+      h('label.f', 'Traduzir mensagens para', (() => { const s = h('select', { onchange: () => { S.prefs.trLang = s.value; save(); } }, Object.entries(LANGS).map(([k, l]) => h('option', { value: k, selected: myLang() === k }, l))); return s; })()),
+      row('Manter o original ao enviar com $idioma', 'Ex.: "$en bom dia" envia "good morning" e, em spoiler, o texto original.', toggle(!!S.prefs.trSendOriginal, v => { S.prefs.trSendOriginal = v; save(); }))),
+    hint('Clique direito numa mensagem → Traduzir. No compositor, o botão de tradução converte o rascunho. O texto passa pelo servidor, que usa o tradutor configurado (LIBRETRANSLATE_URL ou Google).'));
 }
 function accessibilityPage() {
   const set = (k) => (v) => { S.prefs[k] = v; save(); applyTheme(); };

@@ -1,0 +1,100 @@
+/* ---------- Mensagens de voz ---------- */
+.vmsg { display: flex; align-items: center; gap: 10px; background: var(--bg-sec); border: 1px solid var(--divider); border-radius: 12px; padding: 8px 12px; width: 380px; max-width: 100%; margin-top: 4px; }
+.vplay { width: 36px; height: 36px; border-radius: 50%; background: var(--brand); color: #fff; display: flex; align-items: center; justify-content: center; flex: none; }
+.vplay:hover { background: var(--brand-hover); }
+.vwave { flex: 1; height: 32px; display: flex; align-items: center; gap: 2px; cursor: pointer; min-width: 0; }
+.vwave i { flex: 1; min-width: 2px; max-width: 5px; background: var(--interactive); opacity: .45; border-radius: 2px; transition: background .12s, opacity .12s; }
+.vwave i.on { background: var(--brand); opacity: 1; }
+.vtime { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text-muted); min-width: 34px; text-align: right; }
+.vspd { font-size: 11px; font-weight: 700; color: var(--interactive); background: var(--bg-mod-hover); border-radius: 10px; padding: 3px 7px; }
+.vspd:hover { color: var(--text-strong); }
+.vdl { color: var(--interactive); display: flex; } .vdl:hover { color: var(--text-strong); }
+#composer.recording > :not(.vrec) { display: none; }
+.vrec { flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 8px; min-height: 44px; min-width: 0; }
+.vrec .vmsg { flex: 1; width: auto; margin: 0; background: transparent; border: 0; padding: 0; }
+.vlive { flex: 1; min-width: 0; height: 40px; }
+.vdot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); flex: none; animation: lc-blink 1s infinite; }
+.vstop, .vsend { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none; color: #fff; }
+.vstop { background: var(--red); } .vsend { background: var(--green); } .vsend:disabled { opacity: .5; }
+@keyframes lc-blink { 50% { opacity: .25; } }
+
+/* ---------- Tradução ---------- */
+.msg .trans { margin: 4px 0 2px; padding: 6px 10px; border-left: 3px solid var(--brand); background: color-mix(in srgb, var(--brand) 9%, transparent); border-radius: 0 6px 6px 0; }
+.msg .trans .tl { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; color: var(--text-muted); margin-bottom: 2px; }
+
+/* ---------- Espectadores da transmissão ---------- */
+.tile .viewers { position: absolute; right: 8px; bottom: 8px; display: flex; align-items: center; gap: 6px; background: rgba(0, 0, 0, .65); color: #fff; font-size: 12px; font-weight: 600; padding: 3px 8px 3px 6px; border-radius: 12px; }
+.tile .viewers:hover { background: rgba(0, 0, 0, .85); }
+.viewers .vstack { display: flex; }
+.viewers .vstack .avatar { margin-left: -6px; border: 2px solid #1e1f22; } .viewers .vstack .avatar:first-child { margin-left: 0; }
+.vwlist { min-width: 200px; max-height: 320px; overflow: auto; padding: 8px; }
+.vwlist h4 { margin: 4px 6px 8px; font-size: 12px; text-transform: uppercase; color: var(--text-muted); }
+.vwrow { display: flex; align-items: center; gap: 10px; padding: 5px 6px; border-radius: 4px; cursor: pointer; color: var(--text); }
+.vwrow:hover { background: var(--bg-mod-hover); }
+
+/* ---------- Animações (desligadas por "Reduzir animações" ou pelo botão em Aparência) ---------- */
+@keyframes lc-fade { from { opacity: 0; } }
+@keyframes lc-pop { from { opacity: 0; transform: scale(.94) translateY(6px); } }
+@keyframes lc-up { from { opacity: 0; transform: translateY(10px); } }
+@keyframes lc-left { from { opacity: 0; } }
+@keyframes lc-switch { from { opacity: 0; } }
+@keyframes lc-msg { from { opacity: 0; background: color-mix(in srgb, var(--brand) 18%, transparent); } }
+html.anim .backdrop { animation: lc-fade .16s ease-out; }
+html.anim .backdrop > .modal { animation: lc-pop .22s cubic-bezier(.2, .9, .3, 1.15); }
+html.anim .menu { animation: lc-pop .12s ease-out; transform-origin: top left; }
+html.anim .popout { animation: lc-pop .16s ease-out; }
+html.anim #toast { animation: lc-up .26s cubic-bezier(.2, .9, .3, 1.1); }
+html.anim #settings { animation: lc-fade .18s ease-out; }
+#settings .content > .pane { animation: none !important; }
+html.anim .sw { animation: lc-switch .22s ease-out; }
+html.anim #members.sw { animation-name: lc-left; }
+html.anim .msg.fresh { animation: lc-msg .32s ease-out; }
+html.anim .react { transition: background .12s, border-color .12s, transform .12s; } html.anim .react:active { transform: scale(.92); }
+html.anim .rail-item { transition: border-radius .18s, transform .12s, background .18s; } html.anim .rail-item:hover { border-radius: 30%; } html.anim .rail-item:active { transform: scale(.92); }
+html.anim .ch, html.anim .mem, html.anim .frow { transition: background .12s, color .12s, padding-left .12s; }
+html.anim .btn, html.anim .roundbtn, html.anim .ibtn { transition: background .12s, transform .1s, color .12s; }
+html.anim .btn:active, html.anim .roundbtn:active { transform: scale(.95); }
+
+/* ---- abas de canais + favoritos ---- */
+#chtabs { flex: none; display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px; background: var(--bg-tert); border-bottom: 1px solid var(--divider); overflow: hidden; }
+#chtabs .ct-list { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; } #chtabs .ct-list::-webkit-scrollbar { display: none; }
+.ct-tab { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 6px 0 10px; border-radius: 6px; color: var(--interactive); cursor: pointer; font-size: 13px; font-weight: 500; flex: 0 1 170px; min-width: 70px; max-width: 170px; }
+.ct-tab:hover { background: var(--bg-mod-hover); color: var(--interactive-hover); } .ct-tab.active { background: var(--bg-pri); color: #fff; }
+.ct-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.ct-x, .ct-add, .ct-star { border: 0; background: none; color: inherit; display: flex; align-items: center; justify-content: center; border-radius: 4px; cursor: pointer; padding: 3px; opacity: .7; } .ct-x:hover, .ct-add:hover, .ct-star:hover { opacity: 1; background: var(--bg-mod-hover); }
+.ct-add, .ct-star { color: var(--interactive); } .ct-star.on { color: #f0b232; opacity: 1; }
+.ct-pill { background: var(--red); color: #fff; border-radius: 8px; padding: 0 5px; font-size: 11px; font-weight: 700; } .ct-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; flex: none; }
+.ct-favs { display: flex; align-items: center; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; } .ct-favs::-webkit-scrollbar { display: none; }
+.ct-sep { width: 1px; height: 18px; background: var(--divider); margin: 0 4px; flex: none; }
+.ct-fav { padding: 2px 8px; border-radius: 10px; font-size: 12px; background: var(--bg-mod-hover); color: var(--interactive); cursor: pointer; white-space: nowrap; flex: none; max-width: 140px; overflow: hidden; text-overflow: ellipsis; } .ct-fav:hover { color: #fff; }
+
+/* ---- esconder lista de canais ---- */
+#hide-side.sel { color: #fff; }
+#app.hide-side #side { width: 0; overflow: hidden; } #app.hide-side #user-area { display: none; }
+@media (max-width: 640px) { #app.hide-side #side { width: 200px; overflow: visible; } #app.hide-side #user-area { display: block; } }
+
+/* ---- tempo de chamada no painel de voz ---- */
+.vp-time { font-size: 12px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* ---- lista de amigos ---- */
+.fctl { display: flex; gap: 8px; align-items: center; } .fctl .fsearch { flex: 1; }
+.fsort { background: var(--bg-tert); color: var(--text); border: 0; border-radius: 4px; padding: 8px; outline: none; cursor: pointer; }
+.tcount { margin-left: 6px; font-size: 12px; opacity: .7; }
+
+/* ---- ver foto de perfil ---- */
+.zoomable { cursor: zoom-in; } .pcard .pa .avatar.zoomable:hover { filter: brightness(.85); } .pcard .banner.zoomable:hover { filter: brightness(.9); }
+
+/* ---- avatar nas menções + início do canal ---- */
+.mention .mav { width: 16px; height: 16px; border-radius: 50%; object-fit: cover; vertical-align: -3px; margin-right: 3px; }
+.mention .mav.mini { display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: #fff; font-weight: 700; line-height: 1; }
+#detached-bar { position: absolute; left: 0; right: 0; margin: 0 auto; width: max-content; bottom: 84px; z-index: 5; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; background: var(--bg-float); border: 1px solid var(--divider); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.4); font-size: 14px; white-space: nowrap; }
+
+/* ---- sem animação de movimento ao trocar de tela (evita texto granulado/artefatos) ---- */
+html.anim .sw, html.anim #members.sw { animation: none; }
+
+/* ---- hover visível em todos os temas (camada translúcida sobre o fundo) ---- */
+:root { --hov: rgba(255, 255, 255, .09); --hov-sel: rgba(255, 255, 255, .16); }
+:root[data-theme="light"] { --hov: rgba(6, 6, 7, .07); --hov-sel: rgba(6, 6, 7, .12); }
+.ch:hover:not(.active), .mem:hover, .frow:hover, .vuser:hover, #settings .ni:hover:not(.active), .ct-tab:hover:not(.active) { background: var(--hov); }
+.ch.active, #settings .ni.active { background: var(--hov-sel); }
+.ch.active:hover { background: var(--hov-sel); }

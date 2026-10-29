@@ -27,7 +27,7 @@ export const S = {
     soundVolume: 80, fontFamily: 'default', msgGap: 17, radius: 8, hour12: false, highContrast: false, saturation: 100, underlineLinks: false, embedLinks: true, roleColors: true,
     confirmLinks: false, devMode: false, notifPreview: true, voiceBitrate: 64, camRes: 720, camFps: 30, keyMute: 'Ctrl+Shift+KeyM', keyDeafen: 'Ctrl+Shift+KeyD' },
     JSON.parse(localStorage.getItem('lc_prefs') || '{}')),
-  replyTo: null, editing: null, pending: [], membersOpen: true,
+  replyTo: null, editing: null, pending: [], membersOpen: true, viewers: new Map(), watching: new Set(),
 };
 const DEVICE_KEYS = ['inputId', 'outputId', 'videoId']; // específicos de cada máquina: não sincronizam
 let syncTimer;
@@ -42,7 +42,7 @@ export function applyTheme() {
   r.dataset.theme = S.prefs.theme; r.style.fontSize = S.prefs.zoom + '%';
   const a = S.prefs.accent || '#5865f2';
   r.style.setProperty('--brand', a); r.style.setProperty('--brand-hover', `color-mix(in srgb, ${a} 80%, black)`);
-  r.classList.toggle('reduce-motion', !!S.prefs.reduceMotion);
+  r.classList.toggle('reduce-motion', !!S.prefs.reduceMotion); r.classList.toggle('anim', S.prefs.animations !== false && !S.prefs.reduceMotion);
   r.classList.toggle('high-contrast', !!S.prefs.highContrast); r.classList.toggle('underline-links', !!S.prefs.underlineLinks);
   const fonts = { default: '"gg sans", "Noto Sans", "Segoe UI", Helvetica, Arial, sans-serif', serif: 'Georgia, "Times New Roman", serif', mono: 'Consolas, "Cascadia Mono", "Courier New", monospace', rounded: '"Trebuchet MS", "Segoe UI", sans-serif', dyslexia: '"Comic Sans MS", "Comic Neue", "Segoe UI", sans-serif' };
   r.style.setProperty('--font', fonts[S.prefs.fontFamily] || fonts.default);

@@ -9,7 +9,9 @@ import https from 'node:https';
 import { execFileSync } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 import { all, get, run, newId, UPLOAD_DIR, DATA_DIR } from './db.js';
-import { startSfu, sfuEnabled, sfuJoin, sfuLeave, sfuRequest } from './sfu.js';
+import { startSfu, sfuEnabled, sfuJoin, sfuLeave, sfuRequest, sfuAttachRtp } from './sfu.js';
+import { translate, translateEnabled, engineName } from './translate.js';
+import { initMusic, handle as musicHandle, onVoiceJoin as musicOnJoin, onVoiceLeave as musicOnLeave } from './music.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -31,7 +33,7 @@ const pubUser = (u) => u && ({
   id: u.id, username: u.username, display_name: u.display_name || u.username, avatar: u.avatar, color: u.color,
   banner_color: u.banner_color, banner: u.banner, pronouns: u.pronouns, status_emoji: u.status_emoji,
   bio: u.bio, custom_status: u.custom_status, created_at: u.created_at,
-  status: conns.has(u.id) ? (u.status === 'invisible' ? 'offline' : u.status) : 'offline',
+  status: (conns.has(u.id) || u.username?.startsWith('bot_music_')) ? (u.status === 'invisible' ? 'offline' : u.status) : 'offline',
 });
 const getUser = (id) => get('SELECT * FROM users WHERE id=?', id);
 const userPub = (id) => pubUser(getUser(id));
@@ -158,7 +160,7 @@ app.post('/api/register', wrap((req, res) => {
   const username = clean(req.body.username, 32), pw = String(req.body.password || '');
   if (!/^[\p{L}\p{N}_.-]{2,32}$/u.test(username)) return bad(res, 'Nome de usuário inválido (2-32 caracteres: letras, números, _ . -)');
   if (pw.length < 4) return bad(res, 'Senha muito curta (mínimo 4)');
-  if (get('SELECT 1 x FROM users WHERE username=?', username)) return bad(res, 'Esse nome de usuário já existe', 409);
+  if (get('SELECT 1 x FROM users WHERE username=?', username) || /^bot_music_/i.test(username)) return bad(res, 'Esse nome de usuário já existe', 409);
   const id = newId(), salt = crypto.randomBytes(16).toString('hex');
   run('INSERT INTO users(id,username,display_name,pass_hash,salt,color,avatar,created_at) VALUES(?,?,?,?,?,?,?,?)',
     id, username, clean(req.body.display_name, 32) || username, hashPw(pw, salt), salt, COLORS[Math.floor(Math.random() * COLORS.length)],
@@ -536,7 +538,9 @@ app.get('/api/channels/:id/messages', auth, wrap((req, res) => {
     const a = all('SELECT * FROM messages WHERE channel_id=? AND id<=? ORDER BY id DESC LIMIT 25', ch.id, String(req.query.around));
     const b = all('SELECT * FROM messages WHERE channel_id=? AND id>? ORDER BY id ASC LIMIT 25', ch.id, String(req.query.around));
     rows = [...a, ...b].sort((x, y) => (x.id < y.id ? 1 : -1));
-  } else if (req.query.before) rows = all('SELECT * FROM messages WHERE channel_id=? AND id<? ORDER BY id DESC LIMIT ?', ch.id, String(req.query.before), limit);
+  } else if (req.query.oldest) rows = all('SELECT * FROM messages WHERE channel_id=? ORDER BY id ASC LIMIT ?', ch.id, limit).reverse();
+  else if (req.query.after) rows = all('SELECT * FROM messages WHERE channel_id=? AND id>? ORDER BY id ASC LIMIT ?', ch.id, String(req.query.after), limit).reverse();
+  else if (req.query.before) rows = all('SELECT * FROM messages WHERE channel_id=? AND id<? ORDER BY id DESC LIMIT ?', ch.id, String(req.query.before), limit);
   else rows = all('SELECT * FROM messages WHERE channel_id=? ORDER BY id DESC LIMIT ?', ch.id, limit);
   res.json(rows.reverse().map(messageObj));
 }));
@@ -612,7 +616,14 @@ app.post('/api/channels/:id/messages', auth, wrap((req, res) => {
   const content = String(req.body.content ?? '').slice(0, 4000);
   const atts = (Array.isArray(req.body.attachments) ? req.body.attachments : []).slice(0, 10)
     .filter(a => a && typeof a.url === 'string' && a.url.startsWith('/files/'))
-    .map(a => ({ url: a.url, name: clean(a.name, 200), size: +a.size || 0, type: clean(a.type, 100) }));
+    .map(a => {
+      const o = { url: a.url, name: clean(a.name, 200), size: +a.size || 0, type: clean(a.type, 100) };
+      if (a.voice === true) { // mensagem de voz: forma de onda (base64, até 256 barras) e duração
+        o.voice = true; o.duration = Math.max(0, Math.min(3600, +a.duration || 0));
+        o.waveform = /^[A-Za-z0-9+/=]{0,400}$/.test(a.waveform || '') ? a.waveform : '';
+      }
+      return o;
+    });
   if (!content.trim() && !atts.length) return bad(res, 'Mensagem vazia');
   if (ch.type === 1) {
     const other = all('SELECT user_id FROM dm_participants WHERE channel_id=? AND user_id<>?', ch.id, req.uid)[0];
@@ -756,6 +767,18 @@ app.get('/api/users/:id', auth, wrap((req, res) => {
   res.json({ ...pubUser(u), mutual_guilds: mutual });
 }));
 
+// Tradução
+const trRate = new Map();
+app.get('/api/translate/info', auth, (req, res) => res.json({ enabled: translateEnabled, engine: engineName }));
+app.post('/api/translate', auth, wrap(async (req, res) => {
+  if (!translateEnabled) return bad(res, 'Tradução desativada neste servidor', 403);
+  const now = Date.now(), hits = (trRate.get(req.uid) || []).filter(t => now - t < 60000);
+  if (hits.length >= 40) return bad(res, 'Muitas traduções seguidas, aguarde um pouco', 429);
+  hits.push(now); trRate.set(req.uid, hits);
+  try { res.json(await translate(req.body.text, String(req.body.to || ''), req.body.from ? String(req.body.from) : '')); }
+  catch (e) { bad(res, e.message, 502); }
+}));
+
 // Uploads (corpo bruto)
 app.post('/api/upload', auth, (req, res) => {
   const name = clean(req.query.name, 200).replace(/[\\/\0]/g, '_') || 'arquivo';
@@ -824,14 +847,40 @@ function buildReady(uid) {
   return { user: pubUser(getUser(uid)), guilds, dms, relationships: relObj(uid), unread, dm_voice: dmVoice, ice: iceServers() };
 }
 
+// espectadores de transmissões: "canal:transmissor" -> Set de quem está assistindo
+const watchers = new Map();
+function pushViewers(cid, streamer) {
+  const set = watchers.get(cid + ':' + streamer), m = voice.get(cid); if (!m) return;
+  const d = { channel_id: cid, streamer_id: streamer, viewers: set ? [...set] : [] };
+  for (const [, s] of m) send(s.ws, 'STREAM_VIEWERS', d);
+}
+function dropWatching(uid, cid) { // tira uid das transmissões que assistia e encerra a dele
+  for (const [k, set] of [...watchers]) {
+    if (!k.startsWith(cid + ':')) continue;
+    const streamer = k.slice(cid.length + 1);
+    if (streamer === uid) { watchers.delete(k); pushViewers(cid, streamer); }
+    else if (set.delete(uid)) { if (!set.size) watchers.delete(k); pushViewers(cid, streamer); }
+  }
+}
 function leaveVoice(uid, cid) {
   const m = voice.get(cid); if (!m || !m.has(uid)) return;
-  m.delete(uid); if (!m.size) { voice.delete(cid); roomStart.delete(cid); }
+  m.delete(uid); dropWatching(uid, cid); if (!m.size) { voice.delete(cid); roomStart.delete(cid); }
   sfuLeave(cid, uid);
   const ch = get('SELECT * FROM channels WHERE id=?', cid);
   if (ch) dispatch(channelAudience(ch), 'VOICE_STATE', { channel_id: null, prev_channel_id: cid, user_id: uid, guild_id: ch.guild_id });
   for (const [, s] of m) send(s.ws, 'VOICE_PEER_LEFT', { channel_id: cid, user_id: uid });
+  musicOnLeave(cid);
 }
+// Bot de música: participante sem conexão WebSocket (ws "morto" faz send() ser ignorado)
+async function joinBot(cid, botId) {
+  if (!voice.has(cid)) { voice.set(cid, new Map()); roomStart.set(cid, Date.now()); }
+  const st = { ws: { readyState: 0 }, mute: false, deaf: false, video: false, screen: false };
+  voice.get(cid).set(botId, st);
+  const ch = get('SELECT * FROM channels WHERE id=?', cid);
+  dispatch(channelAudience(ch), 'VOICE_STATE', { ...vsObj(cid, botId, st), guild_id: ch.guild_id });
+  await sfuJoin(cid, botId, () => { });
+}
+initMusic({ get, run, newId, voice, send, dispatch, guildMemberIds, memberObj, userPub, joinBot, leaveBot: (cid, botId) => leaveVoice(botId, cid), attachRtp: sfuAttachRtp, sfuEnabled });
 function currentVoice(uid) { for (const [cid, m] of voice) if (m.has(uid)) return cid; return null; }
 
 wss.on('connection', (ws) => {
@@ -866,6 +915,8 @@ wss.on('connection', (ws) => {
           room.set(uid, st);
           if (!sfuEnabled()) send(ws, 'VOICE_JOINED', { channel_id: ch.id, peers });
           dispatch(channelAudience(ch), 'VOICE_STATE', { ...vsObj(ch.id, uid, st), guild_id: ch.guild_id });
+          musicOnJoin(ch.id, ws);
+          for (const k of watchers.keys()) if (k.startsWith(ch.id + ':')) pushViewers(ch.id, k.slice(ch.id.length + 1));
           if (!sfuEnabled()) break;
           sfuJoin(ch.id, uid, (t, x) => send(ws, t, { ...x, channel_id: ch.id })).then(sfu => {
             if (voice.get(ch.id)?.get(uid) !== st) return sfuLeave(ch.id, uid); // saiu enquanto entrava
@@ -879,6 +930,11 @@ wss.on('connection', (ws) => {
           sfuRequest(c, uid, String(d.op), d).then(data => send(ws, 'SFU_RES', { rid, data }), e => send(ws, 'SFU_RES', { rid, error: e.message }));
           break;
         }
+        case 'MUSIC': { // bot de música: tocar, pular, pausar, remover da fila, tirar da chamada
+          const c = currentVoice(uid); if (!c) return;
+          musicHandle(uid, c, d).then(data => send(ws, 'MUSIC_RES', { rid: d.rid, data }), e => send(ws, 'MUSIC_RES', { rid: d.rid, error: e.message }));
+          break;
+        }
         case 'SOUNDBOARD': { // toca um som para todos na sala de voz
           const c = currentVoice(uid); if (!c) return;
           const url = String(d.url || ''); if (!url.startsWith('/files/')) return;
@@ -887,11 +943,22 @@ wss.on('connection', (ws) => {
           for (const [, st] of voice.get(c)) send(st.ws, 'SOUNDBOARD', msg);
           break;
         }
+        case 'STREAM_WATCH': { // quem assiste à transmissão de quem
+          const c = currentVoice(uid); if (!c) return;
+          const target = String(d.target || ''), room = voice.get(c);
+          if (target === uid || !room.get(target)?.screen) return;
+          const k = c + ':' + target, set = watchers.get(k) || new Set();
+          if (d.watching) set.add(uid); else set.delete(uid);
+          if (set.size) watchers.set(k, set); else watchers.delete(k);
+          pushViewers(c, target);
+          break;
+        }
         case 'VOICE_LEAVE': { const c = currentVoice(uid); if (c) leaveVoice(uid, c); break; }
         case 'VOICE_STATE': {
           const c = currentVoice(uid); if (!c) return;
           const st = voice.get(c).get(uid);
           for (const k of ['mute', 'deaf', 'video', 'screen']) if (typeof d[k] === 'boolean') st[k] = d[k];
+          if (!st.screen && watchers.has(c + ':' + uid)) { watchers.delete(c + ':' + uid); pushViewers(c, uid); }
           const ch = get('SELECT * FROM channels WHERE id=?', c);
           dispatch(channelAudience(ch), 'VOICE_STATE', { ...vsObj(c, uid, st), guild_id: ch.guild_id });
           break;
