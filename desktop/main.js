@@ -13,6 +13,9 @@ let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; } catch { /* primeira execução */ }
 const saveCfg = () => { try { fs.mkdirSync(path.dirname(cfgPath()), { recursive: true }); fs.writeFileSync(cfgPath(), JSON.stringify(cfg, null, 2)); } catch (e) { console.error(e); } };
 
+// bug do Chromium no Windows: a janela deixa de repintar até trocar de programa
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 if (cfg.hardwareAcceleration === false) app.disableHardwareAcceleration();
 const log = (...a) => { try { fs.appendFileSync(path.join(app.getPath('userData'), 'main.log'), `${new Date().toISOString()} ${a.join(' ')}\n`); } catch { /* sem log */ } };
 let win, tray, quitting = false, pickedSource = null, badge = 0;
