@@ -36,9 +36,9 @@
 @keyframes lc-fade { from { opacity: 0; } }
 @keyframes lc-pop { from { opacity: 0; transform: scale(.94) translateY(6px); } }
 @keyframes lc-up { from { opacity: 0; transform: translateY(10px); } }
-@keyframes lc-left { from { opacity: 0; } }
-@keyframes lc-switch { from { opacity: 0; } }
-@keyframes lc-msg { from { opacity: 0; background: color-mix(in srgb, var(--brand) 18%, transparent); } }
+@keyframes lc-left { from { opacity: 0; transform: translateX(-12px); } }
+@keyframes lc-switch { from { opacity: 0; transform: translateY(8px); } }
+@keyframes lc-msg { from { opacity: 0; transform: translateY(12px); background: color-mix(in srgb, var(--brand) 18%, transparent); } }
 html.anim .backdrop { animation: lc-fade .16s ease-out; }
 html.anim .backdrop > .modal { animation: lc-pop .22s cubic-bezier(.2, .9, .3, 1.15); }
 html.anim .menu { animation: lc-pop .12s ease-out; transform-origin: top left; }
@@ -88,9 +88,6 @@ html.anim .btn:active, html.anim .roundbtn:active { transform: scale(.95); }
 .mention .mav { width: 16px; height: 16px; border-radius: 50%; object-fit: cover; vertical-align: -3px; margin-right: 3px; }
 .mention .mav.mini { display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: #fff; font-weight: 700; line-height: 1; }
 #detached-bar { position: absolute; left: 0; right: 0; margin: 0 auto; width: max-content; bottom: 84px; z-index: 5; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; background: var(--bg-float); border: 1px solid var(--divider); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.4); font-size: 14px; white-space: nowrap; }
-
-/* ---- sem animação de movimento ao trocar de tela (evita texto granulado/artefatos) ---- */
-html.anim .sw, html.anim #members.sw { animation: none; }
 
 /* ---- hover visível em todos os temas (camada translúcida sobre o fundo) ---- */
 :root { --hov: rgba(255, 255, 255, .09); --hov-sel: rgba(255, 255, 255, .16); }
