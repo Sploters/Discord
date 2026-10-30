@@ -478,10 +478,8 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 #reply-bar:not(.hidden) + #composer, #attach-prev:not(.hidden) + #composer { border-radius: 0 0 16px 16px; }
 #reply-bar:not(.hidden), #attach-prev:not(.hidden) { border-radius: 16px 16px 0 0; }
 
-/* ---------- ajuste: um pouco mais baixos (56px) e bem mais arredondados, composer e user-area iguais ---------- */
-#userbar { height: 54px; }
-#user-area { border-radius: 22px; }
-#userbar .me { border-radius: 16px; }
+/* ---------- composer um pouco mais baixo (56px), centralizado na vertical com a área do usuário (64px, base a 8px) ---------- */
+#composer-wrap { padding-bottom: 12px; }
 #composer { min-height: 56px; border-radius: 22px; }
 #composer textarea { min-height: 54px; padding: 15px 4px; }
 #composer .ibtn { height: 54px; }
