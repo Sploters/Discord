@@ -469,3 +469,11 @@ html.anim .pcard:not(.upmodal) { animation: lc-pop .2s ease-out; }
 html.anim .toast, html.anim #toast { animation: lc-up .3s cubic-bezier(.2, .9, .3, 1.1); }
 html.anim .meter i, html.anim .mufill { transition: width .3s ease; }
 html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .2s; }
+
+/* ---------- campo de mensagem alinhado com a área do usuário (mesma altura e mesma base) ---------- */
+#composer-wrap { padding-bottom: 8px; }
+#composer { min-height: 64px; border-radius: 16px; align-items: flex-end; border: 1px solid var(--divider); box-sizing: border-box; }
+#composer textarea { min-height: 62px; padding: 19px 4px; box-sizing: border-box; }
+#composer .ibtn { height: 62px; }
+#reply-bar:not(.hidden) + #composer, #attach-prev:not(.hidden) + #composer { border-radius: 0 0 16px 16px; }
+#reply-bar:not(.hidden), #attach-prev:not(.hidden) { border-radius: 16px 16px 0 0; }
