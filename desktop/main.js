@@ -128,7 +128,8 @@ function setupSession() {
   ses.setDisplayMediaRequestHandler(async (request, callback) => {
     try {
       const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] });
-      const s = sources.find(x => x.id === pickedSource) || sources[0];
+      // janela minimizada (jogo em tela cheia após alt+tab) não pode ser capturada: cai para a tela inteira, que mostra o jogo quando ele volta
+      const s = sources.find(x => x.id === pickedSource) || sources.find(x => x.id.startsWith('screen:')) || sources[0];
       if (!s) return callback({});
       callback(request.audioRequested ? { video: s, audio: 'loopback' } : { video: s });
     } catch (e) { console.error(e); callback({}); }
@@ -136,9 +137,24 @@ function setupSession() {
 }
 
 // ---------- IPC ----------
+// janelas já vistas ficam na lista por alguns minutos: jogo em tela cheia some do Windows ao dar alt+tab (minimiza)
+const seenWindows = new Map();
 ipcMain.handle('get-sources', async () => {
   const list = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: true });
-  return list.filter(s => s.name !== 'LocalCord').map(s => ({ id: s.id, name: s.name, type: s.id.startsWith('screen') ? 'screen' : 'window', thumbnail: s.thumbnail.toDataURL(), appIcon: s.appIcon && !s.appIcon.isEmpty() ? s.appIcon.toDataURL() : null }));
+  const now = Date.now(), out = [];
+  for (const s of list) {
+    if (s.name === 'LocalCord') continue;
+    const type = s.id.startsWith('screen') ? 'screen' : 'window';
+    const item = { id: s.id, name: s.name, type, thumbnail: s.thumbnail.toDataURL(), appIcon: s.appIcon && !s.appIcon.isEmpty() ? s.appIcon.toDataURL() : null };
+    out.push(item);
+    if (type === 'window') seenWindows.set(s.id, { item, at: now });
+  }
+  const live = new Set(out.map(o => o.id));
+  for (const [id, v] of seenWindows) {
+    if (now - v.at > 10 * 60 * 1000) seenWindows.delete(id);
+    else if (!live.has(id)) out.push({ ...v.item, name: v.item.name + ' (minimizado)' });
+  }
+  return out;
 });
 ipcMain.handle('select-source', (_e, id) => { pickedSource = id; return true; });
 ipcMain.on('set-badge', (_e, n) => setBadge(n));

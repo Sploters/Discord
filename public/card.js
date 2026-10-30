@@ -1,23 +1,24 @@
-import { h, avatar } from './util.js';
+import { h, avatar, framePos } from './util.js';
 import { lightbox } from './state.js';
 import { isLightPair, styleName } from './themes.js';
 
 export const STATUS_TXT = { online: 'Online', idle: 'Ausente', dnd: 'Não perturbe', invisible: 'Invisível', offline: 'Offline' };
 
 // Cartão de perfil (usado no popout e na prévia da tela de perfil)
-export function profileCard(u, { nickname, roles = [], since, extra, accent } = {}) {
+export function profileCard(u, { nickname, roles = [], since, extra, accent, onImage } = {}) {
   const tp = u.theme_primary, ta = u.theme_accent, themed = !!(tp && ta);
   const color = themed ? tp : accent || u.banner_color || u.color || '#5865f2'; // com tema, o banner sem imagem segue a cor principal
-  const banner = h('div.banner', { style: { background: u.banner ? `center / cover url("${u.banner}")` : color }, ...(u.banner ? { title: 'Ver banner', onclick: () => lightbox(u.banner) } : {}) });
+  const banner = h('div.banner', { style: { background: color, position: 'relative', overflow: 'hidden' }, ...(u.banner ? { title: onImage ? 'Ver perfil completo' : 'Ver banner', onclick: () => (onImage ? onImage() : lightbox(u.banner)) } : {}) });
+  if (u.banner) banner.append(framePos(h('img', { src: u.banner, alt: '', draggable: false, style: { position: 'absolute', inset: 0, width: '100%', height: '100%' } }), u.banner_pos));
   banner.classList.toggle('zoomable', !!u.banner);
   const av = avatar(u, 80, { ring: themed ? tp : 'var(--bg-float)' });
-  if (u.avatar) { av.classList.add('zoomable'); av.title = 'Ver foto de perfil'; av.onclick = (e) => { e.stopPropagation(); lightbox(u.avatar); }; }
+  if (u.avatar || onImage) { av.classList.add('zoomable'); av.title = onImage ? 'Ver perfil completo' : 'Ver foto de perfil'; av.onclick = (e) => { e.stopPropagation(); onImage ? onImage() : lightbox(u.avatar); }; }
   const emoji = u.status_emoji && /^<:/.test(u.status_emoji) ? null : u.status_emoji;
   const el = h('div.pcard' + (themed ? '.themed' + (isLightPair(tp, ta) ? '.tlight' : '.tdark') : ''),
     banner,
     h('div.pa', av),
     h('div.pb',
-      h('h3', styleName(h('span', nickname || u.display_name), u.name_style), u.pronouns && h('small.pron', u.pronouns)),
+      h('h3', styleName(h('span', nickname || u.display_name), u.name_style)),
       h('div.un', u.username + (u.status && u.status !== 'offline' ? ' • ' + STATUS_TXT[u.status] : '')),
       (u.custom_status || emoji) && h('p.cstat', emoji && h('span', emoji + ' '), u.custom_status),
       h('hr'),

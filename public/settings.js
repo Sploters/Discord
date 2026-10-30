@@ -1,4 +1,4 @@
-import { h, icon, avatar } from './util.js';
+import { h, icon, avatar, framePos, parsePos } from './util.js';
 import { S, api, tryApi, savePrefs, user, guild, can, PERM, PERM_LABELS, toast, confirmBox, promptBox, modal, nameOf, desktop, applyTheme, emojiPicker, channelById } from './state.js';
 import { createMic, newAudioContext, NOISE_MODES, VOICE_BITRATES } from './voice.js';
 import { profileCard } from './card.js';
@@ -29,6 +29,27 @@ async function uploadFile(accept = 'image/*', maxMB = 12) {
 }
 const uploadImage = () => uploadFile('image/*', 12);
 // avatares prontos do servidor + opção de enviar uma imagem própria
+// ajustar enquadramento: arraste a imagem e use o zoom; salva "x,y,zoom"
+function positionEditor(kind, url, current, onSave) {
+  const isAv = kind === 'avatar', p = parsePos(current);
+  const img = h('img', { src: url, alt: '', draggable: false, style: { position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' } });
+  const frame = h('div', { style: { position: 'relative', overflow: 'hidden', cursor: 'grab', touchAction: 'none', background: '#000', margin: '0 auto', ...(isAv ? { width: '220px', height: '220px', borderRadius: '50%' } : { width: '100%', maxWidth: '420px', aspectRatio: '3 / 1', borderRadius: '8px' }) } }, img);
+  const apply = () => framePos(img, p.x.toFixed(1) + ',' + p.y.toFixed(1) + ',' + p.z.toFixed(2));
+  apply();
+  let drag = null;
+  frame.onpointerdown = (e) => { frame.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, px: p.x, py: p.y }; frame.style.cursor = 'grabbing'; };
+  frame.onpointerup = frame.onpointercancel = () => { drag = null; frame.style.cursor = 'grab'; };
+  frame.onpointermove = (e) => {
+    if (!drag) return; const r = frame.getBoundingClientRect();
+    // arrastar para a direita mostra mais da esquerda da imagem (x diminui); o movimento útil é proporcional ao excesso da imagem
+    p.x = Math.max(0, Math.min(100, drag.px - (e.clientX - drag.x) / r.width * 100));
+    p.y = Math.max(0, Math.min(100, drag.py - (e.clientY - drag.y) / r.height * 100));
+    apply();
+  };
+  const zoom = h('input', { type: 'range', min: 1, max: 3, step: 0.05, value: p.z, style: { width: '100%', marginTop: '14px' }, oninput: () => { p.z = +zoom.value; apply(); } });
+  modal(isAv ? 'Ajustar avatar' : 'Ajustar banner', 'Arraste a imagem para reposicionar e use o controle para dar zoom.', h('div', frame, h('label.f', { style: { marginTop: '14px' } }, 'Zoom'), zoom),
+    [{ label: 'Cancelar', cls: 'link' }, { label: 'Centralizar', cls: 'grey', fn: () => { p.x = p.y = 50; p.z = 1; zoom.value = 1; apply(); return false; } }, { label: 'Aplicar', cls: 'green', fn: () => onSave(p.x.toFixed(1) + ',' + p.y.toFixed(1) + ',' + p.z.toFixed(2)) }]);
+}
 async function avatarPicker(current, onPick) {
   const info = await fetch('/api/server-info').then(r => r.json()).catch(() => ({}));
   let m;
@@ -115,7 +136,7 @@ function deleteDialog(close) {
 // ============================ Perfil ============================
 function profilePage() {
   const me = S.me;
-  const base = () => ({ name_style: me.name_style ? { ...me.name_style } : null, theme_primary: me.theme_primary || null, theme_accent: me.theme_accent || null, display_name: me.display_name, avatar: me.avatar, banner: me.banner, color: me.color, banner_color: me.banner_color || me.color, pronouns: me.pronouns || '', bio: me.bio || '', custom_status: me.custom_status || '', status_emoji: me.status_emoji || '' });
+  const base = () => ({ name_style: me.name_style ? { ...me.name_style } : null, theme_primary: me.theme_primary || null, theme_accent: me.theme_accent || null, display_name: me.display_name, avatar: me.avatar, banner: me.banner, avatar_pos: me.avatar_pos || '', banner_pos: me.banner_pos || '', color: me.color, banner_color: me.banner_color || me.color, pronouns: me.pronouns || '', bio: me.bio || '', custom_status: me.custom_status || '', status_emoji: me.status_emoji || '' });
   const d = base(), wrap = h('div.profile-ed'), prevBox = h('div.preview'), bar = h('div.savebar.hidden');
   const draft = () => ({ ...me, ...d, status: me.status === 'invisible' ? 'invisible' : 'online' });
   const redraw = () => { prevBox.replaceChildren(h('div.popout.static', profileCard(draft(), { accent: d.banner ? null : d.banner_color }))); };
@@ -123,9 +144,9 @@ function profilePage() {
   const bind = (key, input) => { input.value = d[key]; input.oninput = () => { d[key] = input.value; touch(); }; return input; };
   const emojiBtn = h('button.btn.grey', { style: { minWidth: '44px' }, title: 'Escolher emoji', onclick: (e) => emojiPicker(e.currentTarget, (em) => { d.status_emoji = em.startsWith('<:') ? '' : em; emojiBtn.textContent = d.status_emoji || '😀'; touch(); }, { noCustom: true }) }, d.status_emoji || '😀');
   const left = h('div.col',
-    card(row('Avatar', 'Escolha um dos avatares prontos ou envie PNG, JPG, GIF ou WebP até 12 MB', h('div.btns', h('button.btn', { onclick: () => avatarPicker(d.avatar, (url) => { d.avatar = url; touch(); }) }, 'Trocar'), h('button.btn.grey', { onclick: () => { d.avatar = null; touch(); } }, 'Remover'))),
-      row('Banner', 'Imagem de fundo do seu cartão', h('div.btns', h('button.btn', { onclick: async () => { const u = await uploadImage(); if (u) { d.banner = u.url; touch(); } } }, 'Enviar'), h('button.btn.grey', { onclick: () => { d.banner = null; touch(); } }, 'Remover')))),
-    card(h('label.f', 'Nome de exibição', bind('display_name', h('input', { maxLength: 32 }))), h('label.f', 'Pronomes', bind('pronouns', h('input', { maxLength: 40, placeholder: 'ele/dele, ela/dela, elu/delu…' }))),
+    card(row('Avatar', 'Escolha um dos avatares prontos ou envie PNG, JPG, GIF ou WebP até 12 MB', h('div.btns', h('button.btn', { onclick: () => avatarPicker(d.avatar, (url) => { d.avatar = url; d.avatar_pos = ''; touch(); }) }, 'Trocar'), h('button.btn.grey', { onclick: () => d.avatar ? positionEditor('avatar', d.avatar, d.avatar_pos, (v) => { d.avatar_pos = v; touch(); }) : toast('Escolha uma imagem primeiro.', true) }, 'Ajustar'), h('button.btn.grey', { onclick: () => { d.avatar = null; touch(); } }, 'Remover'))),
+      row('Banner', 'Imagem de fundo do seu cartão', h('div.btns', h('button.btn', { onclick: async () => { const u = await uploadImage(); if (u) { d.banner = u.url; d.banner_pos = ''; touch(); } } }, 'Enviar'), h('button.btn.grey', { onclick: () => d.banner ? positionEditor('banner', d.banner, d.banner_pos, (v) => { d.banner_pos = v; touch(); }) : toast('Envie uma imagem primeiro.', true) }, 'Ajustar'), h('button.btn.grey', { onclick: () => { d.banner = null; touch(); } }, 'Remover')))),
+    card(h('label.f', 'Nome de exibição', bind('display_name', h('input', { maxLength: 32 }))),
       h('label.f', 'Cor do avatar'), swatches(d.color, (c) => { d.color = c; touch(); }), h('label.f', { style: { marginTop: '16px' } }, 'Cor do banner / destaque'), swatches(d.banner_color, (c) => { d.banner_color = c; touch(); }), hint('Com tema do perfil ativo, o banner sem imagem usa a cor principal do tema.')),
     nameStyleCard(d, touch),
     profileThemeCard(d, touch),
@@ -133,9 +154,13 @@ function profilePage() {
       h('label.f', { style: { marginTop: '16px' } }, 'Presença', seg({ online: 'Online', idle: 'Ausente', dnd: 'Não perturbe', invisible: 'Invisível' }, me.status, (v) => tryApi('PATCH', '/me', { status: v }))),
       h('label.f', { style: { marginTop: '16px' } }, 'Sobre mim', bind('bio', h('textarea', { rows: 4, maxLength: 300 })))));
   bar.append(h('span', 'Cuidado — você tem alterações não salvas!'), h('div.btns', h('button.btn.link', { onclick: () => { Object.assign(d, base()); bar.classList.add('hidden'); redraw(); wrap.replaceWith(profilePage()); } }, 'Redefinir'),
-    h('button.btn.green', { onclick: async () => { const r = await tryApi('PATCH', '/me', { display_name: d.display_name, avatar: d.avatar || '', banner: d.banner || '', color: d.color, banner_color: d.banner_color, pronouns: d.pronouns, bio: d.bio, custom_status: d.custom_status, status_emoji: d.status_emoji, theme_primary: d.theme_primary || '', theme_accent: d.theme_accent || '', name_style: d.name_style }); if (r) { toast('Perfil salvo!'); bar.classList.add('hidden'); } } }, 'Salvar alterações')));
+    h('button.btn.green', { onclick: async () => { const r = await tryApi('PATCH', '/me', { display_name: d.display_name, avatar: d.avatar || '', banner: d.banner || '', avatar_pos: d.avatar_pos || '', banner_pos: d.banner_pos || '', color: d.color, banner_color: d.banner_color, pronouns: d.pronouns, bio: d.bio, custom_status: d.custom_status, status_emoji: d.status_emoji, theme_primary: d.theme_primary || '', theme_accent: d.theme_accent || '', name_style: d.name_style }); if (r) { toast('Perfil salvo!'); bar.classList.add('hidden'); } } }, 'Salvar alterações')));
   wrap.append(h('h2', 'Perfil'), h('div.pgrid', left, h('div.col', h('div.fh', 'Prévia'), prevBox)), bar);
   redraw(); return wrap;
+}
+// "perfil completo": estilos à esquerda (avatar, banner, cores, tema, estilo do nome) e a prévia do cartão à direita
+export function openFullProfile() {
+  modal('Seu perfil completo', 'Edite avatar, banner, tema e informações. A prévia mostra como os outros veem o seu perfil.', profilePage(), [{ label: 'Fechar', cls: 'link' }], { width: '1040px' });
 }
 
 // estilo do nome: fonte, efeito e até duas cores; a prévia ao lado mostra o resultado

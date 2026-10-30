@@ -86,9 +86,16 @@ export const icon = (name, size) => {
 export const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const initials = (s) => (s || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 3).toUpperCase();
 
+// enquadramento "x,y,zoom" (x/y em %, zoom 1–3) aplicado a um <img> com object-fit: cover
+export const parsePos = (s) => { const m = String(s || '').split(',').map(Number); return m.length === 3 && m.every(Number.isFinite) ? { x: m[0], y: m[1], z: m[2] } : { x: 50, y: 50, z: 1 }; };
+export function framePos(img, s) {
+  const p = parsePos(s); img.style.objectFit = 'cover'; img.style.objectPosition = p.x + '% ' + p.y + '%';
+  img.style.transformOrigin = p.x + '% ' + p.y + '%'; img.style.transform = p.z > 1 ? 'scale(' + p.z + ')' : '';
+  return img;
+}
 export function avatar(u, size = 40, opts = {}) {
   const el = h('div.avatar', { style: { width: size + 'px', height: size + 'px', fontSize: Math.round(size * .42) + 'px', background: u?.color || '#5865f2' } });
-  if (u?.avatar) el.append(h('img', { src: u.avatar, alt: '', loading: 'lazy' })); else el.append((u?.display_name || u?.username || '?')[0].toUpperCase());
+  if (u?.avatar) el.append(framePos(h('img', { src: u.avatar, alt: '', loading: 'lazy' }), u.avatar_pos)); else el.append((u?.display_name || u?.username || '?')[0].toUpperCase());
   if (opts.status !== false && u) el.append(h('div.status.s-' + (u.status || 'offline'), { style: { borderColor: opts.ring || '' } }));
   return el;
 }

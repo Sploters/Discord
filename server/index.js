@@ -39,9 +39,10 @@ const cleanNameStyle = (v) => {
   return s.font === 'default' && s.effect === 'solid' && !hex(v.c1) ? null : s;
 };
 const parseNameStyle = (t) => { try { return t ? JSON.parse(t) : null; } catch { return null; } };
+const cleanPos = (v) => (/^\d{1,3}(\.\d{1,2})?,\d{1,3}(\.\d{1,2})?,[1-3](\.\d{1,2})?$/.test(String(v)) ? String(v) : null);
 const pubUser = (u) => u && ({
   id: u.id, username: u.username, display_name: u.display_name || u.username, avatar: u.avatar, color: u.color,
-  banner_color: u.banner_color, banner: u.banner, pronouns: u.pronouns, status_emoji: u.status_emoji, theme_primary: u.theme_primary, theme_accent: u.theme_accent, name_style: parseNameStyle(u.name_style),
+  banner_color: u.banner_color, banner: u.banner, avatar_pos: u.avatar_pos, banner_pos: u.banner_pos, pronouns: u.pronouns, status_emoji: u.status_emoji, theme_primary: u.theme_primary, theme_accent: u.theme_accent, name_style: parseNameStyle(u.name_style),
   bio: u.bio, custom_status: u.custom_status, created_at: u.created_at,
   status: (conns.has(u.id) || u.username?.startsWith('bot_music_')) ? (u.status === 'invisible' ? 'offline' : u.status) : 'offline',
 });
@@ -202,6 +203,8 @@ app.patch('/api/me', auth, wrap((req, res) => {
     status: ['online', 'idle', 'dnd', 'invisible'].includes(b.status) ? b.status : u.status,
     pronouns: b.pronouns !== undefined ? clean(b.pronouns, 40) : u.pronouns,
     banner: b.banner !== undefined ? (String(b.banner).startsWith('/files/') ? b.banner : null) : u.banner,
+    avatar_pos: b.avatar_pos !== undefined ? cleanPos(b.avatar_pos) : u.avatar_pos,
+    banner_pos: b.banner_pos !== undefined ? cleanPos(b.banner_pos) : u.banner_pos,
     status_emoji: b.status_emoji !== undefined ? clean(b.status_emoji, 16) : u.status_emoji,
     theme_primary: b.theme_primary !== undefined ? hex(b.theme_primary) : u.theme_primary,
     theme_accent: b.theme_accent !== undefined ? hex(b.theme_accent) : u.theme_accent,
@@ -209,8 +212,8 @@ app.patch('/api/me', auth, wrap((req, res) => {
   };
   if (!f.theme_primary || !f.theme_accent) f.theme_primary = f.theme_accent = null; // tema só com as duas cores
   if (f.avatar && !String(f.avatar).startsWith('/files/') && !DEFAULT_AVATARS.includes(f.avatar)) f.avatar = u.avatar;
-  run('UPDATE users SET display_name=?,bio=?,avatar=?,color=?,banner_color=?,custom_status=?,status=?,pronouns=?,banner=?,status_emoji=?,theme_primary=?,theme_accent=?,name_style=? WHERE id=?',
-    f.display_name, f.bio, f.avatar, f.color, f.banner_color, f.custom_status, f.status, f.pronouns, f.banner, f.status_emoji, f.theme_primary, f.theme_accent, f.name_style, req.uid);
+  run('UPDATE users SET display_name=?,bio=?,avatar=?,color=?,banner_color=?,custom_status=?,status=?,pronouns=?,banner=?,avatar_pos=?,banner_pos=?,status_emoji=?,theme_primary=?,theme_accent=?,name_style=? WHERE id=?',
+    f.display_name, f.bio, f.avatar, f.color, f.banner_color, f.custom_status, f.status, f.pronouns, f.banner, f.avatar_pos, f.banner_pos, f.status_emoji, f.theme_primary, f.theme_accent, f.name_style, req.uid);
   broadcastPresence(req.uid);
   res.json(userPub(req.uid));
 }));

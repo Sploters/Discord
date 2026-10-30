@@ -1,4 +1,4 @@
-import { h, icon, avatar, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyEmoji, isImageUrl, SHORT, inviteCodes, stripInvites, inviteText } from './util.js';
+import { h, icon, avatar, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyEmoji, isImageUrl, SHORT, inviteCodes, stripInvites, inviteText, parsePos } from './util.js';
 import { S, api, tryApi, user, guild, channelById, member, nameOf, roleColor, can, perms, PERM, dmPeer, relType, toast, modal, confirmBox, promptBox, menu, popout, emojiPicker, lightbox, closeFloating, beep, notify, notifPolicy, desktop, applyTheme, emojiUrl, allEmojis, savePrefs } from './state.js';
 import { Voice, SCREEN_PRESETS, VOICE_BITRATES } from './voice.js';
 import { playSound } from './sounds.js';
@@ -8,7 +8,7 @@ import { openAudioPanel, openStatusPanel, openMicPanel, volumeControl } from './
 import { previewHooks, hidePreview, paintTyping as previewTyping, previewMessage } from './chpreview.js';
 import { chName } from './chnames.js';
 import { seg, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
-import { openSettings } from './settings.js';
+import { openSettings, openFullProfile } from './settings.js';
 import { saveCustomTheme } from './themeeditor.js';
 import { THEME_CODE_RE, decodeTheme, gradientCss, styleName, stripThemeCodes, themeText, encodeTheme, GRADIENT_THEMES, themeDef } from './themes.js';
 import { profileCard, STATUS_TXT } from './card.js';
@@ -91,6 +91,7 @@ function onEvent(t, d) {
       for (const dm of d.dms) { S.dms.set(dm.id, dm); dm.recipients.forEach(u => S.users.set(u.id, u)); }
       for (const r of d.relationships) { S.rels.set(r.user.id, r); S.users.set(r.user.id, r.user); }
       if (!voice) voice = new Voice({ send: gwSend, ice: S.ice, myId: S.me.id, prefs: S.prefs, onUpdate: (speakOnly) => renderVoiceUI(speakOnly) });
+      voice.onAutoAdjust = (msg) => toast(msg);
       voice.ice = S.ice;
       if (!ready) buildShell(); ready = true;
       $('#auth').classList.add('hidden'); $('#app').classList.remove('hidden');
@@ -146,6 +147,7 @@ function onEvent(t, d) {
     case 'VOICE_STATE': {
       const prevVs = S.voice.get(d.user_id), before = prevVs?.channel_id, mineCh = voice.channelId;
       if (d.channel_id) S.voice.set(d.user_id, d); else S.voice.delete(d.user_id);
+      if (S.view.kind === 'home') setTimeout(renderActiveNow);
       if (d.user_id === S.me.id && !d.channel_id) musicOnState({ active: false });
       if (d.user_id === S.me.id && !d.channel_id && voice.active && voice.channelId === d.prev_channel_id) voice.leave();
       if (d.user_id !== S.me.id) {
@@ -453,9 +455,8 @@ function voicePanel() {
     h('div.row',
       h('button' + (voice.cam ? '.on' : ''), { title: 'Câmera', onclick: () => voiceAct(() => voice.toggleCam()) }, icon('video', 20)),
       h('button' + (voice.screen ? '.on' : ''), { title: 'Transmitir tela', onclick: startShare }, icon('screen', 20)),
-      h('button', { title: 'Configurações de voz', onclick: () => openSettings('voice', ctxSettings()) }, icon('sliders', 20)),
       h('button', { title: 'Soundboard', onclick: (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) }) }, icon('voice', 20)),
-      h('button', { title: 'Música (bot)', onclick: (e) => openMusic(e.currentTarget, voice) }, icon('music', 20))));
+      h('button', { title: 'Música (bot) — indisponível', disabled: true, style: { opacity: .4, cursor: 'not-allowed' } }, icon('music', 20))));
 }
 const voiceAct = (fn) => Promise.resolve().then(fn).catch(e => toast(e.message, true));
 function joinVoice(cid) {
@@ -465,7 +466,7 @@ function joinVoice(cid) {
 function userbar() {
   const me = S.me, ctx = () => ({ voice, logout, go });
   return h('div#userbar',
-    h('div.me', { onclick: (e) => openStatusPanel(e.currentTarget, { openSettings: (k) => openSettings(k, ctx()), openProfile: () => profile($('#userbar .me'), me.id, S.view.gid) }), oncontextmenu: (e) => statusMenu(e), title: 'Status e perfil' }, avatar(me, 38, { ring: 'var(--bg-user)' }),
+    h('div.me', { onclick: (e) => openStatusPanel(e.currentTarget, { openSettings: (k) => openSettings(k, ctx()), openFullProfile, logout }), oncontextmenu: (e) => statusMenu(e), title: 'Status e perfil' }, avatar(me, 38, { ring: 'var(--bg-user)' }),
       h('div.names', styleName(h('div.dn', me.display_name), me.name_style), h('div.un', me.custom_status || STATUS_TXT[me.status]))),
     h('div.ubtn', h('button.ibtn' + (voice?.muted ? '.on' : ''), { title: voice?.muted ? 'Ativar microfone' : 'Silenciar', onclick: () => voiceToggle('mute') }, icon(voice?.muted ? 'micoff' : 'mic')),
       h('button.ibtn.caret', { title: 'Dispositivo de entrada, ruído e eco', onclick: (e) => openAudioPanel(e.currentTarget, voice, 'in', { openSettings: (k) => openSettings(k, ctx()) }) }, icon('caret', 14))),
@@ -505,7 +506,7 @@ async function profile(anchor, uid, gid) {
       rt === 0 && h('button.btn.grey', { onclick: async () => { await tryApi('POST', '/relationships', { username: u.username }); closeFloating(); toast('Pedido de amizade enviado'); } }, 'Adicionar amigo'),
       rt === 3 && h('button.btn.green', { onclick: async () => { await tryApi('PUT', `/relationships/${uid}`, {}); closeFloating(); } }, 'Aceitar'));
   const extra = [u.mutual_guilds?.length > 0 && !isMe && [h('h4', 'Servidores em comum'), h('p', u.mutual_guilds.map(x => x.name).join(', '))], actions];
-  const node = profileCard(u, { nickname: m?.nickname, roles, extra });
+  const node = profileCard(u, { nickname: m?.nickname, roles, extra, onImage: isMe ? () => { closeFloating(); openFullProfile(); } : undefined }); // no próprio perfil, clicar na foto abre o perfil completo
   popout(anchor, node, anchor.closest('#members') || anchor.closest('.msg') ? 'left' : 'right');
 }
 // ---------- ações do menu do usuário ----------
@@ -528,15 +529,15 @@ async function callUser(uid) {
   closeFloating(); go('@me', dm.id); if (voice?.channelId !== dm.id) joinVoice(dm.id);
 }
 // convite: escolhe um servidor seu e o link vai por mensagem direta
+async function sendServerInvite(g, uid) {
+  const r = await tryApi('POST', `/guilds/${g.id}/invites`); if (!r) return;
+  const dm = await ensureDM(uid); if (!dm) return;
+  if (await tryApi('POST', `/channels/${dm.id}/messages`, { content: `${location.origin}/invite/${r.code}` })) toast(`Convite para ${g.name} enviado a ${user(uid).display_name}`);
+}
 function inviteToServer(uid) {
   const gs = [...S.guilds.values()];
   if (!gs.length) return toast('Você ainda não está em nenhum servidor', true);
-  const send = async (g) => {
-    dlg.close();
-    const r = await tryApi('POST', `/guilds/${g.id}/invites`); if (!r) return;
-    const dm = await ensureDM(uid); if (!dm) return;
-    if (await tryApi('POST', `/channels/${dm.id}/messages`, { content: `${location.origin}/invite/${r.code}` })) toast(`Convite para ${g.name} enviado a ${user(uid).display_name}`);
-  };
+  const send = (g) => { dlg.close(); return sendServerInvite(g, uid); };
   const row = (g) => {
     const inside = g.members?.has(uid);
     return h('button.gpick' + (inside ? '.in' : ''), { disabled: inside, title: inside ? 'Já está neste servidor' : `Convidar para ${g.name}`, onclick: () => send(g) },
@@ -559,7 +560,51 @@ async function openDM(uid) {
   S.dms.set(dm.id, dm); closeFloating(); go('@me', dm.id);
 }
 // quem está em voz numa sala que dá para entrar (e que não é a minha)
+// menus da pessoa durante uma chamada (como no Discord)
+function callUserMenu(e, uid, gid) {
+  const g = gid && gid !== '@me' ? guild(gid) : null;
+  if (uid === S.me.id) {
+    const others = g ? g.channels.filter(c => c.type === 2 && c.id !== voice.channelId) : [];
+    return menu(e, [
+      { label: 'Perfil', fn: () => profile(e.target, uid, gid) },
+      '-',
+      { label: 'Mute', checked: voice.muted, fn: () => voiceToggle('mute') },
+      { label: 'Deafen', checked: voice.deafened, fn: () => voiceToggle('deaf') },
+      g && { label: 'Editar perfil do servidor', fn: async () => { const n = await promptBox('Apelido neste servidor', 'Apelido', member(g.id, S.me.id)?.nickname || ''); if (n != null) tryApi('PATCH', `/guilds/${g.id}/members/me`, { nickname: n }); } },
+      others.length > 0 && '-',
+      others.length > 0 && { label: 'Mover para', sub: others.map(c => ({ label: chName(c), fn: () => joinVoice(c.id) })) },
+      S.prefs.devMode && '-', S.prefs.devMode && { label: 'Copiar ID do usuário', fn: () => navigator.clipboard?.writeText(uid) },
+    ]);
+  }
+  const rt = relType(uid), p = S.prefs, flag = (k) => !!p[k]?.[uid], flip = (k) => { const m = (p[k] ||= {}); if (m[uid]) delete m[uid]; else m[uid] = true; savePrefs(); voice?.applyVolume(uid); renderVoiceUI(); };
+  const invites = [...S.guilds.values()].filter(x => !x.members?.has(uid));
+  menu(e, [
+    { label: 'Perfil', fn: () => profile(e.target, uid, gid) },
+    { label: 'Mensagem', fn: async () => { const dm = await ensureDM(uid); if (dm) go('@me', dm.id); } },
+    { label: 'Iniciar Ligação', fn: () => callUser(uid) },
+    '-',
+    voice.peers.has(uid) && { node: volumeControl(voice, uid, 'mic', 'Volume do usuário') },
+    voice.peers.get(uid)?.screenAudioEl && { node: volumeControl(voice, uid, 'screen', 'Áudio da transmissão') },
+    '-',
+    { label: 'Mute', checked: isLocalMuted(uid), fn: () => toggleLocalMute(uid) },
+    { label: 'Silenciar Soundboard', checked: flag('sbMutedUsers'), fn: () => flip('sbMutedUsers') },
+    { label: 'Desativar Vídeo', checked: flag('hiddenVideo'), fn: () => flip('hiddenVideo') },
+    { label: 'Convidar para Servidor', sub: invites.length ? invites.map(x => ({ label: x.name, fn: () => sendServerInvite(x, uid) })) : [{ label: 'Já está em todos os seus servidores', fn: () => { } }] },
+    rt === 1 ? { label: 'Remover Amizade', danger: true, fn: async () => { if (await confirmBox('Remover amizade', `Remover ${user(uid).display_name} dos seus amigos?`, 'Remover')) tryApi('DELETE', `/relationships/${uid}`); } }
+      : rt === 3 ? { label: 'Aceitar Amizade', fn: () => tryApi('PUT', `/relationships/${uid}`, {}) }
+      : rt === 4 ? { label: 'Cancelar Pedido de Amizade', fn: () => tryApi('DELETE', `/relationships/${uid}`) }
+      : rt === 0 && { label: 'Adicionar Amizade', fn: () => tryApi('POST', '/relationships', { username: user(uid).username }).then(r => r && toast('Pedido enviado')) },
+    rt !== 2 ? { label: 'Bloquear', danger: true, fn: () => tryApi('PUT', `/relationships/${uid}`, { type: 2 }) } : { label: 'Desbloquear', fn: () => tryApi('DELETE', `/relationships/${uid}`) },
+    // moderação continua disponível para quem tem permissão
+    g && g.owner_id !== uid && (can(gid, PERM.MODERATE) || can(gid, PERM.BAN) || can(gid, PERM.KICK)) && '-',
+    g && can(gid, PERM.MODERATE) && g.owner_id !== uid && (timedOutUntil(gid, uid) ? { label: 'Remover castigo', fn: () => removeTimeout(gid, uid) } : { label: 'Castigo…', danger: true, fn: () => timeoutDialog(gid, uid) }),
+    g && can(gid, PERM.BAN) && g.owner_id !== uid && { label: 'Banir…', danger: true, fn: () => banDialog(gid, uid) },
+    g && can(gid, PERM.KICK) && g.owner_id !== uid && { label: 'Expulsar', danger: true, fn: async () => { if (await confirmBox('Expulsar membro', `Expulsar ${user(uid).display_name}?`, 'Expulsar')) tryApi('DELETE', `/guilds/${gid}/members/${uid}`); } },
+    S.prefs.devMode && { label: 'Copiar ID do usuário', fn: () => navigator.clipboard?.writeText(uid) },
+  ]);
+}
 function userMenu(e, uid, gid) {
+  if (voice?.channelId) return callUserMenu(e, uid, gid);
   if (uid === S.me.id) return menu(e, [{ label: 'Perfil', fn: () => profile(e.target, uid, gid) }, S.prefs.devMode && { label: 'Copiar ID do usuário', fn: () => navigator.clipboard?.writeText(uid) }]);
   const g = gid && gid !== '@me' ? guild(gid) : null, rt = relType(uid), muted = isLocalMuted(uid);
   menu(e, [
@@ -1050,13 +1095,32 @@ function renderMembers() {
 }
 
 // =============== Início / amigos ===============
+// painel "Ativo agora": amigos online, com servidor e sala de voz quando estão numa chamada
+function renderActiveNow() {
+  const box = document.getElementById('active-now'); if (!box) return;
+  const friends = [...S.rels.values()].filter(r => r.type === 1).map(r => S.users.get(r.user.id) || r.user).filter(u => u.status && u.status !== 'offline');
+  const inVoice = [], other = [];
+  for (const u of friends) { const v = S.voice.get(u.id), ch = v && channelById(v.channel_id); (ch ? inVoice : other).push({ u, v, ch }); }
+  const byName = (a, b) => (a.u.display_name || '').localeCompare(b.u.display_name || '');
+  const voiceCard = ({ u, v, ch }) => {
+    const g = ch.type === 1 ? null : guild(ch.guild_id);
+    return h('div.an-card', { title: 'Ir para a sala', onclick: () => (g ? go(g.id, ch.id) : go('@me', ch.id)), oncontextmenu: (e) => userMenu(e, u.id, g?.id) },
+      h('div.an-top', avatar(u, 40, { ring: 'var(--bg-sec)' }), h('div.an-who', styleName(h('b', u.display_name), u.name_style), h('small', g ? g.name : 'Em uma ligação privada'))),
+      h('div.an-room', icon('voice', 16), h('span', g ? chName(ch) : 'Ligação'), v.screen && h('span.an-live', 'AO VIVO'), v.mute && icon('micoff', 14)));
+  };
+  const rows = ({ u }) => h('div.an-row', { onclick: () => openDM(u.id), oncontextmenu: (e) => userMenu(e, u.id) }, avatar(u, 32, { ring: 'var(--bg-sec)' }),
+    h('div.an-who', styleName(h('b', u.display_name), u.name_style), h('small', u.custom_status || STATUS_TXT[u.status])));
+  box.replaceChildren(h('h3', 'Ativo agora'),
+    ...(inVoice.length ? [h('div.an-cap', 'Em chamada de voz'), ...inVoice.sort(byName).map(voiceCard)] : []),
+    ...(other.length ? [h('div.an-cap', 'Online'), ...other.sort(byName).map(rows)] : []),
+    !friends.length && h('div.an-empty', h('b', 'Tudo quieto por aqui…'), h('p', 'Quando seus amigos ficarem online ou entrarem numa sala de voz, eles aparecem aqui.')));
+}
 function renderHome(main) {
   if (S.view.tab === 'blocked') S.view.tab = 'online'; // bloqueados ficam em Configurações → Privacidade e segurança
   const tab = S.view.tab, rels = [...S.rels.values()];
   const tabs = [['online', 'Online'], ['all', 'Todos'], ['pending', 'Pendentes']];
   const q = h('input.fsearch', { placeholder: 'Buscar', oninput: () => draw() });
-  const sortBy = S.prefs.friendSort || 'status', ORD = { online: 0, idle: 1, dnd: 2, invisible: 3, offline: 4 };
-  const sorter = h('select.fsort', { title: 'Ordenar', onchange: (e) => { S.prefs.friendSort = e.target.value; savePrefs?.(); draw(); } }, [['status', 'Ordenar: status'], ['name', 'Ordenar: nome']].map(([v, l]) => h('option', { value: v, selected: v === sortBy }, l)));
+  const ORD = { online: 0, idle: 1, dnd: 2, invisible: 3, offline: 4 };
   const cnt = (k) => rels.filter(r => k === 'online' ? r.type === 1 && S.users.get(r.user.id)?.status !== 'offline' : k === 'all' ? r.type === 1 : k === 'pending' ? r.type === 3 || r.type === 4 : r.type === 2).length;
   const pane = h('div.pane');
   const draw = () => {
@@ -1069,8 +1133,8 @@ function renderHome(main) {
     let list = rels.filter(r => tab === 'online' ? r.type === 1 && S.users.get(r.user.id).status !== 'offline' : tab === 'all' ? r.type === 1 : tab === 'pending' ? r.type === 3 || r.type === 4 : r.type === 2);
     list = list.filter(r => r.user.username.toLowerCase().includes(q.value.toLowerCase()) || r.user.display_name.toLowerCase().includes(q.value.toLowerCase()));
     const nm = (r) => (r.user.display_name || r.user.username).toLowerCase();
-    list.sort((a, b) => sortBy === 'name' ? nm(a).localeCompare(nm(b)) : (ORD[S.users.get(a.user.id)?.status || 'offline'] - ORD[S.users.get(b.user.id)?.status || 'offline']) || nm(a).localeCompare(nm(b)));
-    pane.append(h('div.fctl', q, sorter), h('div.fh', `${{ online: 'Online', all: 'Todos os amigos', pending: 'Pendentes', blocked: 'Bloqueados' }[tab]} — ${list.length}`));
+    list.sort((a, b) => (ORD[S.users.get(a.user.id)?.status || 'offline'] - ORD[S.users.get(b.user.id)?.status || 'offline']) || nm(a).localeCompare(nm(b)));
+    pane.append(h('div.fctl', q), h('div.fh', `${{ online: 'Online', all: 'Todos os amigos', pending: 'Pendentes', blocked: 'Bloqueados' }[tab]} — ${list.length}`));
     if (!list.length) return pane.append(h('div.empty', { style: { marginTop: '60px' } }, h('div', { style: { fontSize: '48px' } }, '🌙'), h('p', tab === 'pending' ? 'Nenhum pedido pendente.' : tab === 'blocked' ? 'Você não bloqueou ninguém.' : 'Ninguém por aqui ainda. Que tal adicionar um amigo?')));
     for (const r of list) {
       const u = S.users.get(r.user.id) || r.user;
@@ -1087,8 +1151,8 @@ function renderHome(main) {
     h('div#topbar', h('button.ibtn.menu-btn', { onclick: () => $('#app').classList.toggle('nav-open'), style: { display: innerWidth <= 640 ? 'flex' : 'none' } }, icon('more')), icon('users', 24), h('span', 'Amigos'), h('div', { style: { width: '1px', height: '24px', background: 'var(--divider)', margin: '0 8px' } }),
       h('div.tabs', tabs.map(([k, l]) => h('div.tab' + (tab === k ? '.active' : ''), { onclick: () => { S.view.tab = k; renderHome(main); } }, l, k !== 'pending' && h('span.tcount', cnt(k)), k === 'pending' && pendingN > 0 && h('span.pill', { style: { marginLeft: '6px', background: 'var(--red)', color: '#fff', borderRadius: '8px', padding: '0 5px', fontSize: '12px' } }, pendingN))),
         h('div.tab.green' + (tab === 'add' ? '.active' : ''), { onclick: () => { S.view.tab = 'add'; renderHome(main); } }, icon('plus', 18), 'Adicionar amigo'))),
-    pane));
-  draw();
+    h('div#homebody', pane, h('aside#active-now'))));
+  draw(); renderActiveNow();
 }
 
 // =============== Voz: palco ===============
@@ -1096,6 +1160,7 @@ const vidCache = new Map(); // reaproveita <video> para não piscar a cada atual
 function videoFor(key, stream, muted = true) {
   let v = vidCache.get(key);
   if (!v || v.srcObject !== stream) { v = h('video', { autoplay: true, playsInline: true, muted }); v.srcObject = stream; vidCache.set(key, v); v.play?.().catch(() => { }); }
+  else if (v.paused) v.play?.().catch(() => { }); // o navegador pausa <video> removido da tela; ao voltar à sala ele ficava congelado
   return v;
 }
 // avisa o servidor de quais transmissões estou assistindo (tela visível agora)
@@ -1145,7 +1210,7 @@ function paintTile(t, u) {
   const tp = u.theme_primary, ta = u.theme_accent;
   let bg = null, kind = '';
   if (tp && ta) { bg = `linear-gradient(160deg, ${tp}, ${ta})`; kind = 'theme'; t.style.setProperty('--ring', ta); }
-  else if (u.banner) { bg = `center / cover url("${u.banner.replace(/"/g, '%22')}")`; kind = 'banner'; }
+  else if (u.banner) { { const bp = parsePos(u.banner_pos); bg = `${bp.x}% ${bp.y}% / cover url("${u.banner.replace(/"/g, '%22')}")`; } kind = 'banner'; }
   else { const c = u.banner_color || avatarTint(u); if (c) { bg = `linear-gradient(160deg, ${c}, color-mix(in srgb, ${c} 45%, #000))`; kind = 'color'; } }
   t.dataset.bg = kind;
   if (bg) t.style.setProperty('--tbg', bg); else t.style.removeProperty('--tbg');
@@ -1191,7 +1256,7 @@ function renderVoiceUI(speakOnly) {
   const nm = (uid) => dm ? user(uid).display_name : nameOf(uid, gid);
   for (const v of members) {
     const uid = v.user_id, mine = uid === S.me.id, p = voice.peers.get(uid);
-    const cam = mine ? voice.cam : p?.streams.cam, scr = mine ? voice.screen : p?.streams.screen;
+    const cam = mine ? voice.cam : (S.prefs.hiddenVideo?.[uid] ? null : p?.streams.cam), scr = mine ? voice.screen : p?.streams.screen;
     if (scr && v.screen) {
       const key = 's:' + uid; live.add(key);
       const vid = videoFor(key, scr), info = h('span.sinfo');
@@ -1219,8 +1284,7 @@ function renderVoiceUI(speakOnly) {
     btn('video', 'Câmera', !!voice.cam, () => voiceAct(() => voice.toggleCam())),
     btn('screen', voice.screen ? 'Parar transmissão' : 'Transmitir tela', !!voice.screen, startShare),
     btn('voice', 'Soundboard', false, (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) })),
-    !dm && btn('music', 'Música (bot)', false, (e) => openMusic(e.currentTarget, voice)),
-    btn('sliders', 'Configurações de voz', false, () => openSettings('voice', ctxSettings())),
+    !dm && h('button.roundbtn', { title: 'Música (bot) — indisponível', disabled: true, style: { opacity: .4, cursor: 'not-allowed' } }, icon('music', 24)),
     btn('phoneoff', 'Desconectar', false, () => voice.leave(), '.red'),
   ] : h('button.btn.green', { style: { minWidth: '220px', minHeight: '46px', fontSize: '16px' }, onclick: () => joinVoice(ch.id) }, dm ? 'Atender / entrar na chamada' : 'Entrar na sala de voz'));
   const rest = focusTile ? tiles.filter(t => t !== focusTile) : tiles;
@@ -1246,10 +1310,10 @@ async function startShare() {
     const items = list.filter(s => s.type === tab);
     if (!loaded) return grid.replaceChildren(h('div.empty', { style: { gridColumn: '1/-1', margin: '28px' } }, 'Carregando telas e janelas…'));
     grid.replaceChildren(...(items.length ? items.map(s => h('div.source' + (src?.id === s.id ? '.sel' : ''), { onclick: () => { src = s; drawSources(); } },
-      h('img', { src: s.thumbnail }), h('div.sn', s.appIcon ? h('img.si', { src: s.appIcon }) : null, h('span', s.name)))) : [h('div.empty', { style: { gridColumn: '1/-1', margin: '24px' } }, 'Nada encontrado.')]));
+      h('img', { src: s.thumbnail }), h('div.sn', s.appIcon ? h('img.si', { src: s.appIcon }) : null, h('span', s.name + (s.gone ? ' (minimizado)' : ''))))) : [h('div.empty', { style: { gridColumn: '1/-1', margin: '24px' } }, 'Nada encontrado.')]));
   };
-  const refresh = async () => { try { list = await desktop.getSources(); loaded = true; if (src && !list.some(s => s.id === src.id)) src = null; if (!src) src = list.find(s => s.type === tab) || list[0] || null; drawSources(); } catch { } };
-  const body = h('div', desktop && [h('label.f', 'O que compartilhar'), tabs, grid], qualityPanel(o),
+  const refresh = async () => { try { const fresh = await desktop.getSources(); loaded = true; const ids = new Set(fresh.map(s => s.id)); list = [...fresh, ...list.filter(s => !ids.has(s.id) && s.type === 'window').map(s => ({ ...s, gone: true }))]; /* jogo em tela cheia some da lista ao dar alt+tab: mantém o que já foi visto */ if (!src) src = list.find(s => s.type === tab) || list[0] || null; drawSources(); } catch { } };
+  const body = h('div', desktop && [h('label.f', 'O que compartilhar'), tabs, grid, h('div.qinfo', 'Jogo em tela cheia? Ele aparece em "Janelas" mesmo que suma ao dar alt+tab: selecione, clique em Transmitir e volte para o jogo. Se não funcionar, use a aba "Telas" (tela inteira).')], qualityPanel(o),
     h('label.f', 'Áudio', seg({ 1: 'Compartilhar áudio do sistema', 0: 'Sem áudio' }, o.audio ? 1 : 0, v => (o.audio = !!v))),
     !desktop && h('div.qinfo', 'Ao clicar em Transmitir, o navegador abrirá o seletor de tela/janela/aba. Para escolher dentro do app, use o aplicativo desktop.'));
   if (desktop) { drawSources(); refresh(); timer = setInterval(() => { if (!document.body.contains(body)) return clearInterval(timer); refresh(); }, 3000); }
@@ -1262,9 +1326,9 @@ async function startShare() {
 // durante a transmissão: mudar qualidade ao vivo, trocar fonte, parar
 function liveShareModal() {
   const o = { ...voice.screenOpts };
-  const settings = h('div.qinfo'), updInfo = () => { const st = voice.screen?.getVideoTracks()[0]?.getSettings?.() || {}; settings.textContent = `Saindo agora: ${st.width || '?'}×${st.height || '?'} a ${Math.round(st.frameRate || 0) || '?'} fps — ${qualityLabel(o)}`; };
+  const settings = h('div.qinfo'), net = h('div.qinfo'), updInfo = () => { const st = voice.screen?.getVideoTracks()[0]?.getSettings?.() || {}; settings.textContent = `Capturando: ${st.width || '?'}×${st.height || '?'} a ${Math.round(st.frameRate || 0) || '?'} fps — ${qualityLabel(o)}`; voice.screenStats().then(L => { if (!L?.length) return; const t = L[0], why = { cpu: 'limitado pelo processador', bandwidth: 'limitado pela sua internet (upload)', none: 'sem limitação', other: 'limitado' }[t.limit] || t.limit; net.textContent = `Enviando: ${t.w}×${t.h} a ${t.fps} fps, ${(t.kbps / 1000).toFixed(1)} Mbps — ${why}${/hw|h264|video toolbox|nvenc|media/i.test(t.enc) ? ' (placa de vídeo)' : t.enc ? ' (' + t.enc + ')' : ''}`; }); };
   updInfo(); const iv = setInterval(() => { if (!document.body.contains(settings)) return clearInterval(iv); updInfo(); }, 1000);
-  const body = h('div', settings, qualityPanel(o, async (n) => { await voice.changeScreenQuality(n); S.prefs.screen = { ...S.prefs.screen, res: n.res, fps: n.fps, hint: n.hint }; savePrefs(); setTimeout(updInfo, 400); }),
+  const body = h('div', settings, net, qualityPanel(o, async (n) => { await voice.changeScreenQuality(n); S.prefs.screen = { ...S.prefs.screen, res: n.res, fps: n.fps, hint: n.hint }; savePrefs(); setTimeout(updInfo, 400); }),
     h('div', { style: { fontSize: '14px', color: 'var(--text-muted)' } }, `${[...S.voice.values()].filter(v => v.channel_id === voice.channelId).length - 1} pessoa(s) na sala podem assistir.`));
   modal('Transmissão ao vivo', 'Mudanças valem imediatamente.', body, [
     { label: 'Parar transmissão', cls: 'red', fn: () => voice.toggleScreen() },

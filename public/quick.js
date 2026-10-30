@@ -1,5 +1,6 @@
 // Painéis rápidos: dispositivos de áudio, cancelamento de eco/ruído e status — sem abrir as configurações.
-import { h, icon } from './util.js';
+import { h, icon, avatar, framePos } from './util.js';
+import { styleName } from './themes.js';
 import { S, api, tryApi, toast, savePrefs, popout, closeFloating, user, nameOf } from './state.js';
 import { seg, toggle, slider } from './ui.js';
 import { NOISE_MODES } from './voice.js';
@@ -109,25 +110,54 @@ export function openMicPanel(anchor, voice, { openSettings } = {}) {
   }, 80);
 }
 
-export function openStatusPanel(anchor, { openSettings, openProfile } = {}) {
-  const me = S.me;
-  const body = h('div.qpop');
-  const cs = h('input', { value: me.custom_status || '', maxLength: 100, placeholder: 'Definir um status personalizado' });
+// Cartão do próprio usuário (clique na barra do usuário): banner, status personalizado, editar perfil, status, trocar de conta
+export function openStatusPanel(anchor, { openSettings, openFullProfile, logout } = {}) {
+  const body = h('div.mepop');
+  let editing = false, fly = null, flyTimer = 0;
+  const closeFly = () => { clearTimeout(flyTimer); fly?.remove(); fly = null; };
+  const later = () => { clearTimeout(flyTimer); flyTimer = setTimeout(closeFly, 180); };
+  // status: popup ao lado que abre só de passar o mouse
+  const openFly = (row) => {
+    clearTimeout(flyTimer); if (fly) return;
+    fly = h('div.popout.mefly', { onmouseenter: () => clearTimeout(flyTimer), onmouseleave: later },
+      STATUS.map(([k, l, c, d]) => h('div.stat' + (S.me.status === k ? '.on' : ''), { onclick: async () => { const r = await tryApi('PATCH', '/me', { status: k }); if (r) { S.me = { ...S.me, status: k }; closeFly(); draw(); } } },
+        h('i.sdot.' + c), h('div', h('div', l), d && h('small', d)))));
+    document.getElementById('layer').append(fly);
+    const rr = row.getBoundingClientRect(), card = body.closest('.popout').getBoundingClientRect(), fb = fly.getBoundingClientRect();
+    const right = card.right + 6, left = card.left - fb.width - 6;
+    fly.style.left = (right + fb.width <= innerWidth - 8 ? right : Math.max(8, left)) + 'px';
+    fly.style.top = Math.max(8, Math.min(rr.top - 6, innerHeight - fb.height - 8)) + 'px';
+  };
   const draw = () => {
+    const me = S.me, themed = !!(me.theme_primary && me.theme_accent), color = themed ? me.theme_primary : me.banner_color || me.color || '#5865f2';
+    const banner = h('div.mebanner', { style: { background: themed ? `linear-gradient(160deg, ${me.theme_primary}, ${me.theme_accent})` : color } });
+    if (me.banner) banner.append(framePos(h('img', { src: me.banner, alt: '', draggable: false }), me.banner_pos));
+    const cur = STATUS.find(x => x[0] === me.status) || STATUS[0];
+    const csInput = h('input', { value: me.custom_status || '', maxLength: 100, placeholder: 'Qual é o seu status?' });
+    const saveCs = async () => { if (await tryApi('PATCH', '/me', { custom_status: csInput.value.trim() })) { editing = false; draw(); } };
+    csInput.onkeydown = (e) => { if (e.key === 'Enter') saveCs(); if (e.key === 'Escape') { editing = false; draw(); } };
+    const csBox = editing
+      ? h('div.mecs.edit', csInput, h('button.btn', { onclick: saveCs }, 'Salvar'))
+      : h('div.mecs', { title: 'Definir status personalizado', onclick: () => { editing = true; draw(); csInput.focus(); setTimeout(() => body.querySelector('.mecs input')?.focus()); } },
+        me.custom_status ? h('span', (me.status_emoji && !/^<:/.test(me.status_emoji) ? me.status_emoji + ' ' : '') + me.custom_status) : [icon('plus', 16), h('span.ph', 'Adicionar status personalizado')]);
+    const item = (ic, label, fn, extra, hover) => h('div.meitem', { onclick: fn, onmouseenter: hover ? (e) => openFly(e.currentTarget) : closeFly, onmouseleave: hover ? later : null }, h('span.mei', ic), h('span.mel', label), extra);
     body.replaceChildren(
-      h('div.qhead', h('b', me.display_name), h('small', '@' + me.username)),
-      ...STATUS.map(([k, l, c, d]) => h('div.stat' + (S.me.status === k ? '.on' : ''), { onclick: async () => { const r = await tryApi('PATCH', '/me', { status: k }); if (r) { S.me = { ...S.me, status: k }; draw(); } } },
-        h('i.sdot.' + c), h('div', h('div', l), d && h('small', d)))),
-      h('h4', 'Status personalizado'), cs,
-      h('div', { style: { display: 'flex', gap: '8px', marginTop: '8px' } }, h('button.btn', { onclick: async () => { if (await tryApi('PATCH', '/me', { custom_status: cs.value })) { toast('Status atualizado'); closeFloating(); } } }, 'Salvar'),
-        h('button.btn.grey', { onclick: async () => { cs.value = ''; if (await tryApi('PATCH', '/me', { custom_status: '' })) closeFloating(); } }, 'Limpar')),
-      h('div', { style: { height: '1px', background: 'var(--divider)', margin: '12px 0' } }),
-      h('div.stat', { onclick: () => { closeFloating(); openProfile?.(); } }, h('div', 'Ver meu perfil')),
-      h('div.stat', { onclick: () => { closeFloating(); openSettings?.('profile'); } }, h('div', 'Editar perfil')),
-      h('div.stat', { onclick: () => { closeFloating(); openSettings?.('account'); } }, h('div', 'Configurações')));
+      h('div.mehead', banner, h('div.meav', { title: 'Ver perfil completo', onclick: () => { closeFly(); closeFloating(); openFullProfile?.(); } }, avatar(me, 80, { ring: 'var(--bg-float)' })), csBox),
+      h('div.mebody',
+        h('div.mename', styleName(h('span', me.display_name), me.name_style),
+          h('button.mecopy', { title: 'Copiar nome de usuário', onclick: () => { navigator.clipboard?.writeText(me.username); toast('Nome de usuário copiado'); } }, icon('copy', 16))),
+        h('div.meun', me.username),
+        h('div.megroup',
+          item(icon('edit', 16), 'Editar perfil', () => { closeFloating(); openSettings?.('profile'); }),
+          item(h('i.sdot.' + cur[2]), h('span', 'Status: ' + cur[1], me.status === 'invisible' && h('span', { title: 'Seu status e sua atividade ficam ocultos quando você está invisível', style: { marginLeft: '6px' } }, '⚠')), () => openFly(body.querySelector('.meitem:nth-child(2)')), h('span.mearrow', '›'), true),
+        ),
+        h('div.megroup',
+          item(icon('phoneoff', 16), 'Trocar de conta', () => { closeFloating(); logout?.(); }),
+          item(icon('copy', 16), 'Copiar ID do usuário', () => { navigator.clipboard?.writeText(me.id); toast('ID copiado'); closeFloating(); }))));
   };
   draw();
-  const el = popout(anchor, body, 'up'); el.classList.add('quick');
-  const r = anchor.getBoundingClientRect(), b = el.getBoundingClientRect();
-  el.style.top = Math.max(8, r.top - b.height - 10) + 'px'; el.style.left = Math.max(8, r.left) + 'px';
+  const el = popout(anchor, body, 'up'); el.classList.add('quick', 'mecard');
+  const r = anchor.getBoundingClientRect(), bb = el.getBoundingClientRect();
+  el.style.top = Math.max(8, r.top - bb.height - 10) + 'px'; el.style.left = Math.max(8, r.left) + 'px';
+  new MutationObserver(() => { const q = el.getBoundingClientRect(); el.style.top = Math.max(8, Math.min(parseFloat(el.style.top), innerHeight - q.height - 8)) + 'px'; }).observe(body, { childList: true });
 }

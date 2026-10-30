@@ -26,7 +26,7 @@ const opusHi = (sdp) => {
   return sdp.replace(new RegExp(`a=fmtp:${pt} (.*)`), (_, f) => `a=fmtp:${pt} ${f.replace(/;?(maxaveragebitrate|stereo|sprop-stereo)=\d+/g, '')};stereo=1;sprop-stereo=1;maxaveragebitrate=${OPUS_MAX * 1000}`);
 };
 const bitrateFor = (res, fps) => {
-  const base = { 720: 2.5, 1080: 5, 1440: 9, source: 10 }[res] || 5;
+  const base = { 720: 2.2, 1080: 4.5, 1440: 8, source: 9 }[res] || 4.5;
   return Math.round(base * (fps >= 120 ? 2.4 : fps >= 60 ? 1.6 : fps <= 15 ? .6 : 1) * 1e6);
 };
 
@@ -70,7 +70,9 @@ export async function createMic(prefs, ctx) {
   } catch (e) { // se a IA falhar, segue sem ela (usa o que já está na cadeia)
     console.warn('denoise', e); out.error = `Redução de ruído indisponível: ${e.message || e}`;
   }
-  const g = ctx.createGain(); g.gain.value = gain; chain(g);
+  const g = ctx.createGain(); g.gain.value = gain;
+  // alguns filtros de ruído só preenchem o canal esquerdo: pega o canal 0 e o destino estéreo repete nos dois lados
+  g.channelCount = 1; g.channelCountMode = 'explicit'; g.channelInterpretation = 'discrete'; chain(g);
   const analyser = ctx.createAnalyser(); analyser.fftSize = 512; g.connect(analyser); nodes.push(analyser);
   const dest = ctx.createMediaStreamDestination(); g.connect(dest); nodes.push(dest);
   out.stream = dest.stream; out.analyser = analyser; out.gain = g;
@@ -204,7 +206,7 @@ export class Voice {
     for (const p of this.pending?.values() || []) p.reject(new Error('saiu da sala'));
     this.pending?.clear();
   }
-  sfuEncodings(source) {
+  sfuEncodings(source, temporal = false) {
     const o = this.screenOpts || {};
     if (source === 'mic') return [{ maxBitrate: this.micKbps() * 1000, priority: 'high', networkPriority: 'high' }];
     if (source === 'cam') return [ // simulcast: o servidor escolhe a camada que cabe na banda de cada um
@@ -214,8 +216,11 @@ export class Voice {
     if (source === 'screen') {
       const top = bitrateFor(o.res || 1080, o.fps || 30);
       // fps vem da restrição da trilha (prioridade/fps por camada não são aceitos pelo Chromium no simulcast)
-      return [{ rid: 'r0', scaleResolutionDownBy: 2, maxBitrate: Math.round(top / 4) },
-        { rid: 'r1', scaleResolutionDownBy: 1, maxBitrate: top }];
+      // 3 camadas: quem tem internet fraca recebe a pequena, o resto a cheia; L1T3 deixa o servidor reduzir só os fps antes da resolução
+      const t = temporal ? { scalabilityMode: 'L1T3' } : {};
+      return [{ rid: 'r0', scaleResolutionDownBy: 4, maxBitrate: Math.round(top * .12), ...t },
+        { rid: 'r1', scaleResolutionDownBy: 2, maxBitrate: Math.round(top * .38), ...t },
+        { rid: 'r2', scaleResolutionDownBy: 1, maxBitrate: top, ...t }];
     }
     return undefined;
   }
@@ -223,11 +228,23 @@ export class Voice {
     const s = this.sfu; if (!s?.ready || !track) return;
     const cur = s.producers[source];
     if (cur && !cur.closed) return cur.replaceTrack({ track });
-    const opts = { track, appData: { source }, encodings: this.sfuEncodings(source), stopTracks: false };
+    const opts = { track, appData: { source }, encodings: this.sfuEncodings(source, source === 'screen'), stopTracks: false };
     if (source === 'mic') opts.codecOptions = { opusStereo: true, opusDtx: true, opusFec: true, opusMaxAverageBitrate: OPUS_MAX * 1000 };
     if (source === 'screenaudio') opts.codecOptions = { opusStereo: true, opusFec: true, opusMaxAverageBitrate: 128000 };
-    if (source === 'screen') opts.codecOptions = { videoGoogleStartBitrate: 1000 };
-    const p = await s.send.produce(opts);
+    if (source === 'screen') {
+      opts.codecOptions = { videoGoogleStartBitrate: 2500 };
+      // placa de vídeo codifica H.264 sem pesar na CPU (que o jogo está usando); sem hardware fica o VP8 com camadas temporais
+      if (await this.hwH264()) {
+        const c = s.device.rtpCapabilities.codecs.find(x => x.mimeType.toLowerCase() === 'video/h264');
+        if (c) { opts.codec = c; opts.encodings = this.sfuEncodings('screen', false); }
+      }
+    }
+    let p;
+    try { p = await s.send.produce(opts); }
+    catch (e) { // codec/camadas recusados: tenta de novo no padrão
+      if (source !== 'screen') throw e;
+      console.warn('produce screen', e); delete opts.codec; opts.encodings = this.sfuEncodings('screen', false); p = await s.send.produce(opts);
+    }
     if (this.sfu !== s) return p.close();
     s.producers[source] = p;
     if (source === 'screen') this.sfuTuneScreen();
@@ -242,11 +259,49 @@ export class Voice {
     p.close(); delete s.producers[source];
     this.sfuReq('close_producer', { source }).catch(() => { });
   }
+  async hwH264() {
+    if (this._hw !== undefined) return this._hw;
+    try {
+      const r = await navigator.mediaCapabilities.encodingInfo({ type: 'webrtc', video: { contentType: 'video/H264;profile-level-id=42e01f;packetization-mode=1', width: 1920, height: 1080, bitrate: 5e6, framerate: +this.screenOpts?.fps || 30 } });
+      this._hw = !!(r.supported && r.powerEfficient);
+    } catch { this._hw = false; }
+    return this._hw;
+  }
+  // lê os números reais do envio: codificador, limite (CPU/rede), fps e kbps de cada camada
+  async screenStats() {
+    const p = this.sfu?.producers.screen; if (!p) return null;
+    try {
+      const layers = [], now = performance.now(); this._ss ||= new Map();
+      for (const r of (await p.getStats()).values()) {
+        if (r.type !== 'outbound-rtp' || r.kind !== 'video') continue;
+        const k = r.rid || '0', prev = this._ss.get(k); this._ss.set(k, { b: r.bytesSent, t: now });
+        layers.push({ rid: k, w: r.frameWidth || 0, h: r.frameHeight || 0, fps: Math.round(r.framesPerSecond || 0), kbps: prev ? Math.round((r.bytesSent - prev.b) * 8 / (now - prev.t)) : 0, limit: r.qualityLimitationReason || 'none', enc: r.encoderImplementation || '' });
+      }
+      return layers.sort((a, b) => b.w - a.w);
+    } catch { return null; }
+  }
+  // se o PC ou a internet de quem transmite limitam a imagem por vários segundos, baixa um degrau (nunca sobe sozinho)
+  watchScreen() {
+    clearInterval(this._sw); let bad = 0, wait = 0;
+    this._sw = setInterval(async () => {
+      if (!this.screen) return clearInterval(this._sw);
+      const st = await this.screenStats(); const top = st?.[0]; if (!top || !top.w) return;
+      if (wait > 0) { wait--; return; }
+      if (top.limit === 'cpu' || top.limit === 'bandwidth') bad++; else bad = Math.max(0, bad - 1);
+      if (bad < 6) return;
+      bad = 0; wait = 8;
+      const o = this.screenOpts || {};
+      const next = o.fps > 30 ? { fps: 30 } : o.res === 'source' || o.res >= 1440 ? { res: 1080 } : o.res === 1080 ? { res: 720 } : null;
+      if (!next) return;
+      this.autoNote = `Seu ${top.limit === 'cpu' ? 'PC' : 'upload'} está limitando a imagem: reduzi para ${next.fps ? next.fps + ' fps' : next.res + 'p'}.`;
+      await this.changeScreenQuality(next); this.onAutoAdjust?.(this.autoNote, next);
+    }, 2000);
+  }
   async sfuTuneScreen() {
     const p = this.sfu?.producers.screen; if (!p?.rtpSender) return;
     try {
       const prm = p.rtpSender.getParameters(), enc = this.sfuEncodings('screen');
-      prm.encodings.forEach((e, i) => Object.assign(e, enc[i] || {}));
+      prm.encodings.forEach((e, i) => { const { scalabilityMode, ...rest } = enc[i] || {}; Object.assign(e, rest); }); // scalabilityMode não muda depois de criado
       prm.degradationPreference = this.screenOpts?.hint === 'detail' ? 'maintain-resolution' : 'maintain-framerate';
       await p.rtpSender.setParameters(prm);
     } catch (e) { console.warn('screen params', e); }
@@ -494,12 +549,12 @@ export class Voice {
     if (opts.res !== 'source') { video.height = { ideal: +opts.res, max: +opts.res }; video.width = { ideal: Math.round(+opts.res * 16 / 9) }; }
     try {
       if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('indisponível (use HTTPS ou o app desktop)');
-      this.screen = await navigator.mediaDevices.getDisplayMedia({ video, audio: opts.audio ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false } : false, systemAudio: 'include', selfBrowserSurface: 'exclude' });
+      this.screen = await navigator.mediaDevices.getDisplayMedia({ video, audio: opts.audio ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false, restrictOwnAudio: true, suppressLocalAudioPlayback: true } : false, systemAudio: 'include', selfBrowserSurface: 'exclude' });
     } catch (e) { if (e.name === 'NotAllowedError' || e.name === 'AbortError') return; throw new Error('Não foi possível compartilhar a tela: ' + (e.message || e.name)); }
     const vt = this.screen.getVideoTracks()[0];
     vt.contentHint = opts.hint; vt.onended = () => this.stopLocal('screen');
     this.screenOpts = opts;
-    this.publish('screen', this.screen); playSound('selfStreamStart');
+    this.publish('screen', this.screen); playSound('selfStreamStart'); this.watchScreen();
   }
   // muda resolução/fps/otimização da transmissão em andamento
   async changeScreenQuality(opts) {
@@ -527,6 +582,7 @@ export class Voice {
     const s = this[kind]; if (!s) return;
     if (this.sfu) { this.sfuStop(kind); if (kind === 'screen') this.sfuStop('screenaudio'); }
     else for (const p of this.peers.values()) for (const t of s.getTracks()) { const snd = p.senders[kind + t.kind]; if (snd) { try { p.pc.removeTrack(snd); } catch { } delete p.senders[kind + t.kind]; } }
+    if (kind === 'screen') clearInterval(this._sw);
     s.getTracks().forEach(t => t.stop()); this[kind] = null;
     playSound(kind === 'cam' ? 'camOff' : 'selfStreamStop');
     this.sendState(); this.onUpdate();

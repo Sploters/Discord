@@ -111,7 +111,7 @@ export async function sfuRequest(cid, uid, op, d) {
   switch (op) {
     case 'transport': {
       if (peer.transports.size >= 2) throw new Error('transportes demais');
-      const t = await r.router.createWebRtcTransport({ webRtcServer, enableUdp: true, enableTcp: true, preferUdp: true, initialAvailableOutgoingBitrate: 1_000_000, appData: { dir: d.dir === 'send' ? 'send' : 'recv' } });
+      const t = await r.router.createWebRtcTransport({ webRtcServer, enableUdp: true, enableTcp: true, preferUdp: true, initialAvailableOutgoingBitrate: 4_000_000, appData: { dir: d.dir === 'send' ? 'send' : 'recv' } });
       peer.transports.set(t.id, t);
       return { id: t.id, iceParameters: t.iceParameters, iceCandidates: t.iceCandidates, dtlsParameters: t.dtlsParameters };
     }

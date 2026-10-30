@@ -26,7 +26,7 @@ export function playLocal(url, volumePct = 100) {
 }
 // recebido do servidor (alguém na sala tocou)
 export function onIncoming(msg, voice) {
-  if (S.prefs.sbMuted || voice?.deafened) return;
+  if (S.prefs.sbMuted || voice?.deafened || S.prefs.sbMutedUsers?.[msg.user_id]) return;
   const a = playLocal(msg.url, msg.volume), uid = msg.user_id;
   if (uid && voice) { // anel roxo no avatar enquanto o som toca
     voice.sbActive.add(uid); voice.onUpdate?.(true);

@@ -25,7 +25,7 @@ export const SHARE_PRESETS = [
   ['Original • 60 fps', { res: 'source', fps: 60, hint: 'motion' }],
 ];
 export const qualityLabel = (o) => `${o.res === 'source' ? 'Original' : o.res + 'p'} • ${o.fps} fps • ${o.hint === 'detail' ? 'nitidez' : 'movimento'}${o.audio ? ' • com áudio' : ''}`;
-export const estMbps = (o) => (({ 720: 2.5, 1080: 5, 1440: 9, source: 10 })[o.res] * (o.fps >= 120 ? 2.4 : o.fps >= 60 ? 1.6 : o.fps <= 15 ? .6 : 1)).toFixed(1);
+export const estMbps = (o) => (({ 720: 2.2, 1080: 4.5, 1440: 8, source: 9 })[o.res] * (o.fps >= 120 ? 2.4 : o.fps >= 60 ? 1.6 : o.fps <= 15 ? .6 : 1)).toFixed(1);
 
 // painel de qualidade da transmissão (antes e durante)
 export function qualityPanel(o, onChange) {

@@ -127,7 +127,7 @@ export function promptBox(title, label, value = '', okLabel = 'Salvar') {
     inp.select();
   });
 }
-export function closeFloating() { layer().querySelectorAll('.menu,.popout,.emoji-picker').forEach(e => e.remove()); }
+export function closeFloating() { layer().querySelectorAll('.menu,.popout:not(.static),.emoji-picker').forEach(e => e.remove()); }
 document.addEventListener('mousedown', (e) => { if (!e.target.closest('.menu,.popout,.emoji-picker')) closeFloating(); }, true);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFloating(); }); // o visualizador de imagens trata o próprio Esc
 window.addEventListener('blur', closeFloating);
@@ -140,8 +140,19 @@ function place(el, x, y) {
 }
 export function menu(e, items) {
   e.preventDefault(); closeFloating();
-  const el = h('div.menu', items.filter(Boolean).map(i => i === '-' ? h('div.sp') : i.node ? h('div.mnode', i.node) : h('div.it' + (i.danger ? '.danger' : ''), { onclick: () => { closeFloating(); i.fn(); } }, i.label)));
-  place(el, e.clientX, e.clientY);
+  // item: { label, fn, danger, checked (caixa marcável), sub: [itens] (submenu ao passar o mouse) }
+  const build = (list, depth) => h('div.menu', { 'data-depth': depth }, list.filter(Boolean).map(i => {
+    if (i === '-') return h('div.sp');
+    if (i.node) return h('div.mnode', i.node);
+    const row = h('div.it' + (i.danger ? '.danger' : ''), i.label, i.checked !== undefined && h('span', { style: { marginLeft: 'auto' } }, i.checked ? '☑' : '☐'), i.sub && h('span', { style: { marginLeft: 'auto', opacity: .7 } }, '›'));
+    const closeDeeper = () => layer().querySelectorAll('.menu').forEach(m => { if (+m.dataset.depth > depth) m.remove(); });
+    if (i.sub) {
+      const open = () => { closeDeeper(); const r = row.getBoundingClientRect(), sub = build(i.sub, depth + 1); place(sub, r.right + 2, r.top - 6); const w = sub.getBoundingClientRect(); if (w.right > innerWidth - 8) sub.style.left = Math.max(8, r.left - w.width - 2) + 'px'; };
+      row.onmouseenter = open; row.onclick = open;
+    } else { row.onmouseenter = closeDeeper; row.onclick = () => { closeFloating(); i.fn?.(); }; }
+    return row;
+  }));
+  place(build(items, 0), e.clientX, e.clientY);
 }
 export function popout(anchor, node, side = 'right') {
   closeFloating();

@@ -78,3 +78,45 @@ html, body, button, input, textarea, select { font-family: var(--font, "gg sans"
 .muitem { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; } .muitem:hover { background: rgba(255,255,255,.06); } .muidx { width: 18px; text-align: right; color: var(--text-muted); font-size: 12px; }
 .mux { background: none; border: 0; color: var(--text-muted); cursor: pointer; padding: 4px 6px; border-radius: 4px; } .mux:hover { color: #fff; background: #da373c; }
 .muempty { color: var(--text-muted); font-size: 13px; padding: 6px 2px; }
+
+/* barra lateral mais larga + painel "Ativo agora" nos Amigos */
+#side { width: 300px; }
+#home #homebody { flex: 1; display: flex; min-height: 0; }
+#home #homebody .pane { flex: 1; min-width: 0; }
+#active-now { width: 300px; flex: none; border-left: 1px solid var(--divider); padding: 16px 12px calc(var(--ua-h, 52px) + 16px); overflow-y: auto; }
+#active-now h3 { margin: 0 4px 12px; font-size: 20px; color: var(--header); }
+#active-now .an-cap { margin: 14px 4px 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); }
+#active-now .an-card { background: var(--bg-sec); border-radius: 8px; padding: 12px; margin-bottom: 8px; cursor: pointer; }
+#active-now .an-card:hover { background: var(--bg-mod-hover); }
+#active-now .an-top, #active-now .an-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+#active-now .an-row { padding: 6px 8px; border-radius: 6px; cursor: pointer; } #active-now .an-row:hover { background: var(--bg-mod-hover); }
+#active-now .an-who { display: flex; flex-direction: column; min-width: 0; }
+#active-now .an-who b, #active-now .an-who small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#active-now .an-who small { color: var(--text-muted); font-size: 13px; }
+#active-now .an-room { display: flex; align-items: center; gap: 6px; margin-top: 10px; padding: 6px 8px; background: var(--bg-tert); border-radius: 6px; color: var(--green); font-size: 14px; font-weight: 600; min-width: 0; }
+#active-now .an-room span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#active-now .an-live { margin-left: auto; background: var(--red); color: #fff; font-size: 10px; padding: 2px 5px; border-radius: 4px; }
+#active-now .an-empty { text-align: center; color: var(--text-muted); padding: 24px 8px; } #active-now .an-empty b { color: var(--header); }
+@media (max-width: 1100px) { #active-now { display: none; } }
+@media (max-width: 900px) { #side { width: 200px; } }
+
+/* cartão do usuário (clique na barra do usuário) */
+.popout.mecard { width: 340px; padding: 0; overflow: hidden; border-radius: 10px; }
+.mepop .mehead { position: relative; }
+.mepop .mebanner { height: 105px; position: relative; overflow: hidden; } .mepop .mebanner img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.mepop .meav { position: absolute; left: 16px; top: 65px; border: 6px solid var(--bg-float); border-radius: 50%; background: var(--bg-float); }
+.mepop .mecs { margin: 8px 16px 0 112px; min-height: 34px; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px dashed var(--divider); border-radius: 17px; color: var(--text-muted); font-size: 13px; cursor: pointer; }
+.mepop .mecs:hover { background: var(--bg-mod-hover); } .mepop .mecs .ph { font-style: italic; } .mepop .mecs span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mepop .mecs.edit { cursor: default; border-style: solid; padding: 3px; } .mepop .mecs.edit input { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; color: var(--text); padding: 4px 8px; } .mepop .mecs.edit .btn { padding: 4px 10px; font-size: 12px; }
+.mepop .mebody { padding: 12px 16px 14px; margin-top: 4px; }
+.mepop .mename { display: flex; align-items: center; gap: 6px; font-size: 20px; font-weight: 700; color: var(--header); } .mepop .mename > span { overflow: hidden; text-overflow: ellipsis; }
+.mepop .mecopy { background: none; border: 0; color: var(--interactive); cursor: pointer; padding: 2px; display: flex; } .mepop .mecopy:hover { color: var(--header); }
+.mepop .meun { color: var(--text-muted); font-size: 14px; margin-bottom: 12px; }
+.mepop .megroup { background: var(--bg-tert); border-radius: 8px; padding: 6px; margin-top: 8px; }
+.mepop .meitem { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 5px; cursor: pointer; color: var(--interactive); font-size: 14px; font-weight: 500; }
+.mepop .meitem:hover { background: var(--bg-mod-hover); color: var(--header); } .mepop .mei { width: 18px; display: flex; justify-content: center; } .mepop .mel { flex: 1; } .mepop .mearrow { opacity: .7; }
+.mepop .mesub { padding: 2px 0 4px 28px; }
+
+.popout.mefly { width: 230px; padding: 6px; border-radius: 8px; }
+
+.mepop .meav { cursor: pointer; } .mepop .meav:hover .avatar { filter: brightness(.85); }
