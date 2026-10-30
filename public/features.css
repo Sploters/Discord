@@ -391,7 +391,7 @@ body:has(#lightbox) #layer { z-index: 130; } /* menus de clique direito por cima
 #chat textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- perfil completo de outra pessoa: dados à esquerda, abas à direita ---------- */
-.upmodal { position: relative; display: flex; width: min(900px, calc(100vw - 32px)); height: min(640px, calc(100vh - 48px)); background: var(--bg-float, var(--bg-sec)); border-radius: 12px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,.45); color: var(--text); }
+.upmodal { position: relative; display: flex; width: min(1040px, calc(100vw - 32px)); height: min(740px, calc(100vh - 48px)); background: var(--bg-float, var(--bg-sec)); border-radius: 12px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,.45); color: var(--text); }
 .upmodal.pcard.themed { padding-bottom: 0; border-radius: 12px; }
 .upclose { position: absolute; top: 12px; right: 12px; z-index: 3; width: 32px; height: 32px; border-radius: 8px; border: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.4); color: #fff; cursor: pointer; }
 .upclose:hover { background: rgba(0,0,0,.6); }
@@ -418,7 +418,7 @@ body:has(#lightbox) #layer { z-index: 130; } /* menus de clique direito por cima
 .upnote { width: 100%; resize: none; overflow: hidden; border: 0; outline: none; border-radius: 6px; padding: 8px 10px; background: rgba(127,127,127,.12); color: var(--text); font: inherit; font-size: 13px; min-height: 34px; }
 .upnote:focus { background: rgba(127,127,127,.2); }
 .upright { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.uptabs { flex: none; display: flex; gap: 24px; padding: 18px 60px 0 20px; border-bottom: 1px solid var(--divider); overflow-x: auto; }
+.uptabs { flex: none; display: flex; gap: 24px; padding: 18px 60px 0 20px; border-bottom: 1px solid var(--divider); overflow: hidden; }
 .uptabs button { flex: none; background: none; border: 0; padding: 0 0 12px; border-bottom: 2px solid transparent; margin-bottom: -1px; font: inherit; font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
 .uptabs button:hover { color: var(--text); }
 .uptabs button.on { color: var(--header); border-bottom-color: var(--header); }

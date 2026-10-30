@@ -59,10 +59,12 @@ function createWindow(forceShow) {
     webPreferences: { devTools: false, preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, backgroundThrottling: false },
   });
   win.removeMenu(); Menu.setApplicationMenu(null);
-  const CSS = 'html.lc-desk #app{margin-top:28px;height:calc(100vh - 28px)} html.lc-desk #settings{top:28px} html.lc-desk #settings .close{top:40px} body.lc-connect{padding-top:28px} #lc-titlebar{position:fixed;top:0;left:0;right:0;height:28px;z-index:2147483000;-webkit-app-region:drag;background:#1e1f22;display:flex;align-items:center;padding-left:12px;font:600 12px "Segoe UI",sans-serif;color:#b5bac1;user-select:none}';
+  const CSS = 'html.lc-desk #app{margin-top:28px;height:calc(100vh - 28px)} html.lc-desk #settings{top:28px} html.lc-desk #settings .close{top:40px} body.lc-connect{padding-top:28px} #lc-titlebar{position:fixed;top:0;left:0;right:0;height:28px;z-index:2147483000;-webkit-app-region:drag;background:#1e1f22;display:flex;align-items:center;padding-left:12px;font:600 12px "Segoe UI",sans-serif;color:#b5bac1;user-select:none}#lc-upd{display:none;-webkit-app-region:no-drag;margin-left:auto;margin-right:150px;width:28px;height:20px;padding:0;border:0;border-radius:4px;background:#248046;color:#fff;cursor:pointer;align-items:center;justify-content:center}#lc-upd:hover{background:#1a6334}#lc-upd.on{display:flex}#lc-upd svg{width:14px;height:14px;fill:currentColor}';
   win.webContents.on('dom-ready', () => {
     win.webContents.insertCSS(CSS).catch(() => { });
     win.webContents.executeJavaScript("document.documentElement.classList.add('lc-desk');if(location.protocol==='file:')document.body.classList.add('lc-connect');if(!document.getElementById('lc-titlebar')){const t=document.createElement('div');t.id='lc-titlebar';t.textContent='LocalCord';document.documentElement.appendChild(t)}").catch(() => { });
+    // ícone de download na barra do topo quando há versão nova
+    win.webContents.executeJavaScript(`(()=>{const t=document.getElementById('lc-titlebar');if(!t||document.getElementById('lc-upd')||!window.lcDesktop)return;const b=document.createElement('button');b.id='lc-upd';b.innerHTML='<svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2ZM19 9h-4V3H9v6H5l7 7 7-7Z"/></svg>';let busy=false;b.onclick=async()=>{if(busy)return;busy=true;b.style.opacity='.6';const ok=await lcDesktop.installUpdate();if(!ok){busy=false;b.style.opacity=''}};t.appendChild(b);const on=v=>{b.title='Atualizar para a versão '+v.version;b.classList.add('on')};lcDesktop.onUpdate(on);lcDesktop.getUpdate().then(v=>v&&on(v))})()`).catch(() => { });
   });
   // força o repaint depois de trocar de tela (evita artefatos que só somem ao trocar de janela)
   win.webContents.on('did-navigate-in-page', () => [0, 60, 300].forEach(t => setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.invalidate(); }, t)));
@@ -174,6 +176,44 @@ ipcMain.handle('change-server', () => { showConnect(); return true; });
 ipcMain.handle('test-server', async (_e, input) => { const r = await resolveServer(input); return r; });
 ipcMain.handle('save-server', async (_e, url) => { cfg.server = url; saveCfg(); trustedHosts.add(serverHost()); loadServer(); return true; });
 
+// ---------- atualização (GitHub Releases) ----------
+const REPO = 'Sploters/Discord';
+let update = null, updating = false;
+const getJson = (url) => new Promise((resolve) => {
+  https.get(url, { headers: { 'User-Agent': 'LocalCord', Accept: 'application/vnd.github+json' }, timeout: 8000 }, (res) => {
+    let b = ''; res.on('data', d => (b += d)); res.on('end', () => { try { resolve(JSON.parse(b)); } catch { resolve(null); } });
+  }).on('error', () => resolve(null));
+});
+const newer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
+async function checkUpdate() {
+  const rel = await getJson(`https://api.github.com/repos/${REPO}/releases/latest`);
+  const ver = String(rel?.tag_name || '').replace(/^v/i, '');
+  const asset = rel?.assets?.find(a => /^LocalCord-Setup-.*\.exe$/i.test(a.name));
+  if (!ver || !asset || !newer(ver, app.getVersion())) return;
+  update = { version: ver, url: asset.browser_download_url, name: asset.name };
+  win?.webContents.send('update-available', { version: ver });
+}
+function download(url, dest, redirects = 5) {
+  return new Promise((resolve, reject) => {
+    https.get(url, { headers: { 'User-Agent': 'LocalCord' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) { res.resume(); return resolve(download(res.headers.location, dest, redirects - 1)); }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
+      const f = fs.createWriteStream(dest); res.pipe(f); f.on('finish', () => f.close(resolve)); f.on('error', reject);
+    }).on('error', reject);
+  });
+}
+ipcMain.handle('get-update', () => update && { version: update.version });
+ipcMain.handle('install-update', async () => {
+  if (!update || updating) return false;
+  updating = true;
+  try {
+    const file = path.join(app.getPath('temp'), update.name);
+    await download(update.url, file);
+    require('node:child_process').spawn(file, [], { detached: true, stdio: 'ignore' }).unref();
+    quitting = true; app.quit(); return true;
+  } catch (e) { log('update err', e.message); updating = false; return false; }
+});
+
 app.on('second-instance', () => showWin());
 app.on('before-quit', () => { quitting = true; });
 app.on('will-quit', () => globalShortcut.unregisterAll());
@@ -183,5 +223,6 @@ app.whenReady().then(() => {
   setupSession(); createWindow(); buildTray(); registerHotkeys();
   if (cfg.server) trustedHosts.add(serverHost());
   loadServer();
+  setTimeout(checkUpdate, 5000); setInterval(checkUpdate, 3600e3);
   if (process.env.LC_TEST_SERVER && !cfg.server) { cfg.server = process.env.LC_TEST_SERVER; trustedHosts.add(serverHost()); loadServer(); }
 });

@@ -58,7 +58,7 @@ async function fileSize(it) {
 }
 
 // ---------- visualizador ----------
-export function openViewer(src, { list, name } = {}) {
+export function openViewer(src, { list, name, onClose } = {}) {
   document.getElementById('lightbox')?.remove(); closeFloating();
   list ||= [...document.querySelectorAll(GALLERY)].map(item);
   let i = list.findIndex(x => x.src === src);
@@ -158,7 +158,7 @@ export function openViewer(src, { list, name } = {}) {
     else return;
     e.preventDefault(); e.stopPropagation();
   };
-  function close() { lb.remove(); document.removeEventListener('keydown', keys, true); }
+  function close() { lb.remove(); document.removeEventListener('keydown', keys, true); onClose?.(); }
   document.addEventListener('keydown', keys, true);
   document.body.append(lb);
   show();

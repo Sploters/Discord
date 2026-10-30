@@ -551,12 +551,12 @@ async function openUserProfile(uid, gid) {
   const date = (t) => new Date(+t || Date.now()).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' });
   const sec = (title, ...body) => h('section.upsec', h('h4', title), ...body);
   const bd = h('div.backdrop.upbd', { onmousedown: (e) => { if (e.target === bd) close(); } });
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const onKey = (e) => { if (e.key === 'Escape' && bd.style.display !== 'none') close(); };
   const close = () => { bd.remove(); removeEventListener('keydown', onKey); };
   const banner = h('div.upbanner', { style: { background: color } });
   if (u.banner) banner.append(framePos(h('img', { src: u.banner, alt: '', draggable: false }), u.banner_pos));
   const av = avatar(u, 120, { ring: themed ? 'var(--ring)' : 'var(--bg-float)' });
-  if (u.avatar) { av.classList.add('zoomable'); av.title = 'Ver foto de perfil'; av.onclick = () => lightbox(u.avatar); }
+  if (u.avatar) { av.classList.add('zoomable'); av.title = 'Ver foto de perfil'; av.onclick = () => { bd.style.display = 'none'; lightbox(u.avatar, { onClose: () => { bd.style.display = ''; } }); }; }
   const sent = () => h('button.btn.grey', { disabled: true }, 'Pedido enviado');
   const friendBtn = rt === 1 ? h('button.btn.grey.upico', { title: 'Amigos', onclick: (e) => menu(e, [{ label: 'Remover amizade', danger: true, fn: async () => { if (await confirmBox('Remover amizade', `Remover ${u.display_name} dos seus amigos?`, 'Remover')) { await tryApi('DELETE', `/relationships/${uid}`); close(); } } }]) }, icon('check', 18))
     : rt === 3 ? h('button.btn.green', { onclick: async () => { await tryApi('PUT', `/relationships/${uid}`, {}); close(); } }, 'Aceitar amizade')

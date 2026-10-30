@@ -12,5 +12,8 @@ contextBridge.exposeInMainWorld('lcDesktop', {
   relaunch: () => ipcRenderer.invoke('relaunch'),
   changeServer: () => ipcRenderer.invoke('change-server'),
   testServer: (input) => ipcRenderer.invoke('test-server', input),
+  getUpdate: () => ipcRenderer.invoke('get-update'),
+  installUpdate: () => ipcRenderer.invoke('install-update'),
+  onUpdate: (cb) => ipcRenderer.on('update-available', (_e, v) => cb(v)),
   saveServer: (url) => ipcRenderer.invoke('save-server', url),
 });
