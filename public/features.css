@@ -437,3 +437,35 @@ body:has(#lightbox) #layer { z-index: 130; } /* menus de clique direito por cima
   .upleft { flex: none; border-right: 0; border-bottom: 1px solid var(--divider); }
   .upbody { overflow: visible; } .upright { flex: none; } .uppanel { overflow: visible; }
 }
+
+/* ---------- Animações extras: suavidade onde faltava (também desligadas por "Reduzir animações") ---------- */
+@keyframes lc-pop2 { from { opacity: 0; transform: scale(.95) translateY(10px); } }
+@keyframes lc-rise { from { opacity: 0; transform: translateY(6px); } }
+@keyframes lc-zoom { from { opacity: 0; transform: scale(.92); } }
+html.anim .upbd { animation: lc-fade .2s ease-out; }
+html.anim .upmodal { animation: lc-pop2 .28s cubic-bezier(.2, .9, .3, 1.1); }
+html.anim .uppanel > * { animation: lc-rise .24s ease-out backwards; }
+html.anim .uppanel > :nth-child(2) { animation-delay: .03s; } html.anim .uppanel > :nth-child(3) { animation-delay: .06s; } html.anim .uppanel > :nth-child(n+4) { animation-delay: .09s; }
+html.anim .uptabs button { transition: color .18s, border-color .22s; }
+html.anim .uprow { transition: background .15s; }
+html.anim .upclose { transition: background .15s, transform .15s; } html.anim .upclose:hover { transform: rotate(90deg); }
+html.anim .upav .avatar, html.anim .pcard .pa .avatar { transition: filter .2s, transform .2s; } html.anim .upav .avatar.zoomable:hover { transform: scale(1.03); }
+html.anim .upnote { transition: background .18s; }
+html.anim #lightbox.viewer { animation: lc-fade .2s ease-out; }
+html.anim #lightbox.viewer .vimg img { animation: lc-zoom .26s cubic-bezier(.2, .9, .3, 1.05); }
+html.anim .vnav, html.anim .vtools .ibtn { transition: background .15s, transform .15s, opacity .15s; } html.anim .vnav:hover { transform: scale(1.1); }
+html.anim .msg { transition: background .15s; }
+html.anim .msg .av, html.anim .avatar.clickable, html.anim .avatar.zoomable { transition: opacity .15s, filter .2s, transform .2s; }
+html.anim .tile { transition: box-shadow .2s; }
+html.anim .ncard, html.anim .avopt, html.anim .sbsnd, html.anim .vwrow, html.anim #home .tab, html.anim .ct-tab, html.anim .chip { transition: background .15s, border-color .2s, color .15s, transform .15s, box-shadow .2s; }
+html.anim .ncard:hover, html.anim .avopt:hover { transform: translateY(-2px); } html.anim .ncard:active, html.anim .avopt:active { transform: scale(.97); }
+html.anim .switch, html.anim .switch::after, html.anim .switch i { transition: background .2s, transform .2s; }
+html.anim #composer, html.anim label.f input, html.anim label.f textarea, html.anim #topbar .search { transition: box-shadow .2s, outline-color .2s, width .2s, background .2s; }
+html.anim #topbar .search:focus { width: 220px; }
+html.anim #lc-upd { transition: background .15s, transform .15s; }
+html.anim .cat .arrow { transition: transform .2s cubic-bezier(.3, .8, .4, 1); }
+html.anim .ib-box, html.anim .ib-jump { transition: background .15s, opacity .15s; }
+html.anim .pcard:not(.upmodal) { animation: lc-pop .2s ease-out; }
+html.anim .toast, html.anim #toast { animation: lc-up .3s cubic-bezier(.2, .9, .3, 1.1); }
+html.anim .meter i, html.anim .mufill { transition: width .3s ease; }
+html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .2s; }
