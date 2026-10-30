@@ -1,5 +1,5 @@
 // Soundboard: sons pessoais (sincronizados na conta) + sons dos servidores, tocados para toda a sala de voz.
-import { h, icon } from './util.js';
+import { h, icon, avatar, initials } from './util.js';
 import { S, api, tryApi, toast, savePrefs, modal, promptBox, popout, closeFloating, guild, can, PERM, confirmBox, menu, emojiPicker } from './state.js';
 import { toggle, slider, comboFromEvent, comboLabel, captureKey } from './ui.js';
 
@@ -43,6 +43,7 @@ export function onIncoming(msg, voice) {
 }
 export function trigger(sound, voice, { preview = false } = {}) {
   if (!sound) return;
+  if (!preview && sound.id) { const u = (S.prefs.sbUse ||= {}); u[sound.id] = (u[sound.id] || 0) + 1; savePrefs(); } // alimenta "Usados com frequência"
   if (!preview && voice?.active) voice.send('SOUNDBOARD', { url: sound.url, volume: vol(sound), name: sound.name, emoji: sound.emoji });
   else { if (!preview && !voice?.active) toast('Entre em uma sala de voz para tocar para os outros. Tocando prévia.'); playLocal(sound.url, vol(sound)); }
 }
@@ -100,39 +101,74 @@ export async function editSound(src, s) {
 }
 
 // ---- painel (popout) ----
+// busca + volume no topo, trilho de categorias à esquerda e seções recolhíveis com os sons em grade (3 por linha)
+const toggleFav = (id) => { S.prefs.sbFav = favs().includes(id) ? favs().filter(x => x !== id) : [...favs(), id]; savePrefs(); };
+const guildIcon = (g) => g.icon ? h('img.sbgi', { src: g.icon, alt: '' }) : h('span.sbgi', initials(g.name));
 export function openSoundboard(anchor, voice, { openSettings } = {}) {
-  let tab = S.prefs.sbTab || 'fav';
-  const body = h('div.sbpanel');
-  const sources = () => soundSources().filter(x => !x.off);
-  const allEnabled = () => sources().flatMap(src => src.sounds.map(s => ({ src, s })));
-  const draw = () => {
-    const srcs = sources();
-    if (tab !== 'fav' && !srcs.some(x => x.key === tab)) tab = 'fav';
-    const tabs = h('div.sbtabs', h('button' + (tab === 'fav' ? '.on' : ''), { onclick: () => { tab = 'fav'; draw(); } }, '★ Favoritos'), ...srcs.map(x => h('button' + (tab === x.key ? '.on' : ''), { onclick: () => { tab = x.key; draw(); } }, x.own ? 'Meus' : x.title)));
-    let items;
-    if (tab === 'fav') items = favs().map(id => allEnabled().find(x => x.s.id === id)).filter(Boolean);
-    else items = (srcs.find(x => x.key === tab)?.sounds || []).map(s => ({ src: srcs.find(x => x.key === tab), s }));
-    const grid = h('div.sbgrid', ...(items.length ? items.map(({ src, s }) => {
-      const fav = favs().includes(s.id), key = (S.prefs.sbKeys || {})[s.id];
-      return h('div.sbtn', { title: s.name + (key ? ` — atalho: ${comboLabel(key)}` : ''), onclick: () => trigger(s, voice),
-        oncontextmenu: (e) => menu(e, [{ label: 'Tocar só para mim (prévia)', fn: () => trigger(s, voice, { preview: true }) }, { label: fav ? 'Remover dos favoritos' : 'Favoritar', fn: () => { S.prefs.sbFav = fav ? favs().filter(x => x !== s.id) : [...favs(), s.id]; savePrefs(); draw(); } },
-          { label: 'Definir atalho…', fn: () => keyDialog(s) }, (src.own || (src.guild && can(src.guild.id, PERM.MANAGE_GUILD))) && { label: 'Editar / excluir…', fn: () => { closeFloating(); editSound(src, s); } }]) },
-        h('span.e', s.emoji || '🔊'), h('span.n', s.name), h('button.star' + (fav ? '.on' : ''), { title: 'Favoritar', onclick: (e) => { e.stopPropagation(); S.prefs.sbFav = fav ? favs().filter(x => x !== s.id) : [...favs(), s.id]; savePrefs(); draw(); } }, '★'));
-    }) : [h('div.sbempty', tab === 'fav' ? 'Nenhum favorito ainda. Clique na ★ de um som (ou clique direito).' : 'Sem sons aqui.')]));
-    const canAddGuild = tab !== 'fav' && tab !== 'me' && can(tab, PERM.MANAGE_GUILD);
-    body.replaceChildren(...[
-      h('div.sbhead', h('b', 'Soundboard'), h('span', { style: { flex: 1 } }), h('label.sbmute', 'Silenciar sons', toggle(!!S.prefs.sbMuted, v => { S.prefs.sbMuted = v; savePrefs(); }))),
-      h('div.sbvol', icon('voice', 16), slider(0, 100, S.prefs.sbVolume ?? 70, 5, v => { S.prefs.sbVolume = v; savePrefs(); }, v => v + '%')),
-      tabs, grid,
-      h('div.sbfoot', h('button.btn.grey', { onclick: () => addSound(tab !== 'fav' && tab !== 'me' && canAddGuild ? tab : null) }, canAddGuild ? '+ Som do servidor' : '+ Meu som'),
-        openSettings && h('button.btn.link', { onclick: () => { closeFloating(); openSettings('sounds'); } }, 'Gerenciar…')),
-      !voice?.active && h('div.sbhint', 'Você não está em uma sala de voz: os sons tocam só para você.')].filter(Boolean));
+  const closed = () => (S.prefs.sbClosed ||= {}); // seções recolhidas
+  let q = '', cur = null;
+  const body = h('div.sbpick'), rail = h('div.sbrail'), list = h('div.sblist'), volBox = h('div.sbvolbox.hidden');
+  const search = h('input', { placeholder: 'Encontre o som perfeito', oninput: () => { q = search.value.trim().toLowerCase(); draw(); } });
+  const volBtn = h('button.sbvolbtn', { title: 'Volume da soundboard', onclick: () => { volBox.classList.toggle('hidden'); volBtn.classList.toggle('on', !volBox.classList.contains('hidden')); } }, icon('voice', 20));
+  volBox.append(h('label.f', 'Volume dos sons que você ouve', slider(0, 100, S.prefs.sbVolume ?? 70, 5, v => { S.prefs.sbVolume = v; savePrefs(); }, v => v + '%')),
+    h('div.sbvolrow', h('span', 'Silenciar soundboard'), toggle(!!S.prefs.sbMuted, v => { S.prefs.sbMuted = v; savePrefs(); })),
+    openSettings && h('button.btn.link', { onclick: () => { closeFloating(); openSettings('soundboard'); } }, 'Gerenciar sons…'));
+  // seções: favoritos, frequentes, meus sons e cada servidor (com sons, ou vazio se eu puder adicionar)
+  const sections = () => {
+    const own = { key: 'me', own: true, title: 'Meus sons', sounds: mySounds() };
+    const srcs = [own, ...[...S.guilds.values()].filter(g => !(S.prefs.sbOffGuilds || {})[g.id]).map(g => ({ key: g.id, guild: g, title: g.name, sounds: g.sounds || [] }))];
+    const all = srcs.flatMap(src => src.sounds.map(s => ({ src, s }))), byId = new Map(all.map(x => [x.s.id, x]));
+    const freq = Object.entries(S.prefs.sbUse || {}).filter(([id]) => byId.has(id)).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([id]) => byId.get(id));
+    return [
+      { key: 'fav', title: 'Favoritos', ic: () => icon('star', 18), items: favs().map(id => byId.get(id)).filter(Boolean), empty: 'Passe o mouse num som e clique na ★ para favoritar.' },
+      freq.length && { key: 'freq', title: 'Usados com frequência', ic: () => icon('clock', 18), items: freq },
+      ...srcs.map(src => {
+        const add = src.own || can(src.guild.id, PERM.MANAGE_GUILD);
+        return (src.sounds.length || add) && { key: src.key, title: src.title, ic: () => src.own ? avatar(S.me, 18, { status: false }) : guildIcon(src.guild), items: src.sounds.map(s => ({ src, s })), add: add && (() => addSound(src.own ? null : src.guild.id)) };
+      })].filter(Boolean);
   };
+  const tile = ({ src, s }) => {
+    const fav = favs().includes(s.id), key = (S.prefs.sbKeys || {})[s.id];
+    return h('div.sbsnd', { title: s.name + (key ? ` — atalho: ${comboLabel(key)}` : ''), onclick: () => trigger(s, voice),
+      oncontextmenu: (e) => menu(e, [{ label: 'Tocar só para mim (prévia)', fn: () => trigger(s, voice, { preview: true }) }, { label: fav ? 'Remover dos favoritos' : 'Favoritar', fn: () => { toggleFav(s.id); draw(); } },
+        { label: 'Definir atalho…', fn: () => keyDialog(s) }, (src.own || (src.guild && can(src.guild.id, PERM.MANAGE_GUILD))) && { label: 'Editar / excluir…', fn: () => { closeFloating(); editSound(src, s); } }]) },
+      h('span.e', s.emoji || '🔊'), h('span.n', s.name),
+      // ao passar o mouse: prévia (só você ouve) e favoritar; clicar no resto do botão toca para a sala
+      h('div.sbov', h('button', { title: 'Prévia (só você ouve)', onclick: (e) => { e.stopPropagation(); trigger(s, voice, { preview: true }); } }, icon('voice', 16)),
+        h('button' + (fav ? '.on' : ''), { title: fav ? 'Remover dos favoritos' : 'Favoritar', onclick: (e) => { e.stopPropagation(); toggleFav(s.id); draw(); } }, icon('star', 16))));
+  };
+  const draw = () => {
+    const secs = sections(), top = list.scrollTop;
+    rail.replaceChildren(...secs.map(sec => h('button' + (sec.key === cur ? '.on' : ''), { title: sec.title, 'data-k': sec.key, onclick: () => {
+      const el = list.querySelector(`[data-sec="${sec.key}"]`); if (el) list.scrollTo({ top: el.offsetTop - list.offsetTop, behavior: 'smooth' });
+    } }, sec.ic())));
+    const shown = secs.map(sec => {
+      const items = q ? sec.items.filter(x => x.s.name.toLowerCase().includes(q)) : sec.items;
+      if (q && !items.length) return null;
+      const shut = !q && closed()[sec.key];
+      return h('div.sbsec', { 'data-sec': sec.key },
+        h('div.sbsec-h', { onclick: () => { closed()[sec.key] = !closed()[sec.key]; savePrefs(); draw(); } }, sec.ic(), h('b', sec.title), icon(shut ? 'chevr' : 'chevdown', 16)),
+        !shut && (items.length || (sec.add && !q) ? h('div.sbrow', items.map(tile), !q && sec.add && h('div.sbsnd.sbadd', { title: 'Adicionar som', onclick: sec.add }, icon('plus', 18), h('span.n', 'Adicionar som')))
+          : h('div.sbnote', sec.empty || 'Sem sons aqui.')));
+    }).filter(Boolean);
+    list.replaceChildren(...(shown.length ? shown : [h('div.sbnote.big', 'Nenhum som encontrado.')]));
+    list.scrollTop = top; spy();
+  };
+  // categoria marcada no trilho = seção visível no topo da lista
+  const spy = () => {
+    let k = null; for (const el of list.querySelectorAll('[data-sec]')) if (el.offsetTop - list.offsetTop <= list.scrollTop + 8) k = el.dataset.sec;
+    k ||= list.querySelector('[data-sec]')?.dataset.sec; if (k === cur) return; cur = k;
+    rail.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.k === k));
+  };
+  list.onscroll = spy;
+  body.append(h('div.sbtop', h('div.sbsearch', icon('search', 16), search), volBtn), volBox, rail, list,
+    !voice?.active && h('div.sbhint', 'Você não está em uma sala de voz: os sons tocam só para você.'));
   const onChange = () => document.body.contains(body) ? draw() : document.removeEventListener('sb-changed', onChange);
   document.addEventListener('sb-changed', onChange);
   draw();
   const el = popout(anchor, body, 'up'); el.classList.add('sb-pop');
   const r = anchor.getBoundingClientRect(); el.style.top = Math.max(8, r.top - el.getBoundingClientRect().height - 12) + 'px'; el.style.left = Math.max(8, Math.min(r.left - 120, innerWidth - el.getBoundingClientRect().width - 8)) + 'px';
+  spy(); setTimeout(() => search.focus(), 0);
 }
 function keyDialog(s) {
   const btn = h('button.btn.grey');

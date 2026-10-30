@@ -1,5 +1,5 @@
 import { h, icon, avatar, framePos, parsePos } from './util.js';
-import { S, api, tryApi, savePrefs, user, guild, can, PERM, PERM_LABELS, toast, confirmBox, promptBox, modal, nameOf, desktop, applyTheme, emojiPicker, channelById } from './state.js';
+import { S, api, tryApi, savePrefs, user, guild, can, PERM, PERM_LABELS, toast, confirmBox, promptBox, modal, menu, nameOf, desktop, applyTheme, emojiPicker, channelById } from './state.js';
 import { createMic, newAudioContext, NOISE_MODES, VOICE_BITRATES } from './voice.js';
 import { profileCard } from './card.js';
 import { seg, toggle, row, section, slider, qualityPanel, captureKey, comboToAccel } from './ui.js';
@@ -53,10 +53,12 @@ function positionEditor(kind, url, current, onSave) {
 async function avatarPicker(current, onPick) {
   const info = await fetch('/api/server-info').then(r => r.json()).catch(() => ({}));
   let m;
-  const pick = (url) => { onPick(url); m.close(); };
+  const pick = (url) => { onPick(url, ''); m.close(); };
+  // imagem própria: abre o enquadramento antes; só troca o avatar se o usuário aplicar
+  const upload = async () => { const u = await uploadImage(); if (!u) return; m.close(); positionEditor('avatar', u.url, '', (pos) => onPick(u.url, pos)); };
   m = modal('Escolha seu avatar', 'Use um dos avatares prontos ou envie uma imagem sua.', h('div',
     h('div.avgrid', (info.default_avatars || []).map(url => h('button.avopt' + (url === current ? '.on' : ''), { title: 'Usar este avatar', onclick: () => pick(url) }, h('img', { src: url, alt: '' })))),
-    h('button.btn', { style: { marginTop: '16px', width: '100%' }, onclick: async () => { const u = await uploadImage(); if (u) pick(u.url); } }, 'Enviar uma imagem…')),
+    h('button.btn', { style: { marginTop: '16px', width: '100%' }, onclick: upload }, 'Enviar uma imagem…')),
   [{ label: 'Cancelar', cls: 'link' }]);
 }
 const swatches = (cur, onPick) => {
@@ -134,18 +136,24 @@ function deleteDialog(close) {
 }
 
 // ============================ Perfil ============================
-function profilePage() {
+function profilePage({ full } = {}) {
   const me = S.me;
   const base = () => ({ name_style: me.name_style ? { ...me.name_style } : null, theme_primary: me.theme_primary || null, theme_accent: me.theme_accent || null, display_name: me.display_name, avatar: me.avatar, banner: me.banner, avatar_pos: me.avatar_pos || '', banner_pos: me.banner_pos || '', color: me.color, banner_color: me.banner_color || me.color, pronouns: me.pronouns || '', bio: me.bio || '', custom_status: me.custom_status || '', status_emoji: me.status_emoji || '' });
   const d = base(), wrap = h('div.profile-ed'), prevBox = h('div.preview'), bar = h('div.savebar.hidden');
   const draft = () => ({ ...me, ...d, status: me.status === 'invisible' ? 'invisible' : 'online' });
-  const redraw = () => { prevBox.replaceChildren(h('div.popout.static', profileCard(draft(), { accent: d.banner ? null : d.banner_color }))); };
+  const redraw = () => { prevBox.replaceChildren(h('div.popout.static', profileCard(draft(), { accent: d.banner ? null : d.banner_color, onEditAvatar: editAvatar, onEditBanner: editBanner }))); };
   const touch = () => { bar.classList.remove('hidden'); redraw(); };
+  const changeAvatar = () => avatarPicker(d.avatar, (url, pos) => { d.avatar = url; d.avatar_pos = pos; touch(); });
+  const editAvatar = (av) => { const r = av.getBoundingClientRect(); menu({ preventDefault() {}, clientX: r.left, clientY: r.bottom + 6 }, [{ label: 'Trocar avatar', fn: changeAvatar },
+    d.avatar && { label: 'Ajustar avatar', fn: () => positionEditor('avatar', d.avatar, d.avatar_pos, (v) => { d.avatar_pos = v; touch(); }) },
+    d.avatar && { label: 'Remover avatar', danger: true, fn: () => { d.avatar = null; touch(); } }]); };
+  const changeBanner = async () => { const u = await uploadImage(); if (u) positionEditor('banner', u.url, '', (v) => { d.banner = u.url; d.banner_pos = v; touch(); }); };
+  const editBanner = (e) => menu({ preventDefault() {}, clientX: e.clientX, clientY: e.clientY }, [{ label: 'Trocar banner', fn: changeBanner },
+    d.banner && { label: 'Ajustar banner', fn: () => positionEditor('banner', d.banner, d.banner_pos, (v) => { d.banner_pos = v; touch(); }) },
+    d.banner && { label: 'Remover banner', danger: true, fn: () => { d.banner = null; touch(); } }]);
   const bind = (key, input) => { input.value = d[key]; input.oninput = () => { d[key] = input.value; touch(); }; return input; };
   const emojiBtn = h('button.btn.grey', { style: { minWidth: '44px' }, title: 'Escolher emoji', onclick: (e) => emojiPicker(e.currentTarget, (em) => { d.status_emoji = em.startsWith('<:') ? '' : em; emojiBtn.textContent = d.status_emoji || '😀'; touch(); }, { noCustom: true }) }, d.status_emoji || '😀');
   const left = h('div.col',
-    card(row('Avatar', 'Escolha um dos avatares prontos ou envie PNG, JPG, GIF ou WebP até 12 MB', h('div.btns', h('button.btn', { onclick: () => avatarPicker(d.avatar, (url) => { d.avatar = url; d.avatar_pos = ''; touch(); }) }, 'Trocar'), h('button.btn.grey', { onclick: () => d.avatar ? positionEditor('avatar', d.avatar, d.avatar_pos, (v) => { d.avatar_pos = v; touch(); }) : toast('Escolha uma imagem primeiro.', true) }, 'Ajustar'), h('button.btn.grey', { onclick: () => { d.avatar = null; touch(); } }, 'Remover'))),
-      row('Banner', 'Imagem de fundo do seu cartão', h('div.btns', h('button.btn', { onclick: async () => { const u = await uploadImage(); if (u) { d.banner = u.url; d.banner_pos = ''; touch(); } } }, 'Enviar'), h('button.btn.grey', { onclick: () => d.banner ? positionEditor('banner', d.banner, d.banner_pos, (v) => { d.banner_pos = v; touch(); }) : toast('Envie uma imagem primeiro.', true) }, 'Ajustar'), h('button.btn.grey', { onclick: () => { d.banner = null; touch(); } }, 'Remover')))),
     card(h('label.f', 'Nome de exibição', bind('display_name', h('input', { maxLength: 32 }))),
       h('label.f', 'Cor do avatar'), swatches(d.color, (c) => { d.color = c; touch(); }), h('label.f', { style: { marginTop: '16px' } }, 'Cor do banner / destaque'), swatches(d.banner_color, (c) => { d.banner_color = c; touch(); }), hint('Com tema do perfil ativo, o banner sem imagem usa a cor principal do tema.')),
     nameStyleCard(d, touch),
@@ -153,14 +161,14 @@ function profilePage() {
     card(h('label.f', 'Status personalizado'), h('div.btns', emojiBtn, bind('custom_status', h('input', { maxLength: 100, placeholder: 'O que você está fazendo?', style: { flex: 1, background: 'var(--bg-tert)', border: 0, borderRadius: '3px', padding: '10px', minWidth: 0 } }))),
       h('label.f', { style: { marginTop: '16px' } }, 'Presença', seg({ online: 'Online', idle: 'Ausente', dnd: 'Não perturbe', invisible: 'Invisível' }, me.status, (v) => tryApi('PATCH', '/me', { status: v }))),
       h('label.f', { style: { marginTop: '16px' } }, 'Sobre mim', bind('bio', h('textarea', { rows: 4, maxLength: 300 })))));
-  bar.append(h('span', 'Cuidado — você tem alterações não salvas!'), h('div.btns', h('button.btn.link', { onclick: () => { Object.assign(d, base()); bar.classList.add('hidden'); redraw(); wrap.replaceWith(profilePage()); } }, 'Redefinir'),
+  bar.append(h('span', 'Cuidado — você tem alterações não salvas!'), h('div.btns', h('button.btn.link', { onclick: () => { Object.assign(d, base()); bar.classList.add('hidden'); redraw(); wrap.replaceWith(profilePage({ full })); } }, 'Redefinir'),
     h('button.btn.green', { onclick: async () => { const r = await tryApi('PATCH', '/me', { display_name: d.display_name, avatar: d.avatar || '', banner: d.banner || '', avatar_pos: d.avatar_pos || '', banner_pos: d.banner_pos || '', color: d.color, banner_color: d.banner_color, pronouns: d.pronouns, bio: d.bio, custom_status: d.custom_status, status_emoji: d.status_emoji, theme_primary: d.theme_primary || '', theme_accent: d.theme_accent || '', name_style: d.name_style }); if (r) { toast('Perfil salvo!'); bar.classList.add('hidden'); } } }, 'Salvar alterações')));
   wrap.append(h('h2', 'Perfil'), h('div.pgrid', left, h('div.col', h('div.fh', 'Prévia'), prevBox)), bar);
   redraw(); return wrap;
 }
 // "perfil completo": estilos à esquerda (avatar, banner, cores, tema, estilo do nome) e a prévia do cartão à direita
 export function openFullProfile() {
-  modal('Seu perfil completo', 'Edite avatar, banner, tema e informações. A prévia mostra como os outros veem o seu perfil.', profilePage(), [{ label: 'Fechar', cls: 'link' }], { width: '1040px' });
+  modal('Seu perfil completo', 'Edite avatar, banner, tema e informações. A prévia mostra como os outros veem o seu perfil.', profilePage({ full: true }), [{ label: 'Fechar', cls: 'link' }], { width: '1040px' });
 }
 
 // estilo do nome: fonte, efeito e até duas cores; a prévia ao lado mostra o resultado

@@ -18,7 +18,7 @@ export function h(tag, props, ...kids) {
 }
 
 const I = {
-  hash: 'M5.88 4.12 6.4 2H8.5l-.52 2.12h5.5L14 2h2.1l-.52 2.12H18v2h-2.92l-.5 2H18v2h-3.9l-.5 2.12H16.5v2H13l-.52 2.12h-2.1l.52-2.12H5.88l-.52 2.12H3.25L3.77 14H1v-2h3.3l.5-2H2V8h3.3l.58-2.12zM8.4 10.12l-.5 2h5.5l.5-2z',
+  hash: 'M9.45 3h2.05l-2.45 18H7zM15.45 3h2.05l-2.45 18H13zM4.5 8h16v2h-16zM3.5 14h16v2h-16z', // centralizado no quadro 24×24 (o antigo ficava no canto de cima, desalinhado do texto)
   voice: 'M12 3a1 1 0 0 0-1-1h-.06a1 1 0 0 0-.74.32L5.92 7H3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2.92l4.28 4.68a1 1 0 0 0 .74.32H11a1 1 0 0 0 1-1V3ZM15.1 20.75c-.58.14-1.1-.33-1.1-.92v-.03c0-.5.37-.92.85-1.05a7 7 0 0 0 0-13.5A1.11 1.11 0 0 1 14 4.2v-.03c0-.6.52-1.06 1.1-.92a9 9 0 0 1 0 17.5Z M15.16 16.51c-.57.28-1.16-.2-1.16-.83v-.14c0-.43.28-.8.63-1.02a3 3 0 0 0 0-5.04c-.35-.23-.63-.6-.63-1.02v-.14c0-.63.59-1.1 1.16-.83a5 5 0 0 1 0 9.02Z',
   mic: 'M14.99 11A2.99 2.99 0 0 1 12 14a3 3 0 0 1-3-3V5a3 3 0 0 1 6 0v6ZM12 16a5 5 0 0 0 5-5h2a7 7 0 0 1-6 6.92V21h-2v-3.08A7 7 0 0 1 5 11h2a5 5 0 0 0 5 5Z',
   micoff: 'M6.7 11H5a7 7 0 0 0 6 6.92V21h2v-3.08c.9-.13 1.74-.45 2.47-.92l-1.45-1.45A5 5 0 0 1 6.7 11ZM15 11.17V5a3 3 0 0 0-5.92-.68L15 10.24v.93ZM3.7 2.3 2.3 3.7l18 18 1.4-1.4-2.5-2.5A6.97 6.97 0 0 0 19 11h-2a5 5 0 0 1-.62 2.38L15.1 12.1',
@@ -39,14 +39,18 @@ const I = {
   smile: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-4 7.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Zm6 0a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0ZM12 18a6 6 0 0 1-5.2-3h10.4A6 6 0 0 1 12 18Z',
   sidebar: 'M3 4h18a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm1 2v12h4V6Zm6 0v12h10V6Z',
   star: 'M12 2l3 6.3 6.9.9-5 4.8 1.3 6.9-6.2-3.3-6.2 3.3 1.3-6.9-5-4.8 6.9-.9Z',
+  clock: 'M12 2a10 10 0 1 1 0 20 10 10 0 1 1 0-20Zm0 2a8 8 0 1 0 0 16 8 8 0 1 0 0-16Zm-1 3h2v4.6l3.2 3.2-1.4 1.4L11 12.4Z',
   totop: 'M4 3h16v2.5H4Zm8 4.5 7 7-1.8 1.8-3.9-3.9V21h-2.6v-8.6l-3.9 3.9L5 14.5Z',
-  pin: 'M16 3v2l-1 1v5l3 3v2h-5v5l-1 1-1-1v-5H6v-2l3-3V6L8 5V3Z',
+  pin: 'M20.13 9.53 18.72 10.94 17.3 10.94 13.77 14.47 13.77 18.72 12.35 20.13 8.82 16.6 5.28 20.13 3.87 20.13 3.87 18.72 7.4 15.18 3.87 11.65 5.28 10.23 9.53 10.23 13.06 6.7 13.06 5.28 14.47 3.87Z', // alfinete inclinado (o antigo, girado 45°)
   upload: 'M11 15V5.8l-3.3 3.3L6.3 7.7 12 2l5.7 5.7-1.4 1.4L13 5.8V15Zm-6 2h14v4H5Z',
   file: 'M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V9h5.5Z',
   video: 'M4 5h10a2 2 0 0 1 2 2v2.6l4.3-2.7a.5.5 0 0 1 .7.4v9.4a.5.5 0 0 1-.7.4L16 14.4V17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z',
   screen: 'M3 4h18a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-7v2h3v2H7v-2h3v-2H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm1 2v9h16V6Z',
   phoneoff: 'M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.99.99 0 0 1-.29-.7c0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28a11.27 11.27 0 0 0-2.67-1.85.996.996 0 0 1-.56-.9v-3.1A15.07 15.07 0 0 0 12 9Z',
   users: 'M14 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM2 20a8 8 0 0 1 16 0v1H2Zm16.5-8.5a3 3 0 1 0 0-6 4 4 0 0 1 0 6Zm1.2 1.7c2.6.7 4.3 3 4.3 5.8v1h-3v-1c0-2.1-.5-4-1.3-5.8Z',
+  inbox: 'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 2v8h4a3 3 0 0 0 6 0h4V5Z', // bandeja de entrada
+  chevdown: 'M6.3 8.3 12 14l5.7-5.7 1.4 1.4-7.1 7.1-7.1-7.1Z',
+  invite: 'M9 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0v1H2Zm17-12h2v3h3v2h-3v3h-2v-3h-3v-2h3Z', // pessoa com +
   bell: 'M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6V11a6 6 0 0 0-5-5.9V4a1 1 0 1 0-2 0v1.1A6 6 0 0 0 6 11v5l-2 2v1h16v-1Z',
   check: 'm9 16.2-3.5-3.5L4 14.1 9 19 20 8l-1.4-1.4Z',
   dl: 'M5 20h14v-2H5v2ZM19 9h-4V3H9v6H5l7 7 7-7Z',
@@ -88,14 +92,18 @@ export const initials = (s) => (s || '?').split(/\s+/).map(w => w[0]).join('').s
 
 // enquadramento "x,y,zoom" (x/y em %, zoom 1–3) aplicado a um <img> com object-fit: cover
 export const parsePos = (s) => { const m = String(s || '').split(',').map(Number); return m.length === 3 && m.every(Number.isFinite) ? { x: m[0], y: m[1], z: m[2] } : { x: 50, y: 50, z: 1 }; };
-export function framePos(img, s) {
+export function framePos(img, s, round = false) {
   const p = parsePos(s); img.style.objectFit = 'cover'; img.style.objectPosition = p.x + '% ' + p.y + '%';
   img.style.transformOrigin = p.x + '% ' + p.y + '%'; img.style.transform = p.z > 1 ? 'scale(' + p.z + ')' : '';
+  // o zoom (scale) aumenta a imagem além da caixa; recorta de volta ao tamanho original (o .avatar não esconde o que vaza, por causa do status)
+  const k = 1 - 1 / p.z, f = (n) => +n.toFixed(2) + '%';
+  img.style.clipPath = p.z <= 1 ? '' : round ? `circle(${f(50 / p.z)} at ${f(p.x + (50 - p.x) / p.z)} ${f(p.y + (50 - p.y) / p.z)})`
+    : `inset(${f(p.y * k)} ${f((100 - p.x) * k)} ${f((100 - p.y) * k)} ${f(p.x * k)})`;
   return img;
 }
 export function avatar(u, size = 40, opts = {}) {
   const el = h('div.avatar', { style: { width: size + 'px', height: size + 'px', fontSize: Math.round(size * .42) + 'px', background: u?.color || '#5865f2' } });
-  if (u?.avatar) el.append(framePos(h('img', { src: u.avatar, alt: '', loading: 'lazy' }), u.avatar_pos)); else el.append((u?.display_name || u?.username || '?')[0].toUpperCase());
+  if (u?.avatar) el.append(framePos(h('img', { src: u.avatar, alt: '', loading: 'lazy' }), u.avatar_pos, true)); else el.append((u?.display_name || u?.username || '?')[0].toUpperCase());
   if (opts.status !== false && u) el.append(h('div.status.s-' + (u.status || 'offline'), { style: { borderColor: opts.ring || '' } }));
   return el;
 }

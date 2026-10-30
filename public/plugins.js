@@ -64,7 +64,9 @@ function build() {
   return h('div#chtabs',
     h('div.ct-list', tabEls, h('button.ct-add', { title: 'Nova aba (duplica a atual)', onclick: () => { addTab({ ...cur }); draw(); } }, icon('plus', 14))),
     h('button.ct-star' + (isFav ? '.on' : ''), { title: isFav ? 'Remover dos favoritos' : 'Favoritar este canal', onclick: () => toggleFav(cur) }, icon('star', 15)),
-    favEls.length > 0 && h('div.ct-favs', h('span.ct-sep'), favEls));
+    favEls.length > 0 && h('div.ct-favs', h('span.ct-sep'), favEls),
+    // caixa de entrada no canto superior direito
+    h('button.ibtn.inbox-btn.ct-inbox', { title: 'Caixa de entrada (menções e respostas)', onclick: (e) => D.showInbox(e) }, icon('inbox', 18), D.inboxBadge()));
 }
 
 function draw() {

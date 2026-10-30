@@ -9,7 +9,8 @@ cd "$(dirname "$0")/.."
 tar czf - Dockerfile README.md package.json package-lock.json .gitignore deploy public server scripts | ssh "$TARGET" "
   set -e
   mkdir -p ~/localcord ~/localcord-backups
-  cd ~/localcord && tar xzf -
+  # limpa o código antigo para não sobrar arquivo removido/renomeado (os dados ficam em ~/localcord-data)
+  cd ~/localcord && rm -rf deploy public server scripts && tar xzf -
   docker build -q -t localcord . >/dev/null
   # backup do banco antes de trocar o container
   tar czf ~/localcord-backups/data-\$(date +%Y%m%d-%H%M%S).tgz -C ~/localcord-data \$(cd ~/localcord-data && ls localcord.db*)

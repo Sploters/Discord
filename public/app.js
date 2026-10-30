@@ -1,5 +1,5 @@
-import { h, icon, avatar, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyEmoji, isImageUrl, SHORT, inviteCodes, stripInvites, inviteText, parsePos } from './util.js';
-import { S, api, tryApi, user, guild, channelById, member, nameOf, roleColor, can, perms, PERM, dmPeer, relType, toast, modal, confirmBox, promptBox, menu, popout, emojiPicker, lightbox, closeFloating, beep, notify, notifPolicy, desktop, applyTheme, emojiUrl, allEmojis, savePrefs } from './state.js';
+import { h, icon, avatar, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyEmoji, isImageUrl, SHORT, inviteCodes, stripInvites, inviteText, parsePos, framePos, initials } from './util.js';
+import { S, api, tryApi, user, guild, channelById, member, nameOf, roleColor, can, perms, PERM, dmPeer, relType, toast, modal, confirmBox, promptBox, menu, popout, emojiPicker, lightbox, closeFloating, beep, notify, notifPolicy, channelMuted, desktop, applyTheme, emojiUrl, allEmojis, savePrefs } from './state.js';
 import { Voice, SCREEN_PRESETS, VOICE_BITRATES } from './voice.js';
 import { playSound } from './sounds.js';
 import { initMusic, onState as musicOnState, onRes as musicOnRes, openMusic } from './music.js';
@@ -10,7 +10,7 @@ import { chName } from './chnames.js';
 import { seg, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
 import { openSettings, openFullProfile } from './settings.js';
 import { saveCustomTheme } from './themeeditor.js';
-import { THEME_CODE_RE, decodeTheme, gradientCss, styleName, stripThemeCodes, themeText, encodeTheme, GRADIENT_THEMES, themeDef } from './themes.js';
+import { isLightPair, THEME_CODE_RE, decodeTheme, gradientCss, styleName, stripThemeCodes, themeText, encodeTheme, GRADIENT_THEMES, themeDef } from './themes.js';
 import { profileCard, STATUS_TXT } from './card.js';
 import { timeoutDialog, removeTimeout, banDialog, timedOutUntil } from './mod.js';
 import { recordVoiceMessage, voiceEl } from './voicemsg.js';
@@ -211,14 +211,14 @@ function onMessage(m) {
   if (mine) return;
   const ch = channelById(m.channel_id), isDM = ch?.type === 1, pol = notifPolicy(ch);
   const text = m.content || '', direct = text.includes(`<@${S.me.id}>`);
-  const isMention = isDM || ((m.mentions || []).includes(S.me.id) && (direct || !pol.noEveryone));
+  const isMention = isDM ? !pol.muted && pol.level !== 'none' : ((m.mentions || []).includes(S.me.id) && (direct || !pol.noEveryone)); // DM silenciada ainda conta como não lida, mas sem som nem aviso
   const counts = isDM || (isMention && pol.level !== 'none') || (!pol.muted && pol.level === 'all');
   if (!viewing) {
     if (counts) { const u = S.unread[m.channel_id] ||= { count: 0 }; u.count++; }
     if (isMention && pol.level !== 'none') {
       S.mentions[m.channel_id] = (S.mentions[m.channel_id] || 0) + 1;
       playSound('mention'); notify(isDM ? m.author.display_name : `${m.author.display_name} (#${ch?.name})`, S.prefs.notifPreview === false ? 'Nova mensagem' : (inviteText(themeText(text)) || 'Anexo'), () => go(ch.guild_id || '@me', ch.id));
-    } else if (counts) playSound('message');
+    } else if (counts && !isDM) playSound('message');
     renderRail(); renderSide(); updateTitle();
   } else ack(m.channel_id);
 }
@@ -274,7 +274,7 @@ function buildShell() {
   $('#app').replaceChildren(h('div#rail'), h('div#side'), h('div#main'));
   $('#app').addEventListener('dragover', (e) => { if (e.dataTransfer?.types?.includes('Files') && $('#composer')) { e.preventDefault(); if (!$('#dropzone')) $('#chat').append(h('div#dropzone', 'Solte para anexar')); } });
   $('#app').addEventListener('dragleave', (e) => { if (!e.relatedTarget) $('#dropzone')?.remove(); });
-  initPlugins({ S, go, channelById, guild, user, dmPeer, menu });
+  initPlugins({ S, go, channelById, guild, user, dmPeer, menu, showInbox: (e) => showInbox(e), inboxBadge: () => inboxBadge() });
   $('#app').addEventListener('drop', (e) => { $('#dropzone')?.remove(); if (e.dataTransfer?.files?.length && $('#composer')) { e.preventDefault(); [...e.dataTransfer.files].forEach(addFile); } });
 }
 
@@ -350,12 +350,41 @@ function guildMenu(e, g) {
       : { label: 'Sair do servidor', danger: true, fn: async () => { if (await confirmBox(`Sair de ${g.name}`, 'Você precisará de um novo convite para voltar.', 'Sair do servidor')) tryApi('DELETE', `/guilds/${g.id}/members/me`); } },
   ]);
 }
+// convidar para o servidor: amigos com botão "Convidar" (vai por DM) e o link para copiar embaixo
 async function inviteModal(g) {
   const r = await tryApi('POST', `/guilds/${g.id}/invites`); if (!r) return;
   const link = `${location.origin}/invite/${r.code}`;
+  const land = g.channels.filter(c => c.type === 0).sort((a, b) => (a.position ?? 0) - (b.position ?? 0))[0];
+  const friends = [...S.rels.values()].filter(x => x.type === 1).map(x => S.users.get(x.user.id) || x.user).filter(u => !g.members?.has(u.id))
+    .sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+  const sent = new Set(), list = h('div.inv-list'), q = h('input', { placeholder: 'Buscar amigos', oninput: () => draw() });
+  let open = true;
+  const sec = h('div.inv-sec', { onclick: () => { open = !open; sec.classList.toggle('closed', !open); list.classList.toggle('hidden', !open); } }, h('span', 'Convidar para o servidor'), icon('chevdown', 18));
+  const send = async (u, btn) => {
+    btn.disabled = true; btn.textContent = 'Enviando…';
+    const dm = await ensureDM(u.id);
+    if (dm && await tryApi('POST', `/channels/${dm.id}/messages`, { content: link })) { sent.add(u.id); btn.textContent = 'Enviado'; btn.classList.add('done'); }
+    else { btn.disabled = false; btn.textContent = 'Convidar'; }
+  };
+  const draw = () => {
+    const f = q.value.trim().toLowerCase();
+    const rows = friends.filter(u => !f || (u.display_name || '').toLowerCase().includes(f) || (u.username || '').toLowerCase().includes(f));
+    list.replaceChildren(...(rows.length ? rows.map(u => {
+      const btn = h('button.inv-btn' + (sent.has(u.id) ? '.done' : ''), { disabled: sent.has(u.id), onclick: () => send(u, btn) }, sent.has(u.id) ? 'Enviado' : 'Convidar');
+      return h('div.inv-row', avatar(u, 32, { status: false }), h('div.inv-who', h('b', u.display_name), h('small', u.username)), btn);
+    }) : [h('div.inv-empty', friends.length ? 'Nenhum amigo encontrado.' : 'Todos os seus amigos já estão aqui (ou você ainda não tem amigos).')]));
+  };
   const inp = h('input', { value: link, readOnly: true, onfocus: (e) => e.target.select() });
-  modal(`Convidar amigos para ${g.name}`, 'Envie este link para seus amigos (precisam acessar o mesmo endereço do servidor).', h('label.f', 'Link de convite', inp),
-    [{ label: 'Fechar', cls: 'link' }, { label: 'Copiar', keep: true, fn: () => { inp.select(); (navigator.clipboard?.writeText(link) || Promise.reject()).catch(() => document.execCommand('copy')); toast('Link copiado!'); } }]);
+  const copy = h('button.btn', { onclick: () => { inp.select(); (navigator.clipboard?.writeText(link) || Promise.reject()).catch(() => document.execCommand('copy')); copy.textContent = 'Copiado'; copy.classList.add('green'); setTimeout(() => { copy.textContent = 'Copiar'; copy.classList.remove('green'); }, 1500); } }, 'Copiar');
+  const dlg = modal(`Convidar amigos para ${g.name}`, null,
+    h('div.inv',
+      land && h('p.inv-land', 'Os convidados vão cair em ', h('span', icon('hash', 14), chName(land))),
+      h('label.inv-search', icon('search', 16), q),
+      h('div.inv-scroll', sec, list),
+      h('div.inv-foot', h('label', 'Ou envie um link de convite para um amigo'), h('div.inv-copy', inp, copy), h('small', 'Este link de convite não expira.'))), []);
+  dlg.el.querySelector('.modal')?.classList.add('invmodal');
+  dlg.el.querySelector('.mh')?.append(h('button.inv-x', { title: 'Fechar', onclick: dlg.close }, icon('x', 20)));
+  draw(); q.focus();
 }
 function channelModal(g, type, parent) {
   const name = h('input', { placeholder: type === 2 ? 'Sala de voz' : type === 4 ? 'Nova categoria' : 'novo-canal', maxLength: 100 });
@@ -382,14 +411,16 @@ function renderSide() {
         const dmRow = (dm, pin) => {
           const p = dmPeer(dm), un = S.mentions[dm.id];
           return h('div.ch' + (S.view.cid === dm.id ? '.active' : '') + (S.unread[dm.id] ? '.unread' : ''), { style: { height: '42px' }, onclick: () => go('@me', dm.id), oncontextmenu: (e) => userMenu(e, p.id), ...previewHooks(dm) },
-            avatar(user(p.id), 32, { ring: 'var(--bg-sec)' }), styleName(h('span.name', user(p.id).display_name), user(p.id).name_style), un > 0 && h('span.pill', un), pin && h('span.dmpin', { title: 'Fixada' }, icon('pin', 14)));
+            avatar(user(p.id), 32, { ring: 'var(--bg-sec)' }), styleName(h('span.name', user(p.id).display_name), user(p.id).name_style), un > 0 && h('span.pill', un), pin && h('span.dmpin', { title: 'Fixada' }, icon('pin', 18)));
         };
         return [pinned.length > 0 && h('div.cat', { style: { cursor: 'default' } }, 'Fixadas'), ...pinned.map(d => dmRow(d, true)),
           h('div.cat', { style: { cursor: 'default' } }, 'Mensagens diretas'), ...rest.map(d => dmRow(d, false))];
       })());
   } else {
     const g = guild(S.view.gid);
-    head = h('div#side-head' + (g.banner ? '.banner' : ''), { style: g.banner ? { backgroundImage: `linear-gradient(transparent 40%, rgba(0,0,0,.65)), url("${g.banner}")` } : (g.accent ? { borderBottom: `3px solid ${g.accent}` } : null), onclick: (e) => guildMenu({ preventDefault() { }, clientX: e.clientX, clientY: e.clientY + 10 }, g) }, h('span', g.name), icon('caret'));
+    head = h('div#side-head' + (g.banner ? '.banner' : ''), { style: g.banner ? { backgroundImage: `linear-gradient(transparent 40%, rgba(0,0,0,.65)), url("${g.banner}")` } : (g.accent ? { borderBottom: `3px solid ${g.accent}` } : null), }, // nome + seta abrem o menu do servidor; o botão ao lado convida
+      h('div.gd', { title: 'Ações do servidor', onclick: () => { const r = head.getBoundingClientRect(); guildMenu({ preventDefault() { }, clientX: r.left + 8, clientY: r.bottom + 4 }, g); } }, h('span', g.name), icon('chevdown', 16)),
+      h('button.gd-inv', { title: 'Convidar para o servidor', onclick: () => inviteModal(g) }, icon('invite', 20)));
     const cats = g.channels.filter(c => c.type === 4), kids = (pid) => g.channels.filter(c => c.type !== 4 && (c.parent_id || null) === pid);
     const chRow = (c) => {
       const vs = c.type === 2 ? [...S.voice.values()].filter(v => v.channel_id === c.id) : [];
@@ -423,7 +454,7 @@ function channelMenu(e, g, c) {
   menu(e, [
     c.type === 2 && { label: 'Entrar no canal de voz', fn: () => { go(g.id, c.id); joinVoice(c.id); } },
     S.unread[c.id] && { label: 'Marcar como lido', fn: () => ack(c.id) },
-    c.type !== 4 && { label: notifPolicy(c).muted && (S.prefs.notifyCfg?.channels || {})[c.id] ? 'Reativar canal' : 'Silenciar canal', fn: () => { const n = (S.prefs.notifyCfg ||= {}); const ch = (n.channels ||= {}); ch[c.id] ? delete ch[c.id] : (ch[c.id] = true); savePrefs(); renderSide(); } },
+    c.type !== 4 && { label: channelMuted(c.id) ? 'Reativar canal' : 'Silenciar canal', fn: () => { const n = (S.prefs.notifyCfg ||= {}); const ch = (n.channels ||= {}); channelMuted(c.id) ? delete ch[c.id] : (ch[c.id] = true); savePrefs(); renderSide(); } },
     can(g.id, PERM.MANAGE_CHANNELS) && { label: 'Editar canal', fn: () => channelSettings(g, c) },
     can(g.id, PERM.CREATE_INVITE) || true ? { label: 'Convidar pessoas', fn: () => inviteModal(g) } : null,
     S.prefs.devMode && { label: 'Copiar ID do canal', fn: () => navigator.clipboard?.writeText(c.id) },
@@ -506,8 +537,73 @@ async function profile(anchor, uid, gid) {
       rt === 0 && h('button.btn.grey', { onclick: async () => { await tryApi('POST', '/relationships', { username: u.username }); closeFloating(); toast('Pedido de amizade enviado'); } }, 'Adicionar amigo'),
       rt === 3 && h('button.btn.green', { onclick: async () => { await tryApi('PUT', `/relationships/${uid}`, {}); closeFloating(); } }, 'Aceitar'));
   const extra = [u.mutual_guilds?.length > 0 && !isMe && [h('h4', 'Servidores em comum'), h('p', u.mutual_guilds.map(x => x.name).join(', '))], actions];
-  const node = profileCard(u, { nickname: m?.nickname, roles, extra, onImage: isMe ? () => { closeFloating(); openFullProfile(); } : undefined }); // no próprio perfil, clicar na foto abre o perfil completo
+  const node = profileCard(u, { nickname: m?.nickname, roles, extra, onImage: () => { closeFloating(); isMe ? openFullProfile() : openUserProfile(uid, gid); } }); // clicar na foto/banner abre o perfil completo (o próprio abre o editor)
   popout(anchor, node, anchor.closest('#members') || anchor.closest('.msg') ? 'left' : 'right');
+}
+// perfil completo de outra pessoa (clicar na foto/banner do cartão): banner e dados à esquerda, atividade e itens em comum à direita
+async function openUserProfile(uid, gid) {
+  const u = await tryApi('GET', `/users/${uid}`); if (!u) return;
+  S.users.set(uid, { ...S.users.get(uid), ...u });
+  const m = gid && gid !== '@me' ? member(gid, uid) : null, g = m && guild(gid);
+  const roles = g && m ? g.roles.filter(r => m.roles.includes(r.id)) : [];
+  const tp = u.theme_primary, ta = u.theme_accent, themed = !!(tp && ta), color = themed ? tp : u.banner_color || u.color || '#5865f2';
+  const rt = relType(uid), notes = (S.prefs.notes ||= {});
+  const date = (t) => new Date(+t || Date.now()).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' });
+  const sec = (title, ...body) => h('section.upsec', h('h4', title), ...body);
+  const bd = h('div.backdrop.upbd', { onmousedown: (e) => { if (e.target === bd) close(); } });
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const close = () => { bd.remove(); removeEventListener('keydown', onKey); };
+  const banner = h('div.upbanner', { style: { background: color } });
+  if (u.banner) banner.append(framePos(h('img', { src: u.banner, alt: '', draggable: false }), u.banner_pos));
+  const av = avatar(u, 120, { ring: themed ? 'var(--ring)' : 'var(--bg-float)' });
+  if (u.avatar) { av.classList.add('zoomable'); av.title = 'Ver foto de perfil'; av.onclick = () => lightbox(u.avatar); }
+  const sent = () => h('button.btn.grey', { disabled: true }, 'Pedido enviado');
+  const friendBtn = rt === 1 ? h('button.btn.grey.upico', { title: 'Amigos', onclick: (e) => menu(e, [{ label: 'Remover amizade', danger: true, fn: async () => { if (await confirmBox('Remover amizade', `Remover ${u.display_name} dos seus amigos?`, 'Remover')) { await tryApi('DELETE', `/relationships/${uid}`); close(); } } }]) }, icon('check', 18))
+    : rt === 3 ? h('button.btn.green', { onclick: async () => { await tryApi('PUT', `/relationships/${uid}`, {}); close(); } }, 'Aceitar amizade')
+    : rt === 4 ? sent()
+    : rt === 0 && h('button.btn.grey', { onclick: async (e) => { const b = e.currentTarget; if (await tryApi('POST', '/relationships', { username: u.username })) { toast('Pedido de amizade enviado'); b.replaceWith(sent()); } } }, 'Adicionar amigo');
+  // nota pessoal: fica só neste navegador, junto das preferências
+  const note = h('textarea.upnote', { placeholder: 'Clique para adicionar uma nota', maxLength: 256, rows: 1 });
+  note.value = notes[uid] || '';
+  const grow = () => { note.style.height = '0'; note.style.height = note.scrollHeight + 'px'; };
+  note.oninput = grow;
+  note.onchange = () => { const v = note.value.trim(); if (v) notes[uid] = v; else delete notes[uid]; savePrefs(); };
+  const emoji = u.status_emoji && /^<:/.test(u.status_emoji) ? null : u.status_emoji;
+  const left = h('main.upleft',
+    h('div.uphead', banner, h('div.upav', av)),
+    h('div.upbody',
+      h('h2', styleName(h('span', m?.nickname || u.display_name), u.name_style)),
+      h('div.un', u.username + (u.pronouns ? ' • ' + u.pronouns : '') + (u.status && u.status !== 'offline' ? ' • ' + STATUS_TXT[u.status] : '')),
+      (u.custom_status || emoji) && h('p.cstat', emoji && h('span', emoji + ' '), u.custom_status),
+      h('div.upbtns',
+        h('button.btn', { onclick: () => { close(); openDM(uid); } }, icon('dm', 16), 'Mensagem'),
+        friendBtn,
+        h('button.btn.grey.upico', { title: 'Mais', onclick: (e) => userMenu(e, uid, gid) }, icon('more', 18))),
+      u.bio && sec('Sobre mim', h('p', { style: { whiteSpace: 'pre-wrap' } }, u.bio)),
+      sec('No LocalCord desde', h('p', date(u.created_at))),
+      m?.joined_at && sec(`Membro de ${g.name} desde`, h('p', date(m.joined_at))),
+      roles.length > 0 && sec('Cargos', h('div.chips', roles.map(r => h('span.chip', h('i.dot', { style: { background: r.color } }), r.name)))),
+      sec('Nota (só você vê)', note)));
+  // abas: atividade (sala de voz atual) e o que vocês têm em comum
+  const vs = S.voice.get(uid), vch = vs && channelById(vs.channel_id), vg = vch && [...S.guilds.values()].find(x => x.channels.some(c => c.id === vch.id));
+  const friends = u.mutual_friends || [], guilds = u.mutual_guilds || [];
+  const empty = (t) => h('div.upempty', t);
+  const row = (img, name, sub, fn) => h('div.uprow' + (fn ? '.click' : ''), { onclick: fn }, img, h('div', h('b', name), sub && h('small', sub)));
+  const tabs = [
+    ['Atividade', () => vch ? [h('h4', 'Agora'), row(h('div.upgi', icon('voice', 22)), vg ? chName(vch) : 'Chamada', vg ? `Em uma sala de voz em ${vg.name}` : 'Em uma chamada', vg && (() => { close(); go(vg.id, vch.id); }))] : [empty(`${u.display_name} não está fazendo nada no momento.`)]],
+    [`${friends.length} ${friends.length === 1 ? 'amigo' : 'amigos'} em comum`, () => friends.length ? friends.map(f => row(avatar(f, 40, { ring: 'var(--bg-float)' }), f.display_name, f.username, () => { close(); openUserProfile(f.id); })) : [empty('Nenhum amigo em comum.')]],
+    [`${guilds.length} ${guilds.length === 1 ? 'servidor' : 'servidores'} em comum`, () => guilds.length ? guilds.map(x => row(x.icon ? h('img.upgi', { src: x.icon, alt: '' }) : h('div.upgi', initials(x.name)), x.name, '', () => { close(); go(x.id); })) : [empty('Nenhum servidor em comum.')]]];
+  const panel = h('div.uppanel'), bar = h('div.uptabs');
+  const show = (i) => { [...bar.children].forEach((b, j) => b.classList.toggle('on', i === j)); panel.replaceChildren(...tabs[i][1]()); };
+  bar.append(...tabs.map(([t], i) => h('button', { onclick: () => show(i) }, t)));
+  const card = h('div.upmodal' + (themed ? '.pcard.themed' + (isLightPair(tp, ta) ? '.tlight' : '.tdark') : ''),
+    h('button.upclose', { title: 'Fechar', onclick: close }, icon('x', 16)),
+    left, h('div.upright', bar, panel));
+  card.style.setProperty('--pc', color);
+  if (themed) { card.style.setProperty('--tp', tp); card.style.setProperty('--ta', ta); }
+  bd.append(card); (document.getElementById('layer') || document.body).append(bd);
+  addEventListener('keydown', onKey);
+  show(0); requestAnimationFrame(grow);
 }
 // ---------- ações do menu do usuário ----------
 const pinnedDMs = () => (S.prefs.pinnedDMs ||= []);
@@ -645,24 +741,27 @@ function renderMain() {
   const dm = ch.type === 1, vc = ch.type === 2, peer = dm && dmPeer(ch);
   const search = h('input.search', { placeholder: 'Buscar', title: 'Filtros: de:nome  tem:imagem|arquivo|link|video  em:canal', onkeydown: (e) => { if (e.key === 'Enter') doSearch(search.value); if (e.key === 'Escape') { search.value = ''; closeResults(); } } });
   const inCall = dm && callActive(ch.id), chatOpen = !vcChatHidden(ch);
-  main.replaceChildren(
-    h('div#topbar',
+  const top = h('div#topbar',
       h('button.ibtn.menu-btn', { onclick: () => $('#app').classList.toggle('nav-open'), style: { display: innerWidth <= 640 ? 'flex' : 'none' } }, icon('more')),
       dm ? [h('span.hash', '@'), h('span', user(peer.id).display_name), h('div.status.s-' + user(peer.id).status, { style: { position: 'static', borderColor: 'transparent', width: '10px', height: '10px', minWidth: 0, minHeight: 0 } })]
         : [h('span.hash', icon(vc ? 'voice' : 'hash', 24)), h('span', { title: ch.name }, chName(ch)), ch.topic && h('span.topic', ch.topic)],
       h('div.spacer'),
-      // sala de voz: só o botão que mostra/esconde o chat, como no Discord
-      vc ? h('button#vc-chat-btn.ibtn' + (chatOpen ? '.sel' : '') + (!chatOpen && S.unread[ch.id] ? '.unread' : ''), { title: chatOpen ? 'Ocultar chat' : 'Mostrar chat', onclick: () => toggleVcChat(ch) }, icon('dm')) : [
+      // sala de voz: só o botão que mostra o chat; aberto, ele vira o X no topo do próprio chat
+      vc ? !chatOpen && h('button#vc-chat-btn.ibtn' + (S.unread[ch.id] ? '.unread' : ''), { title: 'Mostrar chat', onclick: () => toggleVcChat(ch) }, icon('dm')) : [
         dm && h('button.ibtn', { title: voice.channelId === ch.id ? 'Desligar' : 'Iniciar chamada de voz', onclick: () => voice.channelId === ch.id ? voice.leave() : joinVoice(ch.id) }, icon(voice.channelId === ch.id ? 'phoneoff' : 'phone')),
         h('button.ibtn', { title: 'Ir para a primeira mensagem', onclick: jumpToTop }, icon('totop')),
+        h('button.ibtn.notif-btn', { title: 'Notificações', onclick: (e) => notifMenu(e, ch) }, icon('bell')),
         h('button.ibtn.pins-btn', { title: 'Mensagens fixadas', onclick: showPins }, icon('pin')),
-        h('button.ibtn.inbox-btn', { title: 'Caixa de entrada (menções e respostas)', onclick: showInbox }, icon('bell'), inboxBadge()),
         !dm && h('button.ibtn' + (S.membersOpen ? '.sel' : ''), { title: 'Lista de membros', onclick: () => { S.membersOpen = !S.membersOpen; renderMain(); } }, icon('users')),
-        search]),
+        search]);
+  // sala de voz: a barra do topo fica junto com o palco (mesmo fundo) e o chat ocupa a altura toda ao lado, como no Discord
+  main.replaceChildren(...[!vc && top,
     h('div#content',
-      vc && h('div#stage'),
-      chatOpen && h('div#chat' + (vc ? '.side' : ''), inCall && h('div#stage.dmstage'), h('div#msgs'), h('div#typing'), composer(ch, dm ? '@' + user(peer.id).display_name : (vc ? 'chat de ' : '#') + chName(ch))),
-      !dm && !vc && S.membersOpen && h('div#members')));
+      vc && h('div#vcall', top, h('div#stage')),
+      chatOpen && h('div#chat' + (vc ? '.side' : ''),
+        vc && h('div.vchead', h('span.vcico', icon('dm', 20)), h('span.vctitle', { title: ch.name }, chName(ch)), h('button.ibtn', { title: 'Fechar chat', onclick: () => toggleVcChat(ch) }, icon('x'))),
+        inCall && h('div#stage.dmstage'), h('div#msgs'), h('div#typing'), composer(ch, dm ? '@' + user(peer.id).display_name : (vc ? 'chat de ' : '#') + chName(ch))),
+      !dm && !vc && S.membersOpen && h('div#members'))].filter(Boolean));
   if (chatOpen) { stickToBottom($('#msgs')); loadChannel(ch.id); }
   renderMembers(); if (vc || inCall) renderVoiceUI();
 }
@@ -938,10 +1037,44 @@ function mentionAvatar(u) {
 // o mesmo botão abre e fecha o painel da direita (fixadas / caixa de entrada)
 const resultsOpen = (kind) => $('#results')?.dataset.kind === kind;
 function markResultBtns() { const k = $('#results')?.dataset.kind; $('.pins-btn')?.classList.toggle('sel', k === 'pins'); $('.inbox-btn')?.classList.toggle('sel', k === 'inbox'); }
-async function showPins() {
-  if (resultsOpen('pins')) return closeResults();
+// prende o popup pela borda direita do botão, logo abaixo dele (medir a largura falha durante a animação de entrada, que encolhe o popup)
+const anchorRight = (pop, btn, gap) => { const r = btn.getBoundingClientRect(); pop.style.left = 'auto'; pop.style.right = Math.max(8, innerWidth - r.right) + 'px'; pop.style.top = (r.bottom + gap) + 'px'; };
+// popups dos botões do topo (fixadas, notificações): clicar de novo no mesmo botão fecha
+let topWasOpen = false;
+window.addEventListener('mousedown', (e) => { topWasOpen = (!!$('.pinspop') && !!e.target.closest?.('.pins-btn')) || (!!$('.notifmenu') && !!e.target.closest?.('.notif-btn')) || (!!$('.inboxpop') && !!e.target.closest?.('.inbox-btn')); }, true);
+// menu de notificações do canal: silenciar por um tempo e nível de aviso (padrão do servidor, tudo, só @menções, nada)
+function notifMenu(e, ch) {
+  const btn = e.currentTarget;
+  if (topWasOpen) { topWasOpen = false; return closeFloating(); }
+  const cfg = (S.prefs.notifyCfg ||= {}), lv = (cfg.chLevel ||= {}), mutes = (cfg.channels ||= {});
+  const g = ch.guild_id ? cfg[ch.guild_id] : null, LV = { all: 'Todas as mensagens', mentions: 'Apenas @menções', none: 'Nada' };
+  const done = () => { savePrefs(); renderSide(); };
+  const setLv = (k) => { k ? (lv[ch.id] = k) : delete lv[ch.id]; done(); };
+  const muteFor = (min) => { mutes[ch.id] = min ? Date.now() + min * 60e3 : true; done(); toast('Canal silenciado'); };
+  const until = mutes[ch.id], muted = channelMuted(ch.id);
+  const r = btn.getBoundingClientRect();
+  menu({ preventDefault() {}, clientX: r.right - 240, clientY: r.bottom + 8 }, [
+    muted ? { label: 'Reativar canal', hint: until === true ? 'Silenciado até você reativar' : 'Silenciado até ' + clock(until), fn: () => { delete mutes[ch.id]; done(); } }
+      : { label: 'Silenciar canal', sub: [[15, 'Por 15 minutos'], [60, 'Por 1 hora'], [180, 'Por 3 horas'], [480, 'Por 8 horas'], [1440, 'Por 24 horas'], [0, 'Até eu reativar']].map(([m, l]) => ({ label: l, fn: () => muteFor(m) })) },
+    '-',
+    { label: ch.guild_id ? 'Usar padrão do servidor' : 'Usar padrão', hint: LV[g?.level || 'all'], radio: !lv[ch.id], fn: () => setLv(null) },
+    { label: LV.all, radio: lv[ch.id] === 'all', fn: () => setLv('all') },
+    { label: h('span', 'Apenas ', h('b', '@menções')), radio: lv[ch.id] === 'mentions', fn: () => setLv('mentions') },
+    { label: LV.none, radio: lv[ch.id] === 'none', fn: () => setLv('none') },
+  ]);
+  const el = [...document.querySelectorAll('#layer .menu')].pop(); el?.classList.add('notifmenu');
+}
+// popup "Mensagens fixadas" abaixo do botão
+async function showPins(e) {
+  const btn = e.currentTarget;
+  if (topWasOpen) { topWasOpen = false; return closeFloating(); }
   const list = await tryApi('GET', `/channels/${S.view.cid}/pins`); if (!list) return;
-  showResults('Mensagens fixadas', list, 'pins');
+  const jump = (m) => { const ch = channelById(m.channel_id); closeFloating(); if (S.view.cid !== m.channel_id) { go(ch.guild_id || '@me', m.channel_id); setTimeout(() => jumpTo(m.id), 600); } else jumpTo(m.id); };
+  const body = list.length ? h('div.pp-list', list.map(m => { const el = msgEl(m, null); el.querySelector('.toolbar')?.remove(); el.onclick = () => jump(m); return el; }))
+    : h('div.pp-empty', h('div.pp-art', icon('pin', 40)), h('p', 'Este canal ainda não tem nenhuma mensagem fixada... por enquanto.'));
+  const pop = popout(btn, h('div.pp', h('div.pp-head', icon('pin', 22), h('b', 'Mensagens fixadas')), body,
+    h('div.pp-foot', h('b', 'Dica:'), h('span', S.view.kind === 'guild' ? 'Quem tem a permissão "Gerenciar mensagens" pode fixar uma mensagem pelo menu de contexto dela.' : 'Clique com o botão direito numa mensagem e escolha "Fixar mensagem".'))));
+  pop.classList.add('pinspop'); anchorRight(pop, btn, 8);
 }
 async function doSearch(q) {
   if (!q.trim()) return closeResults();
@@ -954,26 +1087,60 @@ async function doSearch(q) {
 const inboxCount = () => Object.values(S.mentions).reduce((n, v) => n + (v || 0), 0);
 const inboxBadge = () => { const n = inboxCount(); return n ? h('span.ibadge', n > 99 ? '99+' : n) : null; };
 const KIND_TXT = { mention: 'mencionou você', reply: 'respondeu você', everyone: 'mencionou @everyone' };
-async function showInbox() {
-  if (resultsOpen('inbox')) return closeResults();
-  closeResults();
-  const box = h('div'), more = h('button.btn.grey', { style: { width: '100%', marginTop: '4px', display: 'none' } }, 'Carregar mais');
-  const panel = h('div#results.inbox', { 'data-kind': 'inbox' }, h('div.rh', 'Caixa de entrada', h('button.ibtn', { style: { width: '20px', height: '20px' }, onclick: closeResults }, icon('x', 14))), box, more);
-  $('#content')?.append(panel);
-  const load = async (before) => {
-    const list = await tryApi('GET', '/inbox' + (before ? '?before=' + before : '')); if (!list) return;
-    for (const m of list) {
-      const ch = channelById(m.channel_id), g = guild(m.guild_id);
-      const where = g ? `#${m.channel_name} • ${g.name}` : 'Mensagem direta';
-      const e = msgEl(m, null); e.querySelector('.toolbar')?.remove();
-      box.append(h('div.ibx' + (m.unread ? '.unread' : ''), { onclick: () => { closeResults(); if (S.view.cid !== m.channel_id) { go(ch?.guild_id || '@me', m.channel_id); setTimeout(() => jumpTo(m.id), 600); } else jumpTo(m.id); } },
-        h('div.ibh', h('b', nameOf(m.author_id, m.guild_id)), ' ' + (KIND_TXT[m.kind] || ''), h('span', where)), e));
-    }
-    if (!box.children.length) box.append(h('div.empty', { style: { marginTop: '20px' } }, 'Nada por aqui. Menções e respostas a você aparecem nesta caixa.'));
-    more.style.display = list.length === 30 ? '' : 'none';
-    more.onclick = () => load(list.at(-1).id);
+// popup "Caixa de entrada" no canto superior direito: não lidas por canal e menções/respostas
+let inboxTab = 'unread';
+const unreadCh = () => Object.entries(S.unread).map(([cid, u]) => ({ ch: channelById(cid), u })).filter(x => x.ch).sort((a, b) => (b.u.last_id > a.u.last_id ? 1 : -1));
+const jumpMsg = (m) => { const ch = channelById(m.channel_id); closeFloating(); if (S.view.cid !== m.channel_id) { go(ch?.guild_id || '@me', m.channel_id); setTimeout(() => jumpTo(m.id), 600); } else jumpTo(m.id); };
+// mensagens com separador de dia e o botão "Ir" ao passar o mouse
+const ibMsgs = (list, head) => { let prev = null; return list.flatMap(m => { const out = []; if (!prev || !sameDay(prev.created_at, m.created_at)) out.push(h('div.ib-day', h('span', dayLabel(m.created_at)))); prev = m; const e = msgEl(m, null); e.querySelector('.toolbar')?.remove(); out.push(h('div.ib-msg', head?.(m), e, h('button.ib-jump', { onclick: (ev) => { ev.stopPropagation(); jumpMsg(m); } }, 'Ir'))); return out; }); };
+async function showInbox(e) {
+  const btn = e?.currentTarget || $('.inbox-btn');
+  if (topWasOpen) { topWasOpen = false; return closeFloating(); }
+  const body = h('div.ib-body'), tabs = h('div.ib-tabs');
+  const pending = [...S.rels.values()].filter(r => r.type === 3).length;
+  const drawTabs = () => tabs.replaceChildren(...[['unread', 'Não lidas'], ['mentions', 'Menções']].map(([k, l]) => h('button' + (inboxTab === k ? '.on' : ''), { onclick: () => { inboxTab = k; drawTabs(); draw(); } }, l)));
+  const empty = (t, p) => h('div.ib-empty', h('div.ib-art', icon('inbox', 36)), h('b', t), h('p', p));
+  const chBox = ({ ch, u }) => {
+    const g = ch.guild_id ? guild(ch.guild_id) : null, dm = ch.type === 1, peer = dm && dmPeer(ch), cat = ch.parent_id && channelById(ch.parent_id);
+    const list = h('div.ib-list', h('div.ib-loading', 'Carregando…'));
+    const box = h('div.ib-box');
+    const open = () => { closeFloating(); go(g ? g.id : '@me', ch.id); };
+    box.append(h('div.ib-head',
+      g ? (g.icon ? h('img.ib-gi', { src: g.icon, alt: '' }) : h('span.ib-gi', initialsOf(g.name))) : avatar(user(peer.id), 32, { status: false }),
+      h('div.ib-name', { onclick: open }, h('b', !dm && icon('hash', 14), dm ? user(peer.id).display_name : chName(ch)), h('small', g ? g.name + (cat ? ' › ' + cat.name : '') : 'Mensagem direta')),
+      h('button.ib-btn', { title: 'Marcar como lido', onclick: () => { ack(ch.id); box.remove(); if (!body.querySelector('.ib-box')) draw(); } }, icon('check', 16)),
+      h('button.ib-btn.ib-fold', { title: 'Recolher', onclick: () => box.classList.toggle('folded') }, icon('caret', 16))), list);
+    tryApi('GET', `/channels/${ch.id}/messages?limit=${Math.min(Math.max(u.count || 1, 1), 10)}`).then(msgs => {
+      if (!msgs) return list.replaceChildren();
+      list.replaceChildren(...ibMsgs(msgs), h('button.ib-all', { onclick: open }, 'Ver todas as não lidas ›'));
+    });
+    return box;
   };
-  markResultBtns(); load();
+  const draw = () => {
+    if (inboxTab === 'unread') {
+      const chs = unreadCh().slice(0, 20);
+      body.replaceChildren(...(chs.length ? chs.map(chBox) : [empty('Tudo em dia!', 'Você não tem mensagens não lidas.')]));
+      return;
+    }
+    body.replaceChildren(h('div.ib-loading', 'Carregando…'));
+    const more = h('button.ib-all', 'Carregar mais'), wrap = h('div.ib-list');
+    const load = async (before) => {
+      const list = await tryApi('GET', '/inbox' + (before ? '?before=' + before : '')); if (!list) return;
+      if (!before) body.replaceChildren(wrap);
+      more.remove();
+      wrap.append(...ibMsgs(list, (m) => { const g = guild(m.guild_id); return h('div.ib-why' + (m.unread ? '.new' : ''), h('b', nameOf(m.author_id, m.guild_id)), ' ' + (KIND_TXT[m.kind] || ''), h('span', g ? ` • #${m.channel_name} • ${g.name}` : ' • Mensagem direta')); }));
+      if (!wrap.children.length) body.replaceChildren(empty('Nada por aqui', 'Menções e respostas a você aparecem nesta aba.'));
+      else if (list.length === 30) { more.onclick = () => load(list.at(-1).id); wrap.append(more); }
+    };
+    load();
+  };
+  const pop = popout(btn, h('div.ib',
+    h('div.ib-top', icon('inbox', 22), h('b', 'Caixa de entrada'),
+      h('button.ib-btn', { title: 'Marcar tudo como lido', onclick: () => { [...Object.keys(S.unread), ...Object.keys(S.mentions)].forEach(ack); draw(); } }, icon('check', 16)),
+      h('button.ib-btn', { title: `Ver pedidos de amizade (${pending})`, onclick: () => { closeFloating(); S.view.tab = 'all'; go('@me'); } }, icon('users', 16), pending > 0 && h('span.ibadge', pending))),
+    tabs, body));
+  pop.classList.add('inboxpop'); anchorRight(pop, btn, 6);
+  drawTabs(); draw();
 }
 function closeResults() { $('#results')?.remove(); markResultBtns(); }
 function showResults(title, list, kind = 'search') {
@@ -1098,9 +1265,10 @@ function renderMembers() {
 // painel "Ativo agora": amigos online, com servidor e sala de voz quando estão numa chamada
 function renderActiveNow() {
   const box = document.getElementById('active-now'); if (!box) return;
-  const friends = [...S.rels.values()].filter(r => r.type === 1).map(r => S.users.get(r.user.id) || r.user).filter(u => u.status && u.status !== 'offline');
+  // quem está em chamada aparece mesmo invisível/offline; a lista "Online" continua só com quem está online
+  const friends = [...S.rels.values()].filter(r => r.type === 1).map(r => S.users.get(r.user.id) || r.user);
   const inVoice = [], other = [];
-  for (const u of friends) { const v = S.voice.get(u.id), ch = v && channelById(v.channel_id); (ch ? inVoice : other).push({ u, v, ch }); }
+  for (const u of friends) { const v = S.voice.get(u.id), ch = v && channelById(v.channel_id); if (ch) inVoice.push({ u, v, ch }); else if (u.status && u.status !== 'offline') other.push({ u }); }
   const byName = (a, b) => (a.u.display_name || '').localeCompare(b.u.display_name || '');
   const voiceCard = ({ u, v, ch }) => {
     const g = ch.type === 1 ? null : guild(ch.guild_id);
@@ -1113,15 +1281,14 @@ function renderActiveNow() {
   box.replaceChildren(h('h3', 'Ativo agora'),
     ...(inVoice.length ? [h('div.an-cap', 'Em chamada de voz'), ...inVoice.sort(byName).map(voiceCard)] : []),
     ...(other.length ? [h('div.an-cap', 'Online'), ...other.sort(byName).map(rows)] : []),
-    !friends.length && h('div.an-empty', h('b', 'Tudo quieto por aqui…'), h('p', 'Quando seus amigos ficarem online ou entrarem numa sala de voz, eles aparecem aqui.')));
+    ...(!inVoice.length && !other.length ? [h('div.an-empty', h('b', 'Tudo quieto por aqui…'), h('p', 'Quando seus amigos ficarem online ou entrarem numa sala de voz, eles aparecem aqui.'))] : []));
 }
 function renderHome(main) {
-  if (S.view.tab === 'blocked') S.view.tab = 'online'; // bloqueados ficam em Configurações → Privacidade e segurança
+  if (S.view.tab === 'blocked' || S.view.tab === 'pending') S.view.tab = 'online'; // bloqueados ficam em Privacidade e segurança; pedidos pendentes aparecem em "Todos"
   const tab = S.view.tab, rels = [...S.rels.values()];
-  const tabs = [['online', 'Online'], ['all', 'Todos'], ['pending', 'Pendentes']];
+  const tabs = [['online', 'Online'], ['all', 'Todos']];
   const q = h('input.fsearch', { placeholder: 'Buscar', oninput: () => draw() });
   const ORD = { online: 0, idle: 1, dnd: 2, invisible: 3, offline: 4 };
-  const cnt = (k) => rels.filter(r => k === 'online' ? r.type === 1 && S.users.get(r.user.id)?.status !== 'offline' : k === 'all' ? r.type === 1 : k === 'pending' ? r.type === 3 || r.type === 4 : r.type === 2).length;
   const pane = h('div.pane');
   const draw = () => {
     pane.replaceChildren();
@@ -1130,10 +1297,11 @@ function renderHome(main) {
       const send = async () => { try { await api('POST', '/relationships', { username: inp.value }); msg.style.color = 'var(--green)'; msg.textContent = `Pedido de amizade enviado para ${inp.value}.`; inp.value = ''; } catch (e) { msg.style.color = 'var(--red)'; msg.textContent = e.message; } };
       return pane.append(h('h2', { style: { margin: '0 0 4px', color: 'var(--header)', fontSize: '16px' } }, 'Adicionar amigo'), h('p', { style: { color: 'var(--text-muted)', margin: '0 0 16px' } }, 'Você pode adicionar amigos pelo nome de usuário.'), h('div.addf', inp, h('button.btn', { onclick: send }, 'Enviar pedido')), msg);
     }
-    let list = rels.filter(r => tab === 'online' ? r.type === 1 && S.users.get(r.user.id).status !== 'offline' : tab === 'all' ? r.type === 1 : tab === 'pending' ? r.type === 3 || r.type === 4 : r.type === 2);
+    let list = rels.filter(r => tab === 'online' ? r.type === 1 && S.users.get(r.user.id).status !== 'offline' : tab === 'all' ? r.type === 1 || r.type === 3 || r.type === 4 : tab === 'pending' ? r.type === 3 || r.type === 4 : r.type === 2);
     list = list.filter(r => r.user.username.toLowerCase().includes(q.value.toLowerCase()) || r.user.display_name.toLowerCase().includes(q.value.toLowerCase()));
     const nm = (r) => (r.user.display_name || r.user.username).toLowerCase();
-    list.sort((a, b) => (ORD[S.users.get(a.user.id)?.status || 'offline'] - ORD[S.users.get(b.user.id)?.status || 'offline']) || nm(a).localeCompare(nm(b)));
+    const PEND = (r) => r.type === 3 ? 0 : r.type === 4 ? 1 : 2; // pedidos recebidos/enviados no topo de "Todos"
+    list.sort((a, b) => (PEND(a) - PEND(b)) || (ORD[S.users.get(a.user.id)?.status || 'offline'] - ORD[S.users.get(b.user.id)?.status || 'offline']) || nm(a).localeCompare(nm(b)));
     pane.append(h('div.fctl', q), h('div.fh', `${{ online: 'Online', all: 'Todos os amigos', pending: 'Pendentes', blocked: 'Bloqueados' }[tab]} — ${list.length}`));
     if (!list.length) return pane.append(h('div.empty', { style: { marginTop: '60px' } }, h('div', { style: { fontSize: '48px' } }, '🌙'), h('p', tab === 'pending' ? 'Nenhum pedido pendente.' : tab === 'blocked' ? 'Você não bloqueou ninguém.' : 'Ninguém por aqui ainda. Que tal adicionar um amigo?')));
     for (const r of list) {
@@ -1146,10 +1314,9 @@ function renderHome(main) {
         (r.type === 3 || r.type === 4 || r.type === 2 || r.type === 1) && btn('x', r.type === 1 ? 'Remover' : r.type === 2 ? 'Desbloquear' : 'Ignorar', () => tryApi('DELETE', `/relationships/${u.id}`), '.no')));
     }
   };
-  const pendingN = rels.filter(r => r.type === 3).length;
   main.replaceChildren(h('div#home',
     h('div#topbar', h('button.ibtn.menu-btn', { onclick: () => $('#app').classList.toggle('nav-open'), style: { display: innerWidth <= 640 ? 'flex' : 'none' } }, icon('more')), icon('users', 24), h('span', 'Amigos'), h('div', { style: { width: '1px', height: '24px', background: 'var(--divider)', margin: '0 8px' } }),
-      h('div.tabs', tabs.map(([k, l]) => h('div.tab' + (tab === k ? '.active' : ''), { onclick: () => { S.view.tab = k; renderHome(main); } }, l, k !== 'pending' && h('span.tcount', cnt(k)), k === 'pending' && pendingN > 0 && h('span.pill', { style: { marginLeft: '6px', background: 'var(--red)', color: '#fff', borderRadius: '8px', padding: '0 5px', fontSize: '12px' } }, pendingN))),
+      h('div.tabs', tabs.map(([k, l]) => h('div.tab' + (tab === k ? '.active' : ''), { onclick: () => { S.view.tab = k; renderHome(main); } }, l)),
         h('div.tab.green' + (tab === 'add' ? '.active' : ''), { onclick: () => { S.view.tab = 'add'; renderHome(main); } }, icon('plus', 18), 'Adicionar amigo'))),
     h('div#homebody', pane, h('aside#active-now'))));
   draw(); renderActiveNow();
@@ -1288,10 +1455,11 @@ function renderVoiceUI(speakOnly) {
     btn('phoneoff', 'Desconectar', false, () => voice.leave(), '.red'),
   ] : h('button.btn.green', { style: { minWidth: '220px', minHeight: '46px', fontSize: '16px' }, onclick: () => joinVoice(ch.id) }, dm ? 'Atender / entrar na chamada' : 'Entrar na sala de voz'));
   const rest = focusTile ? tiles.filter(t => t !== focusTile) : tiles;
+  const empty = !tiles.length; // sala vazia: o botão de entrar fica junto do texto, no meio (como no Discord)
   stage.replaceChildren(...[
-    tiles.length ? (focusTile ? [h('div.spot', focusTile), h('div.strip', rest)] : (() => { const gr = h('div.grid.fit', tiles); if (lastTw) gr.style.setProperty('--tw', lastTw); return gr; })()) : h('div.grid', h('div.empty', { style: { color: '#fff' } }, h('h2', dm ? 'Chamada' : chName(ch)), h('p', dm ? 'Ninguém está na chamada.' : 'Ninguém está nesta sala de voz ainda.'))),
+    !empty ? (focusTile ? [h('div.spot', focusTile), h('div.strip', rest)] : (() => { const gr = h('div.grid.fit', tiles); if (lastTw) gr.style.setProperty('--tw', lastTw); return gr; })()) : h('div.grid', h('div.empty', { style: { color: '#fff' } }, h('h2', dm ? 'Chamada' : chName(ch)), h('p', dm ? 'Ninguém está na chamada.' : 'Ninguém está nesta sala de voz ainda.'), !inRoom && bar)),
     voice.error && inRoom && h('div.verr', voice.error),
-    bar].flat().filter(Boolean));
+    !(empty && !inRoom) && bar].flat().filter(Boolean));
   watchStage();
 }
 const ctxSettings = () => ({ voice, logout, go });

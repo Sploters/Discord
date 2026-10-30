@@ -20,6 +20,9 @@ const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB || 50) * 1024 * 1024;
 const OPEN_REGISTRATION = process.env.OPEN_REGISTRATION !== '0';
 // avatares padrão (public/avatars): um é sorteado para cada conta nova
 const DEFAULT_AVATARS = (() => { try { return fs.readdirSync(path.join(__dirname, '..', 'public', 'avatars')).filter(f => /\.(png|jpe?g|webp|gif)$/i.test(f)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(f => '/avatars/' + f); } catch { return []; } })();
+// quem usava um avatar padrão que foi removido ganha outro sorteado
+if (DEFAULT_AVATARS.length) for (const u of all("SELECT id, avatar FROM users WHERE avatar LIKE '/avatars/%'"))
+  if (!DEFAULT_AVATARS.includes(u.avatar)) run('UPDATE users SET avatar=? WHERE id=?', DEFAULT_AVATARS[Math.floor(Math.random() * DEFAULT_AVATARS.length)], u.id);
 
 const P = { ADMIN: 1, MANAGE_GUILD: 2, MANAGE_CHANNELS: 4, MANAGE_MESSAGES: 8, KICK: 16, CREATE_INVITE: 32, MANAGE_ROLES: 64, BAN: 128, MODERATE: 256 };
 const COLORS = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55d', '#faa61a', '#9b59b6', '#1abc9c'];
@@ -785,7 +788,8 @@ app.delete('/api/relationships/:id', auth, wrap((req, res) => {
 app.get('/api/users/:id', auth, wrap((req, res) => {
   const u = getUser(req.params.id); if (!u) return bad(res, 'Não encontrado', 404);
   const mutual = all('SELECT g.id,g.name,g.icon FROM members a JOIN members b ON a.guild_id=b.guild_id JOIN guilds g ON g.id=a.guild_id WHERE a.user_id=? AND b.user_id=?', req.uid, u.id);
-  res.json({ ...pubUser(u), mutual_guilds: mutual });
+  const friends = u.id === req.uid ? [] : all('SELECT a.other_id id FROM relationships a JOIN relationships b ON b.other_id=a.other_id WHERE a.user_id=? AND b.user_id=? AND a.type=1 AND b.type=1', req.uid, u.id).map(r => getUser(r.id)).filter(Boolean).map(pubUser);
+  res.json({ ...pubUser(u), mutual_guilds: mutual, mutual_friends: friends });
 }));
 
 // Tradução

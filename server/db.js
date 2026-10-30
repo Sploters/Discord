@@ -89,4 +89,13 @@ if (!hadMentions) { // preenche com o histórico (menções diretas e respostas)
     if (r && r.author_id !== m.author_id) ins.run(m.id, r.author_id, 'reply');
   }
 }
+// migrações que só podem rodar uma vez ficam marcadas em meta
+db.exec('CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)');
+const once = (k, fn) => { if (!get('SELECT 1 x FROM meta WHERE k=?', k)) { fn(); run('INSERT INTO meta VALUES(?,?)', k, String(Date.now())); } };
+// avatares padrão renomeados para ficar na ordem certa (mapeado pelo conteúdo dos arquivos)
+once('avatars-rename-1', () => db.exec(`UPDATE users SET avatar = CASE avatar
+  WHEN '/avatars/6.png' THEN '/avatars/1.png' WHEN '/avatars/9.png' THEN '/avatars/4.png'
+  WHEN '/avatars/4.png' THEN '/avatars/9.png' WHEN '/avatars/10.png' THEN '/avatars/6.png'
+  WHEN '/avatars/1.webp' THEN '/avatars/10.webp' ELSE avatar END
+  WHERE avatar IN ('/avatars/6.png','/avatars/9.png','/avatars/4.png','/avatars/10.png','/avatars/1.webp')`));
 db.exec(`CREATE TABLE IF NOT EXISTS sounds(id TEXT PRIMARY KEY, guild_id TEXT NOT NULL REFERENCES guilds(id) ON DELETE CASCADE, name TEXT NOT NULL, emoji TEXT, url TEXT NOT NULL, volume INTEGER DEFAULT 100, creator_id TEXT, created_at INTEGER);`);
