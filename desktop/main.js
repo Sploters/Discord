@@ -133,7 +133,8 @@ function setupSession() {
       // janela minimizada (jogo em tela cheia após alt+tab) não pode ser capturada: cai para a tela inteira, que mostra o jogo quando ele volta
       const s = sources.find(x => x.id === pickedSource) || sources.find(x => x.id.startsWith('screen:')) || sources[0];
       if (!s) return callback({});
-      callback(request.audioRequested ? { video: s, audio: 'loopback' } : { video: s });
+      // áudio só ao transmitir a tela inteira (loopback do Windows é do sistema todo, não dá para isolar uma janela); o renderer pede restrictOwnAudio para excluir o próprio LocalCord
+      callback(request.audioRequested && s.id.startsWith('screen:') ? { video: s, audio: 'loopback' } : { video: s });
     } catch (e) { console.error(e); callback({}); }
   }, { useSystemPicker: false });
 }

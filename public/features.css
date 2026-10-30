@@ -485,3 +485,8 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 #composer .ibtn { height: 54px; }
 #reply-bar:not(.hidden) + #composer, #attach-prev:not(.hidden) + #composer { border-radius: 0 0 22px 22px; }
 #reply-bar:not(.hidden), #attach-prev:not(.hidden) { border-radius: 22px 22px 0 0; }
+
+/* tela cheia da transmissão: sem controles nativos (pause/minutagem) */
+.fsbox { position: fixed; inset: 0; z-index: 2147483000; background: #000; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.fsbox video { width: 100%; height: 100%; object-fit: contain; background: #000; pointer-events: none; }
+.fsbox:not(:fullscreen) { display: none; }

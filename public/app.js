@@ -1323,6 +1323,18 @@ function renderHome(main) {
 }
 
 // =============== Voz: palco ===============
+// tela cheia num <video> próprio fora da árvore que se redesenha: o nativo mostrava pause/minutagem e piscava preto quando a sala era redesenhada
+function fullscreenStream(stream) {
+  const v = h('video', { autoplay: true, playsInline: true, muted: true, disablePictureInPicture: true });
+  v.muted = true; v.srcObject = stream;
+  const box = h('div.fsbox', { onclick: () => exit(), title: 'Clique para sair (Esc)' }, v);
+  const exit = () => { if (document.fullscreenElement === box) document.exitFullscreen?.().catch(() => { }); else box.remove(); };
+  const gone = () => { stream.removeEventListener('inactive', exit); box.remove(); v.srcObject = null; };
+  box.addEventListener('fullscreenchange', () => { if (document.fullscreenElement !== box) gone(); });
+  stream.addEventListener('inactive', exit);
+  document.body.append(box); v.play?.().catch(() => { });
+  box.requestFullscreen?.().catch(() => gone());
+}
 const vidCache = new Map(); // reaproveita <video> para não piscar a cada atualização
 function videoFor(key, stream, muted = true) {
   let v = vidCache.get(key);
@@ -1431,7 +1443,7 @@ function renderVoiceUI(speakOnly) {
       vid.onresize = vid.onloadedmetadata = upd; upd();
       const vol = !mine && h('input', { type: 'range', min: 0, max: 200, value: voice.streamVolumes[uid] ?? 100, title: 'Volume da transmissão', onclick: (e) => e.stopPropagation(), oninput: (e) => { voice.setStreamVolume(uid, +e.target.value); savePrefs(); } });
       tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { 'data-key': key, 'data-sid': uid, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid,
-        h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info), viewersBadge(uid), h('div.tctl', vol, h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); vid.requestFullscreen?.(); } }, icon('expand', 18)))));
+        h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info), viewersBadge(uid), h('div.tctl', vol, h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18)))));
     }
     const ckey = 'c:' + uid;
     if (cam && v.video) live.add(ckey);
@@ -1482,12 +1494,15 @@ async function startShare() {
   };
   const refresh = async () => { try { const fresh = await desktop.getSources(); loaded = true; const ids = new Set(fresh.map(s => s.id)); list = [...fresh, ...list.filter(s => !ids.has(s.id) && s.type === 'window').map(s => ({ ...s, gone: true }))]; /* jogo em tela cheia some da lista ao dar alt+tab: mantém o que já foi visto */ if (!src) src = list.find(s => s.type === tab) || list[0] || null; drawSources(); } catch { } };
   const body = h('div', desktop && [h('label.f', 'O que compartilhar'), tabs, grid, h('div.qinfo', 'Jogo em tela cheia? Ele aparece em "Janelas" mesmo que suma ao dar alt+tab: selecione, clique em Transmitir e volte para o jogo. Se não funcionar, use a aba "Telas" (tela inteira).')], qualityPanel(o),
-    h('label.f', 'Áudio', seg({ 1: 'Compartilhar áudio do sistema', 0: 'Sem áudio' }, o.audio ? 1 : 0, v => (o.audio = !!v))),
+    h('label.f', 'Áudio', seg({ 1: 'Áudio do sistema (só tela inteira, sem o LocalCord)', 0: 'Sem áudio' }, o.audio ? 1 : 0, v => (o.audio = !!v))),
     !desktop && h('div.qinfo', 'Ao clicar em Transmitir, o navegador abrirá o seletor de tela/janela/aba. Para escolher dentro do app, use o aplicativo desktop.'));
   if (desktop) { drawSources(); refresh(); timer = setInterval(() => { if (!document.body.contains(body)) return clearInterval(timer); refresh(); }, 3000); }
   modal('Transmitir tela', 'Escolha o que mostrar, a resolução e os quadros por segundo.', body, [{ label: 'Cancelar', cls: 'link', fn: () => clearInterval(timer) }, { label: 'Transmitir', cls: 'green', fn: async () => {
     if (desktop) { if (!src) { toast('Selecione uma tela ou janela', true); return false; } await desktop.selectSource(src.id); }
-    clearInterval(timer); S.prefs.screen = { res: o.res, fps: o.fps, hint: o.hint, audio: o.audio }; savePrefs(); voiceAct(() => voice.toggleScreen(o));
+    clearInterval(timer); S.prefs.screen = { res: o.res, fps: o.fps, hint: o.hint, audio: o.audio }; savePrefs();
+    // janela: o Windows só entrega o áudio do sistema inteiro (inclui Discord e o próprio LocalCord), então vai sem áudio; na tela inteira o LocalCord é excluído do áudio
+    const noAudio = desktop && o.audio && src.type === 'window'; if (noAudio) toast('Transmissão de janela sem áudio: o áudio do sistema inclui outros apps. Para ter som, transmita a tela inteira.');
+    voiceAct(() => voice.toggleScreen({ ...o, audio: o.audio && !noAudio }));
   } }], { width: desktop ? '780px' : '560px' });
 }
 
