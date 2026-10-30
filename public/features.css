@@ -453,7 +453,7 @@ html.anim .upav .avatar, html.anim .pcard .pa .avatar { transition: filter .2s, 
 html.anim .upnote { transition: background .18s; }
 html.anim #lightbox.viewer { animation: lc-fade .2s ease-out; }
 html.anim #lightbox.viewer .vimg img { animation: lc-zoom .26s cubic-bezier(.2, .9, .3, 1.05); }
-html.anim .vnav, html.anim .vtools .ibtn { transition: background .15s, transform .15s, opacity .15s; } html.anim .vnav:hover { transform: scale(1.1); }
+html.anim .vnav, html.anim .vtools .ibtn { transition: background .15s, transform .15s, opacity .15s; } html.anim .vnav:hover { transform: translateY(-50%) scale(1.1); }
 html.anim .msg { transition: background .15s; }
 html.anim .msg .av, html.anim .avatar.clickable, html.anim .avatar.zoomable { transition: opacity .15s, filter .2s, transform .2s; }
 html.anim .tile { transition: box-shadow .2s; }
