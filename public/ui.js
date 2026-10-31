@@ -31,7 +31,6 @@ export const estMbps = (o) => (({ 720: 2.2, 1080: 4.5, 1440: 8, source: 9 })[o.r
 export function qualityPanel(o, onChange) {
   const box = h('div.qpanel');
   const draw = () => box.replaceChildren(
-    h('div.presets', SHARE_PRESETS.map(([l, p]) => h('button.preset' + (o.res === p.res && o.fps === p.fps && o.hint === p.hint ? '.on' : ''), { onclick: () => { Object.assign(o, p); draw(); onChange?.(o); } }, l))),
     h('label.f', 'Resolução', seg(SCREEN_PRESETS.res, o.res, v => { o.res = v; draw(); onChange?.(o); })),
     h('label.f', 'Taxa de quadros (FPS)', seg(SCREEN_PRESETS.fps, o.fps, v => { o.fps = v; draw(); onChange?.(o); })),
     h('label.f', 'Otimizar para', seg({ motion: 'Movimento (jogos/vídeo)', detail: 'Nitidez (texto/apresentação)' }, o.hint, v => { o.hint = v; draw(); onChange?.(o); })),
