@@ -8,6 +8,7 @@ import { openAudioPanel, openStatusPanel, openMicPanel, volumeControl } from './
 import { previewHooks, hidePreview, paintTyping as previewTyping, previewMessage } from './chpreview.js';
 import { chName } from './chnames.js';
 import { streamHover, updatePip } from './livepip.js';
+import { zoomControls, pruneZoom } from './zoom.js';
 import { startBuffer, stopAllBuffers, pruneBuffers, clipping, saveClip, clipLengths } from './clips.js';
 import { seg, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
 import { openSettings, openFullProfile } from './settings.js';
@@ -1419,6 +1420,16 @@ function watchStage() {
   fitStage();
 }
 
+const seenLive = new Set(); // transmissões já vistas nesta sala: só as novas começam fechadas
+function autoClosed() {
+  const now = new Set();
+  if (voice.active) for (const v of S.voice.values()) {
+    if (v.channel_id !== voice.channelId || !v.screen || v.user_id === S.me.id) continue;
+    const k = voice.channelId + ':' + v.user_id; now.add(k);
+    if (!seenLive.has(k)) { seenLive.add(k); voice.closeStream(v.user_id); }
+  }
+  for (const k of [...seenLive]) if (!now.has(k)) seenLive.delete(k);
+}
 function renderVoiceUI(speakOnly) {
   if (speakOnly) {
     document.querySelectorAll('.tile[data-uid],.avatar[data-uid]').forEach(e => e.classList.toggle('speaking', voice.speaking.has(e.dataset.uid)));
@@ -1427,6 +1438,7 @@ function renderVoiceUI(speakOnly) {
     return;
   }
   renderSide();
+  autoClosed(); // transmissão nova de outra pessoa começa fechada
   updatePip(pipCtx);
   if (!voice.active) stopAllBuffers();
   const stage = $('#stage'); if (!stage) return syncWatching(null);
@@ -1448,7 +1460,7 @@ function renderVoiceUI(speakOnly) {
       if (S.prefs.clipsOn && inRoom) startBuffer(key, scr, mine ? null : p?.screenAudioEl?.raw);
       const upd = () => (info.textContent = vid.videoWidth ? `${vid.videoWidth}×${vid.videoHeight}` : '');
       if (vid.tagName === 'VIDEO') { vid.onresize = vid.onloadedmetadata = upd; upd(); }
-            tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { 'data-key': key, 'data-sid': uid, 'data-uid': uid, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid,
+            tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { 'data-key': key, 'data-sid': uid, 'data-uid': uid, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid, vid.tagName === 'VIDEO' && zoomControls(key, vid, scr),
         h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info), h('div.tctl', mine && h('button.ibtn', { title: S.selfPreview ? 'Pausar prévia' : 'Ver prévia da minha transmissão', onclick: (e) => { e.stopPropagation(); S.selfPreview = !S.selfPreview; renderVoiceUI(); } }, icon('eye', 18)), !mine && h('button.ibtn', { title: 'Fechar transmissão (parar de assistir)', onclick: (e) => { e.stopPropagation(); voice.closeStream(uid); if (S.focus === key) S.focus = null; renderVoiceUI(); } }, icon('x', 18)), h('button.ibtn' + (clipping(key) ? '.rec' : ''), { title: 'Clipes', onclick: (e) => { e.stopPropagation(); clipMenu(e, key, nm(uid)); } }, icon('clip', 18)), h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18)))));
     }
     const ckey = 'c:' + uid;
@@ -1459,6 +1471,7 @@ function renderVoiceUI(speakOnly) {
     tiles.push(paintTile(t, user(uid)));
   }
   for (const k of [...vidCache.keys()]) if (!live.has(k)) vidCache.delete(k);
+  pruneZoom(live);
   if (inRoom) pruneBuffers(live);
   syncWatching(inRoom ? members.filter(v => v.screen && v.user_id !== S.me.id && !voice.closedStreams.has(v.user_id) && voice.peers.get(v.user_id)?.streams.screen).map(v => v.user_id) : null);
   const hasFocus = tiles.some(t => t.dataset.key === S.focus);

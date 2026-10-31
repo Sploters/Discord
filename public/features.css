@@ -531,3 +531,15 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 #stage .strip .selfpause { padding: 4px; } #stage .strip .selfpause b { font-size: 11px; } #stage .strip .selfpause span:not(.live) { display: none; }
 #stage .spot .tile { cursor: pointer; }
 #stage .strip .tile:hover .tctl { display: none; }
+/* zoom da transmissão */
+.tile video.zoomed { cursor: grab; } .tile video.panning { cursor: grabbing; }
+.tile .zoomctl { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); display: none; flex-direction: column; align-items: center; gap: 6px; z-index: 3; }
+.tile:hover .zoomctl, .tile .zoomctl.on:hover { display: flex; }
+.tile .zoomctl .zm-row { display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,.65); border-radius: 6px; padding: 2px 6px; color: #fff; }
+.tile .zoomctl .ibtn { color: #fff; }
+.tile .zoomctl input[type=range] { -webkit-appearance: none; appearance: none; width: 110px; height: 4px; border-radius: 2px; outline: none; background: linear-gradient(90deg, var(--brand, #5865f2) var(--p, 0%), rgba(255,255,255,.3) var(--p, 0%)); }
+.tile .zoomctl input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; cursor: pointer; }
+.tile .zm-mini { position: relative; width: 160px; aspect-ratio: 16/9; background: #000; border: 1px solid rgba(255,255,255,.4); border-radius: 4px; overflow: hidden; cursor: crosshair; }
+.tile .zm-mini video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.tile .zm-ind { position: absolute; border: 2px solid var(--brand, #5865f2); background: rgba(88,101,242,.2); pointer-events: none; box-sizing: border-box; }
+#stage .strip .tile .zoomctl { display: none !important; }
