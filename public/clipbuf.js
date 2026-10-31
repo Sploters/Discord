@@ -7,18 +7,18 @@ const KEEP = 65000;
 const liveTracks = (stream, audio) => [...stream.getVideoTracks(), ...(audio?.getAudioTracks() || []), ...stream.getAudioTracks()].filter(t => t.readyState === 'live');
 export const trackSig = (stream, audio) => liveTracks(stream, audio).map(t => t.id).join(',');
 
-export function createBuffer(stream, audio) {
+export function createBuffer(stream, audio, opts = {}) {
   if (!stream || !window.MediaRecorder) return null;
   const tracks = liveTracks(stream, audio);
   if (!tracks.some(t => t.kind === 'video')) return null;
   const hasAudio = tracks.some(t => t.kind === 'audio');
-  const mimeType = [hasAudio ? 'video/webm;codecs=vp8,opus' : 'video/webm;codecs=vp8', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m));
-  // qualidade: bitrate proporcional à resolução da transmissão (teto 5,5 Mb/s: 60s ficam abaixo do limite de upload de 50 MB)
+  const mimeType = (opts.mimes || (hasAudio ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus'] : ['video/webm;codecs=vp9', 'video/webm;codecs=vp8']).concat('video/webm')).find(m => MediaRecorder.isTypeSupported(m));
+  // qualidade: VP9 com bitrate proporcional à resolução da transmissão (teto 8 Mb/s: 60s ficam em ~60 MB, abaixo do limite de upload de 100 MB)
   const st = tracks.find(t => t.kind === 'video').getSettings?.() || {};
-  const bps = Math.round(Math.min(5_500_000, Math.max(2_500_000, (st.width || 1920) * (st.height || 1080) * (st.frameRate || 30) * 0.1)));
+  const bps = opts.bps || Math.round(Math.min(8_000_000, Math.max(3_000_000, (st.width || 1920) * (st.height || 1080) * (st.frameRate || 30) * 0.15)));
   let rec;
   try { rec = new MediaRecorder(new MediaStream(tracks), { mimeType, videoBitsPerSecond: bps, audioBitsPerSecond: 160_000, videoKeyFrameIntervalDuration: 1000 }); } catch { return null; }
-  const buf = { stream, sig: trackSig(stream, audio), rec, header: null, chunks: [], clusters: [], size: 0, tail: new Uint8Array(0), q: Promise.resolve(), onEnd: null };
+  const buf = { hasAudio, stream, sig: trackSig(stream, audio), rec, header: null, chunks: [], clusters: [], size: 0, tail: new Uint8Array(0), q: Promise.resolve(), onEnd: null };
   const ingest = async (blob, t) => {
     const bytes = new Uint8Array(await blob.arrayBuffer()), start = buf.size;
     const joined = new Uint8Array(buf.tail.length + bytes.length); joined.set(buf.tail); joined.set(bytes, buf.tail.length);

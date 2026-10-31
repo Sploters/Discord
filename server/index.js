@@ -16,7 +16,7 @@ import { initMusic, handle as musicHandle, onVoiceJoin as musicOnJoin, onVoiceLe
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
-const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB || 50) * 1024 * 1024;
+const MAX_UPLOAD = Number(process.env.MAX_UPLOAD_MB || 100) * 1024 * 1024;
 const OPEN_REGISTRATION = process.env.OPEN_REGISTRATION !== '0';
 // avatares padrão (public/avatars): um é sorteado para cada conta nova
 const DEFAULT_AVATARS = (() => { try { return fs.readdirSync(path.join(__dirname, '..', 'public', 'avatars')).filter(f => /\.(png|jpe?g|webp|gif)$/i.test(f)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(f => '/avatars/' + f); } catch { return []; } })();

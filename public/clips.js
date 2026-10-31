@@ -29,6 +29,6 @@ export async function saveClip(key, secs, { channelId, who }) {
   try {
     const r = await api('POST', `/upload?name=${encodeURIComponent(name)}`, blob);
     await api('POST', `/channels/${channelId}/messages`, { content: `🎬 Clipe de ${secs}s da transmissão de ${who}`, attachments: [{ url: r.url, name: r.name, size: r.size, type: 'video/webm' }] });
-    toast('Clipe postado no chat da sala');
+    toast(b.hasAudio ? 'Clipe postado no chat da sala' : 'Clipe postado, mas sem áudio: esta transmissão não está enviando som.', !b.hasAudio);
   } catch (e) { toast('Falha ao enviar o clipe: ' + e.message, true); }
 }
