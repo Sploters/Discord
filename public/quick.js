@@ -58,30 +58,50 @@ export function volumeControl(voice, uid, kind = 'mic', label) {
   sync(); return el;
 }
 
+// Menu do botão de microfone/fone (como o do Discord): dispositivo em submenu, volume e configurações de voz
 export function openAudioPanel(anchor, voice, kind, { openSettings } = {}) {
-  const body = h('div.qpop');
-  if (kind === 'in') {
-    const rebuild = () => voice.active && voice.rebuildMic();
-    body.append(h('h4', 'Dispositivo de entrada'), deviceList('audioinput', 'inputId', rebuild),
-      h('h4', 'Redução de ruído'), seg(NOISE_MODES, S.prefs.noiseMode, v => { S.prefs.noiseMode = v; savePrefs(); rebuild(); }),
-      h('div.qrow', h('span', 'Cancelamento de eco'), toggle(S.prefs.echo !== false, v => { S.prefs.echo = v; savePrefs(); rebuild(); })),
-      h('div.qrow', h('span', 'Porta de ruído'), toggle(!!S.prefs.gate, v => { S.prefs.gate = v; savePrefs(); rebuild(); })),
-      h('div.qrow', h('span', 'Ganho automático'), toggle(S.prefs.agc !== false, v => { S.prefs.agc = v; savePrefs(); rebuild(); })),
-      h('h4', 'Volume do microfone'), slider(0, 200, S.prefs.inputVolume ?? 100, 5, v => { S.prefs.inputVolume = v; savePrefs(); if (voice.micGraph) voice.micGraph.gain.gain.value = v / 100; }, v => v + '%'),
-      h('h4', 'Modo de entrada'), seg({ vad: 'Atividade de voz', ptt: 'Push-to-talk' }, S.prefs.inputMode, v => { S.prefs.inputMode = v; savePrefs(); voice.applyMute(); }),
-      openSettings && h('button.btn.link', { style: { marginTop: '8px' }, onclick: () => { closeFloating(); openSettings('voice'); } }, 'Configurações de voz…'));
-  } else {
-    body.append(h('h4', 'Dispositivo de saída'), deviceList('audiooutput', 'outputId', () => applyOutput(voice)),
-      h('h4', 'Volume geral da voz'), slider(0, 100, S.prefs.volume ?? 100, 5, v => { S.prefs.volume = v; savePrefs(); voice.peers.forEach((_, id) => voice.applyVolume(id)); }, v => v + '%'),
-      h('h4', 'Volume dos sons do app'), slider(0, 100, S.prefs.soundVolume ?? 80, 5, v => { S.prefs.soundVolume = v; savePrefs(); }, v => v + '%'),
-      h('h4', 'Volume do soundboard'), slider(0, 100, S.prefs.sbVolume ?? 70, 5, v => { S.prefs.sbVolume = v; savePrefs(); }, v => v + '%'),
-      voice.peers.size > 0 && h('h4', 'Volume de cada pessoa'), ...[...voice.peers.keys()].filter(id => id !== voice.myId).map(id => volumeControl(voice, id, 'mic', nameOf(id, S.view.gid))),
-      h('div.qrow', h('span', 'Silenciar sons do app'), toggle(!!S.prefs.soundsMuted, v => { S.prefs.soundsMuted = v; savePrefs(); })),
-      h('div.qrow', h('span', 'Silenciar soundboard'), toggle(!!S.prefs.sbMuted, v => { S.prefs.sbMuted = v; savePrefs(); })));
-  }
-  const el = popout(anchor, body, 'up'); el.classList.add('quick');
-  const r = anchor.getBoundingClientRect(), b = el.getBoundingClientRect();
-  el.style.top = Math.max(8, r.top - b.height - 10) + 'px'; el.style.left = Math.max(8, Math.min(r.left - 20, innerWidth - b.width - 8)) + 'px';
+  const inp = kind === 'in', key = inp ? 'inputId' : 'outputId', dk = inp ? 'audioinput' : 'audiooutput';
+  const sub = h('div.dm-sub'), cur = h('div.dm-subtext', 'Padrão do sistema');
+  let fly = null, flyTimer = 0;
+  const closeFly = () => { clearTimeout(flyTimer); fly?.remove(); fly = null; };
+  const later = () => { clearTimeout(flyTimer); flyTimer = setTimeout(closeFly, 200); };
+  const pick = (d) => { S.prefs[key] = d.deviceId; savePrefs(); closeFly(); refresh(); if (inp) voice.active && voice.rebuildMic(); else applyOutput(voice); };
+  const refresh = async () => {
+    const list = (await devices(dk)).filter(d => d.deviceId !== 'default' && d.deviceId !== 'communications');
+    const all = [{ deviceId: '', label: 'Padrão do sistema' }, ...list], on = all.find(d => d.deviceId === (S.prefs[key] || '')) || all[0];
+    cur.textContent = on.label || 'Padrão do sistema'; row.__all = all;
+  };
+  const openFly = () => {
+    clearTimeout(flyTimer); if (fly) return;
+    const all = row.__all || [{ deviceId: '', label: 'Padrão do sistema' }];
+    fly = h('div.popout.dsub', { onmouseenter: () => clearTimeout(flyTimer), onmouseleave: later },
+      all.map(d => h('div.dm-item', { role: 'menuitemradio', 'aria-checked': (S.prefs[key] || '') === d.deviceId, onclick: () => pick(d) },
+        h('span.dm-lab', d.label || 'Dispositivo'), h('span.dm-radio' + ((S.prefs[key] || '') === d.deviceId ? '.on' : '')))));
+    document.getElementById('layer').append(fly);
+    const rr = row.getBoundingClientRect(), card = body.closest('.popout').getBoundingClientRect(), fb = fly.getBoundingClientRect();
+    const right = card.right + 4, left = card.left - fb.width - 4;
+    fly.style.left = (right + fb.width <= innerWidth - 8 ? right : Math.max(8, left)) + 'px';
+    fly.style.top = Math.max(8, Math.min(rr.top - 4, innerHeight - fb.height - 8)) + 'px';
+  };
+  const row = h('div.dm-item.dm-two', { role: 'menuitem', onmouseenter: openFly, onmouseleave: later, onclick: openFly },
+    h('div.dm-label', h('span', inp ? 'Dispositivo de entrada' : 'Dispositivo de saída'), cur), icon('chevr', 18));
+  refresh();
+  const vol = (title, get, set) => {
+    const rg = h('input.dm-range', { type: 'range', min: 0, max: 100, step: 1, 'aria-label': title });
+    const paint = () => rg.style.setProperty('--p', rg.value + '%');
+    rg.value = get(); paint(); rg.oninput = () => { paint(); set(+rg.value); }; rg.onchange = savePrefs;
+    return h('div.dm-vol', h('div.dm-label', title), rg);
+  };
+  const body = h('div.dmenu', { role: 'menu' },
+    row, h('div.dm-sep'),
+    inp ? vol('Volume de entrada', () => Math.min(100, S.prefs.inputVolume ?? 100), v => { S.prefs.inputVolume = v; if (voice.micGraph) voice.micGraph.gain.gain.value = v / 100; })
+      : vol('Volume de saída', () => S.prefs.volume ?? 100, v => { S.prefs.volume = v; voice.peers.forEach((_, id) => voice.applyVolume(id)); }),
+    h('div.dm-sep'),
+    openSettings && h('div.dm-item', { role: 'menuitem', onclick: () => { closeFly(); closeFloating(); openSettings('voice'); } }, icon('gear', 18), h('span.dm-lab', 'Configurações de voz')));
+  body.addEventListener('mouseover', (e) => { if (!e.target.closest('.dm-two')) later(); });
+  const el = popout(anchor, body, 'up'); el.classList.add('quick', 'dmpop');
+  const r = anchor.getBoundingClientRect(), bb = el.getBoundingClientRect();
+  el.style.top = Math.max(8, r.top - bb.height - 10) + 'px'; el.style.left = Math.max(8, Math.min(r.left - 20, innerWidth - bb.width - 8)) + 'px';
 }
 
 // Teste de microfone (medidor + ouvir a si mesmo) e filtros: ruído, eco, porta de ruído

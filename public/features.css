@@ -548,3 +548,22 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 #stage .bar-ctl { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); display: flex; }
 #stage .bar-ctl .tctl { position: static; display: flex; gap: 8px; align-items: center; background: rgba(0,0,0,.6); border-radius: 6px; padding: 4px 8px; color: #fff; }
 #stage .bar-ctl .tctl .ibtn { color: #fff; } #stage .bar-ctl .tctl .ibtn.rec { color: #f23f42; }
+
+/* menu do microfone/fone (estilo Discord) */
+.popout.dmpop { width: 250px; padding: 8px; overflow: visible; max-height: none; }
+.dmenu { font-size: 14px; }
+.dm-item { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 4px; cursor: pointer; color: var(--interactive); font-weight: 500; }
+.dm-item:hover { background: var(--brand, #5865f2); color: #fff; }
+.dm-item .dm-lab { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-two .dm-label { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dm-two .dm-label span { font-weight: 500; }
+.dm-subtext { font-size: 12px; font-weight: 400; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-item:hover .dm-subtext { color: inherit; opacity: .85; }
+.dm-sep { height: 1px; background: var(--divider); margin: 4px 0; }
+.dm-vol { padding: 8px; } .dm-vol .dm-label { font-size: 14px; font-weight: 500; color: var(--interactive); margin-bottom: 8px; }
+.dm-range { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 2px; outline: none; cursor: pointer; background: linear-gradient(to right, var(--brand, #5865f2) var(--p, 100%), var(--bg-tert, #202225) var(--p, 100%)); }
+.dm-range::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+.popout.dsub { width: 280px; padding: 8px; max-height: 360px; overflow-y: auto; z-index: 97; }
+.dm-radio { flex: none; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--interactive-muted, #80848e); box-sizing: border-box; }
+.dm-radio.on { border-color: var(--brand, #5865f2); background: radial-gradient(circle, var(--brand, #5865f2) 0 4px, transparent 4.5px); }
+.dm-item:hover .dm-radio.on { border-color: #fff; background: radial-gradient(circle, #fff 0 4px, transparent 4.5px); }
