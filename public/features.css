@@ -570,3 +570,16 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 .dmenu input.dm-range[type=range] { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 16px; margin: 0; padding: 0; background: transparent; outline: none; cursor: pointer; }
 .dmenu input.dm-range::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--brand, #5865f2) var(--p, 100%), var(--bg-mod-strong, #4e5058) var(--p, 100%)); }
 .dmenu input.dm-range::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+
+/* menus de contexto (estilo Discord) */
+.menu { padding: 8px; min-width: 188px; border-radius: 8px; box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 8px 16px rgba(0,0,0,.24); }
+.menu .it { padding: 8px; border-radius: 4px; font-size: 14px; line-height: 18px; gap: 16px; }
+.menu .it:hover { background: var(--bg-mod-hover, rgba(78,80,88,.6)); color: var(--header, #fff); }
+.menu .it.danger:hover { background: var(--red, #da373c); color: #fff; }
+.menu .sp { margin: 4px 0; }
+.menu .it .cbx { flex: none; width: 20px; height: 20px; border-radius: 4px; box-sizing: border-box; margin-left: auto; border: 2px solid var(--interactive-muted, #80848e); display: grid; place-items: center; color: #fff; }
+.menu .it .cbx.on { background: var(--brand, #5865f2); border-color: var(--brand, #5865f2); }
+.menu .it .cbx svg { width: 16px; height: 16px; fill: currentColor; }
+.menu .it:hover .cbx:not(.on) { border-color: var(--header, #fff); }
+.menu .it .radio.on { background: radial-gradient(circle, var(--brand, #5865f2) 0 4px, transparent 4.5px); }
+.menu .it:hover .radio.on { border-color: var(--brand, #5865f2); background: radial-gradient(circle, var(--brand, #5865f2) 0 4px, transparent 4.5px); }

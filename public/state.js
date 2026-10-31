@@ -146,7 +146,7 @@ export function menu(e, items) {
   const build = (list, depth) => h('div.menu', { 'data-depth': depth }, list.filter(Boolean).map(i => {
     if (i === '-') return h('div.sp');
     if (i.node) return h('div.mnode', i.node);
-    const row = h('div.it' + (i.danger ? '.danger' : ''), i.hint ? h('div.itl', h('span', i.label), h('small', i.hint)) : i.label, i.checked !== undefined && h('span', { style: { marginLeft: 'auto' } }, i.checked ? '☑' : '☐'), i.radio !== undefined && h('span.radio' + (i.radio ? '.on' : '')), i.sub && h('span', { style: { marginLeft: 'auto', opacity: .7 } }, '›'));
+    const row = h('div.it' + (i.danger ? '.danger' : ''), i.hint ? h('div.itl', h('span', i.label), h('small', i.hint)) : i.label, i.checked !== undefined && h('span.cbx' + (i.checked ? '.on' : ''), i.checked && icon('check', 16)), i.radio !== undefined && h('span.radio' + (i.radio ? '.on' : '')), i.sub && h('span', { style: { marginLeft: 'auto', opacity: .7 } }, '›'));
     const closeDeeper = () => layer().querySelectorAll('.menu').forEach(m => { if (+m.dataset.depth > depth) m.remove(); });
     if (i.sub) {
       const open = () => { closeDeeper(); const r = row.getBoundingClientRect(), sub = build(i.sub, depth + 1); place(sub, r.right + 2, r.top - 6); const w = sub.getBoundingClientRect(); if (w.right > innerWidth - 8) sub.style.left = Math.max(8, r.left - w.width - 2) + 'px'; };
