@@ -1350,16 +1350,6 @@ function syncWatching(want) {
   for (const id of cur) if (!next.has(id)) gwSend('STREAM_WATCH', { target: id, watching: false });
   S.watching = next;
 }
-// selo "N assistindo" com os avatares dos espectadores; clique abre a lista
-function viewersBadge(streamer) {
-  const ids = (S.viewers.get(streamer) || []).filter(id => id !== S.me.id || streamer !== S.me.id), n = ids.length;
-  if (!n) return null;
-  const nm = (id) => nameOf(id, channelById(S.view.cid)?.guild_id);
-  return h('button.viewers', { title: ids.map(nm).join(', '), onclick: (e) => {
-    e.stopPropagation();
-    popout(e.currentTarget, h('div.vwlist', h('h4', `Assistindo (${n})`), ids.map(id => h('div.vwrow', { onclick: (ev) => profile(ev.currentTarget, id, channelById(S.view.cid)?.guild_id) }, avatar(user(id), 28, { status: false }), h('span', nm(id))))), 'right');
-  } }, icon('eye', 14), h('div.vstack', ids.slice(0, 4).map(id => avatar(user(id), 18, { status: false }))), h('span', n > 4 ? `+${n - 4}` : String(n)));
-}
 // ---------- quadros da chamada ----------
 // fundo com as cores do perfil: tema (degradê) > banner > cor do banner > cor predominante do avatar
 const avTint = new Map();
@@ -1447,9 +1437,8 @@ function renderVoiceUI(speakOnly) {
       if (S.prefs.clipsOn && inRoom) startBuffer(key, scr, mine ? null : p?.screenAudioEl?.raw);
       const upd = () => (info.textContent = vid.videoWidth ? `${vid.videoWidth}×${vid.videoHeight}` : '');
       vid.onresize = vid.onloadedmetadata = upd; upd();
-      const vol = !mine && h('input', { type: 'range', min: 0, max: 200, value: voice.streamVolumes[uid] ?? 100, title: 'Volume da transmissão', onclick: (e) => e.stopPropagation(), oninput: (e) => { voice.setStreamVolume(uid, +e.target.value); savePrefs(); } });
-      tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { 'data-key': key, 'data-sid': uid, 'data-uid': uid, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid,
-        h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info), viewersBadge(uid), h('div.tctl', vol, !mine && h('button.ibtn', { title: 'Fechar transmissão (parar de assistir)', onclick: (e) => { e.stopPropagation(); voice.closeStream(uid); if (S.focus === key) S.focus = null; renderVoiceUI(); } }, icon('x', 18)), h('button.ibtn' + (clipping(key) ? '.rec' : ''), { title: 'Clipes', onclick: (e) => { e.stopPropagation(); clipMenu(e, key, nm(uid)); } }, icon('clip', 18)), h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18)))));
+            tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { 'data-key': key, 'data-sid': uid, 'data-uid': uid, onclick: () => { if (S.streamsMini) { S.streamsMini = false; S.focus = key; } else S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid,
+        h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info), h('div.tctl', !mine && h('button.ibtn', { title: 'Fechar transmissão (parar de assistir)', onclick: (e) => { e.stopPropagation(); voice.closeStream(uid); if (S.focus === key) S.focus = null; renderVoiceUI(); } }, icon('x', 18)), h('button.ibtn' + (clipping(key) ? '.rec' : ''), { title: 'Clipes', onclick: (e) => { e.stopPropagation(); clipMenu(e, key, nm(uid)); } }, icon('clip', 18)), h('button.ibtn', { title: S.streamsMini ? 'Transmissões pequenas' : 'Minimizar transmissões (focar nos usuários)', onclick: (e) => { e.stopPropagation(); S.streamsMini = !S.streamsMini; S.focus = null; renderVoiceUI(); } }, icon(S.streamsMini ? 'expand' : 'shrink', 18)), h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18)))));
     }
     const ckey = 'c:' + uid;
     if (cam && v.video) live.add(ckey);
@@ -1461,7 +1450,8 @@ function renderVoiceUI(speakOnly) {
   for (const k of [...vidCache.keys()]) if (!live.has(k)) vidCache.delete(k);
   if (inRoom) pruneBuffers(live);
   // com transmissão na tela, quem só tem avatar não ocupa espaço: some do palco (continua na lista lateral)
-  if (tiles.some(t => t.classList.contains('screen') || t.classList.contains('cstream'))) tiles.splice(0, tiles.length, ...tiles.filter(t => !t.classList.contains('utile') || t.querySelector('video')));
+  const hasStreams = tiles.some(t => t.classList.contains('screen') || t.classList.contains('cstream'));
+  if (hasStreams && !S.streamsMini) tiles.splice(0, tiles.length, ...tiles.filter(t => !t.classList.contains('utile') || t.querySelector('video')));
   syncWatching(inRoom ? members.filter(v => v.screen && v.user_id !== S.me.id && !voice.closedStreams.has(v.user_id) && voice.peers.get(v.user_id)?.streams.screen).map(v => v.user_id) : null);
   const hasFocus = tiles.some(t => t.dataset.key === S.focus);
   const screens = tiles.filter(t => t.classList.contains('screen')); // várias transmissões e nenhuma em destaque: grade com todas, do mesmo tamanho
@@ -1479,7 +1469,7 @@ function renderVoiceUI(speakOnly) {
   const rest = focusTile ? tiles.filter(t => t !== focusTile) : tiles;
   const empty = !tiles.length; // sala vazia: o botão de entrar fica junto do texto, no meio (como no Discord)
   stage.replaceChildren(...[
-    !empty ? (focusTile ? [h('div.spot', focusTile), h('div.strip', rest)] : (() => { const gr = h('div.grid.fit', tiles); if (lastTw) gr.style.setProperty('--tw', lastTw); return gr; })()) : h('div.grid', h('div.empty', { style: { color: '#fff' } }, h('h2', dm ? 'Chamada' : chName(ch)), h('p', dm ? 'Ninguém está na chamada.' : 'Ninguém está nesta sala de voz ainda.'), !inRoom && bar)),
+    !empty ? (hasStreams && S.streamsMini ? [(() => { const gr = h('div.grid.fit', tiles.filter(t => !t.classList.contains('screen') && !t.classList.contains('cstream'))); if (lastTw) gr.style.setProperty('--tw', lastTw); return gr; })(), h('div.strip', tiles.filter(t => t.classList.contains('screen') || t.classList.contains('cstream')))] : focusTile ? [h('div.spot', focusTile), h('div.strip', rest)] : (() => { const gr = h('div.grid.fit', tiles); if (lastTw) gr.style.setProperty('--tw', lastTw); return gr; })()) : h('div.grid', h('div.empty', { style: { color: '#fff' } }, h('h2', dm ? 'Chamada' : chName(ch)), h('p', dm ? 'Ninguém está na chamada.' : 'Ninguém está nesta sala de voz ainda.'), !inRoom && bar)),
     voice.error && inRoom && h('div.verr', voice.error),
     !(empty && !inRoom) && bar].flat().filter(Boolean));
   watchStage();

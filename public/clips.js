@@ -1,6 +1,6 @@
 // Clipes de transmissão: buffer circular por transmissão e envio do corte (5/15/30/60s) para o chat da sala
 import { api, toast } from './state.js';
-import { createBuffer } from './clipbuf.js';
+import { createBuffer, trackSig } from './clipbuf.js';
 
 const bufs = new Map(); // chave da transmissão -> buffer
 export const clipping = (key) => bufs.has(key);
@@ -8,7 +8,7 @@ export const clipLengths = [5, 15, 30, 60];
 
 export function startBuffer(key, stream, audio) {
   const cur = bufs.get(key);
-  if (cur && cur.stream === stream) return;
+  if (cur && cur.stream === stream && cur.sig === trackSig(stream, audio)) return; // o áudio da transmissão pode chegar depois do vídeo: reinicia para incluí-lo
   if (cur) stopBuffer(key);
   const b = createBuffer(stream, audio); if (!b) return;
   b.onEnd = () => { if (bufs.get(key) === b) bufs.delete(key); };
