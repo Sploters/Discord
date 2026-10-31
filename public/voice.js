@@ -235,7 +235,7 @@ export class Voice {
       opts.codecOptions = { videoGoogleStartBitrate: 2500 };
       // placa de vídeo codifica H.264 sem pesar na CPU (que o jogo está usando); sem hardware fica o VP8 com camadas temporais
       if (await this.hwH264()) {
-        const c = s.device.rtpCapabilities.codecs.find(x => x.mimeType.toLowerCase() === 'video/h264');
+        const c = s.device.rtpCapabilities.codecs.find(x => x.mimeType.toLowerCase() === 'video/h264' && String(x.parameters?.['profile-level-id']).toLowerCase() === '640032');
         if (c) { opts.codec = c; opts.encodings = this.sfuEncodings('screen', false); }
       }
     }
@@ -247,7 +247,7 @@ export class Voice {
     }
     if (this.sfu !== s) return p.close();
     s.producers[source] = p;
-    if (source === 'screen') this.sfuTuneScreen();
+    if (source === 'screen') { this.sfuTuneScreen(); if (opts.codec) setTimeout(() => this.checkHwEncoder(), 3500); }
   }
   async sfuPublishScreen() {
     const vt = this.screen?.getVideoTracks()[0], at = this.screen?.getAudioTracks()[0];
@@ -259,10 +259,18 @@ export class Voice {
     p.close(); delete s.producers[source];
     this.sfuReq('close_producer', { source }).catch(() => { });
   }
+  // o navegador disse que há hardware, mas se o codificador real for o OpenH264 (CPU), volta para o VP8 com camadas temporais
+  async checkHwEncoder() {
+    const st = await this.screenStats(), enc = st?.find(l => l.enc)?.enc || '';
+    this.screenEncoder = enc;
+    if (!/OpenH264/i.test(enc) || !this.screen) return;
+    this._hw = false; console.warn('H.264 por software, voltando ao VP8');
+    const vt = this.screen.getVideoTracks()[0]; this.sfuStop('screen'); if (vt) await this.sfuProduce('screen', vt);
+  }
   async hwH264() {
     if (this._hw !== undefined) return this._hw;
     try {
-      const r = await navigator.mediaCapabilities.encodingInfo({ type: 'webrtc', video: { contentType: 'video/H264;profile-level-id=42e01f;packetization-mode=1', width: 1920, height: 1080, bitrate: 5e6, framerate: +this.screenOpts?.fps || 30 } });
+      const r = await navigator.mediaCapabilities.encodingInfo({ type: 'webrtc', video: { contentType: 'video/H264;profile-level-id=640032;packetization-mode=1', width: 1920, height: 1080, bitrate: 5e6, framerate: +this.screenOpts?.fps || 30 } });
       this._hw = !!(r.supported && r.powerEfficient);
     } catch { this._hw = false; }
     return this._hw;
