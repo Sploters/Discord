@@ -1492,7 +1492,7 @@ function renderVoiceUI(speakOnly) {
     !dm && h('button.roundbtn', { title: 'Música (bot) — indisponível', disabled: true, style: { opacity: .4, cursor: 'not-allowed' } }, icon('music', 24)),
     btn('phoneoff', 'Desconectar', false, () => voice.leave(), '.red'),
   ] : h('button.btn.green', { style: { minWidth: '220px', minHeight: '46px', fontSize: '16px' }, onclick: () => joinVoice(ch.id) }, dm ? 'Atender / entrar na chamada' : 'Entrar na sala de voz'));
-  if (hasScreen) bar.append(h('button.partbtn' + (S.hideMembers ? '.hidden' : ''), { title: S.hideMembers ? 'Mostrar participantes' : 'Ocultar participantes', onclick: () => { S.hideMembers = !S.hideMembers; renderVoiceUI(); } }, icon('caret', 16), icon('users', 18)));
+  if (hasScreen) bar.append(h('button.partbtn' + (S.hideMembers ? '.membershid' : ''), { title: S.hideMembers ? 'Mostrar participantes' : 'Ocultar participantes', onclick: () => { S.hideMembers = !S.hideMembers; renderVoiceUI(); } }, icon('caret', 16), icon('users', 18)));
   if (inRoom) { // botões da transmissão na linha da barra, à direita: valem para o quadro grande (em destaque ou na grade), não para os minimizados
     const barCtl = h('div.bar-ctl');
     const eligible = () => (focusTile ? (focusTile.classList.contains('screen') ? [focusTile.dataset.key] : []) : screens.map(t => t.dataset.key));

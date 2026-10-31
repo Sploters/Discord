@@ -289,7 +289,7 @@ function appearancePage() {
       row('Mostrar imagens de links no chat', 'Pré-visualiza links que terminam em .png/.jpg/.gif.', toggle(S.prefs.embedLinks !== false, v => { S.prefs.embedLinks = v; save(); })),
       row('Cores dos cargos nos nomes', null, toggle(S.prefs.roleColors !== false, v => { S.prefs.roleColors = v; save(); }))),
     section('Animações'), card(row('Animações aprimoradas', 'Transições suaves ao trocar de canal, abrir janelas e menus e receber mensagens. "Reduzir animações" em Acessibilidade tem prioridade.', toggle(S.prefs.animations !== false, set('animations')))),
-    section('Avatares e banners animados'), card(h('label.f', 'Animar GIFs de perfil', seg({ always: 'Sempre', speak: 'Só quando a pessoa fala na voz' }, S.prefs.animMode === 'speak' ? 'speak' : 'always', (v) => { S.prefs.animMode = v; save(); refreshFreeze(); }))),
+    section('Avatares e banners animados'), card(h('label.f', 'Avatares e banners em GIF/WebP', seg({ always: 'Sempre', speak: 'Na chamada, só quando fala', never: 'Nunca (desligar todas)' }, S.prefs.animMode || 'always', (v) => { S.prefs.animMode = v; save(); refreshFreeze(); }))),
     section('Tradução'), card(
       h('label.f', 'Traduzir mensagens para', (() => { const s = h('select', { onchange: () => { S.prefs.trLang = s.value; save(); } }, Object.entries(LANGS).map(([k, l]) => h('option', { value: k, selected: myLang() === k }, l))); return s; })()),
       row('Manter o original ao enviar com $idioma', 'Ex.: "$en bom dia" envia "good morning" e, em spoiler, o texto original.', toggle(!!S.prefs.trSendOriginal, v => { S.prefs.trSendOriginal = v; save(); }))),

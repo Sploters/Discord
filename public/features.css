@@ -590,4 +590,4 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 /* ocultar/mostrar participantes na sala de voz */
 #stage .bar .partbtn { position: absolute; left: 50%; top: -18px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 4px 12px; border: 0; border-radius: 12px; background: var(--bg-float, #111214); color: var(--interactive, #b5bac1); cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,.4); z-index: 3; }
 #stage .bar .partbtn:hover { color: #fff; background: var(--bg-mod-hover, #2b2d31); }
-#stage .bar .partbtn.hidden svg:first-child { transform: rotate(180deg); }
+#stage .bar .partbtn.membershid svg:first-child { transform: rotate(180deg); }
