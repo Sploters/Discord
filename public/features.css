@@ -530,3 +530,4 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 #stage .strip .tile .tctl { gap: 2px; padding: 0 2px; } #stage .strip .tile .tctl .ibtn svg { width: 14px !important; height: 14px !important; }
 #stage .strip .selfpause { padding: 4px; } #stage .strip .selfpause b { font-size: 11px; } #stage .strip .selfpause span:not(.live) { display: none; }
 #stage .spot .tile { cursor: pointer; }
+#stage .strip .tile:hover .tctl { display: none; }
