@@ -236,7 +236,7 @@ export class Voice {
       opts.codecOptions = { videoGoogleStartBitrate: Math.round(bitrateFor(this.screenOpts?.res || 1080, this.screenOpts?.fps || 30) * 0.8 / 1000) };
       // placa de vídeo codifica H.264 sem pesar na CPU (que o jogo está usando); sem hardware fica o VP8 com camadas temporais
       if (await this.hwH264()) {
-        const c = s.device.rtpCapabilities.codecs.find(x => x.mimeType.toLowerCase() === 'video/h264' && String(x.parameters?.['profile-level-id']).toLowerCase() === '640032');
+        const c = s.device.rtpCapabilities.codecs.find(x => x.mimeType.toLowerCase() === 'video/h264' && /^64/.test(String(x.parameters?.['profile-level-id']).toLowerCase()));
         if (c) { opts.codec = c; opts.encodings = this.sfuEncodings('screen', false); }
       }
     }
