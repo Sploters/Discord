@@ -9,6 +9,7 @@ import { previewHooks, hidePreview, paintTyping as previewTyping, previewMessage
 import { chName } from './chnames.js';
 import { streamHover, updatePip } from './livepip.js';
 import { zoomControls, pruneZoom } from './zoom.js';
+import { refreshFreeze } from './freeze.js';
 import { startBuffer, stopAllBuffers, pruneBuffers, clipping, saveClip, clipLengths } from './clips.js';
 import { seg, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
 import { openSettings, openFullProfile } from './settings.js';
@@ -1472,6 +1473,8 @@ function renderVoiceUI(speakOnly) {
       h('div.label', v.mute && icon('micoff', 14), v.deaf && icon('headoff', 14), isLocalMuted(uid) && h('span.lmute', { title: 'Silenciado por você' }, icon('headoff', 14)), styleName(h('span', nm(uid)), user(uid).name_style)));
     tiles.push(paintTile(t, user(uid)));
   }
+  const hasScreen = tiles.some(t => t.classList.contains('screen') || t.classList.contains('cstream'));
+  if (S.hideMembers && hasScreen) tiles.splice(0, tiles.length, ...tiles.filter(t => !t.classList.contains('utile'))); // oculta os participantes: só as transmissões
   for (const k of [...vidCache.keys()]) if (!live.has(k)) vidCache.delete(k);
   pruneZoom(live);
   if (inRoom) pruneBuffers(live);
@@ -1489,6 +1492,7 @@ function renderVoiceUI(speakOnly) {
     !dm && h('button.roundbtn', { title: 'Música (bot) — indisponível', disabled: true, style: { opacity: .4, cursor: 'not-allowed' } }, icon('music', 24)),
     btn('phoneoff', 'Desconectar', false, () => voice.leave(), '.red'),
   ] : h('button.btn.green', { style: { minWidth: '220px', minHeight: '46px', fontSize: '16px' }, onclick: () => joinVoice(ch.id) }, dm ? 'Atender / entrar na chamada' : 'Entrar na sala de voz'));
+  if (hasScreen) bar.append(h('button.partbtn' + (S.hideMembers ? '.hidden' : ''), { title: S.hideMembers ? 'Mostrar participantes' : 'Ocultar participantes', onclick: () => { S.hideMembers = !S.hideMembers; renderVoiceUI(); } }, icon('caret', 16), icon('users', 18)));
   if (inRoom) { // botões da transmissão na linha da barra, à direita: valem para o quadro grande (em destaque ou na grade), não para os minimizados
     const barCtl = h('div.bar-ctl');
     const eligible = () => (focusTile ? (focusTile.classList.contains('screen') ? [focusTile.dataset.key] : []) : screens.map(t => t.dataset.key));
@@ -1548,6 +1552,7 @@ const pipCtx = {
   settings: () => liveShareModal(),
   stop: () => voice.toggleScreen(),
   streamOf: (uid) => voice.peers.get(uid)?.streams.screen,
+  fullscreen: (uid) => { const s = uid ? voice.peers.get(uid)?.streams.screen : voice.screen; if (s) fullscreenStream(s); },
   nameOf: (uid) => { const ch = channelById(voice.channelId); return ch?.type === 1 ? user(uid).display_name : nameOf(uid, ch?.guild_id); },
 };
 function liveShareModal() {

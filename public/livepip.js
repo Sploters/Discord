@@ -90,6 +90,7 @@ export function updatePip(ctx) {
   if (!outside || (!mineUp && !theirs)) return removePip();
   const key = mineUp ? 'me' : theirs, stream = mineUp ? null : ctx.streamOf(theirs);
   if (!pip) build();
+  pip.ondblclick = (e) => { if (e.target.closest('button,.lp-resize')) return; ctx.openRoom(); ctx.fullscreen?.(mineUp ? null : theirs); };
   if (pipKey !== key + (stream?.id || '')) {
     pipKey = key + (stream?.id || '');
     let body;
@@ -99,7 +100,7 @@ export function updatePip(ctx) {
       h('div.lp-video', body),
       h('div.lp-top', h('div.lp-title', { role: 'button', title: 'Voltar para a sala', onclick: ctx.openRoom }, icon('chevl', 18), h('span', ctx.roomName()))),
       h('div.lp-bottom', h('span.lp-name', mineUp ? S.me.display_name : ctx.nameOf(theirs)),
-        h('span.lp-btns', mineUp && h('button.ibtn', { title: 'Configurações da transmissão', onclick: ctx.settings }, icon('gear', 20)),
+        h('span.lp-btns', h('button.ibtn', { title: 'Voltar para a transmissão em tela cheia (clique duplo)', onclick: () => { ctx.openRoom(); ctx.fullscreen?.(mineUp ? null : theirs); } }, icon('expand', 20)), mineUp && h('button.ibtn', { title: 'Configurações da transmissão', onclick: ctx.settings }, icon('gear', 20)),
           h('button.ibtn', { title: mineUp ? 'Parar transmissão' : 'Fechar transmissão', onclick: () => (mineUp ? ctx.stop() : (voice.closeStream(theirs), updatePip(ctx))) }, icon(mineUp ? 'screen' : 'x', 20)))),
       resizer());
   }

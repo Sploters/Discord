@@ -13,6 +13,7 @@ import { openThemeEditor, shareTheme } from './themeeditor.js';
 import { prettyName, DEFAULT_NAME_WORDS } from './chnames.js';
 import { PREVIEW_TRIGGERS } from './chpreview.js';
 import { MAX_VOL } from './quick.js';
+import { refreshFreeze } from './freeze.js';
 
 const SWATCHES = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55d', '#faa61a', '#9b59b6', '#1abc9c', '#e67e22', '#3498db', '#95a5a6', '#2c2f33', '#ffffff'];
 const save = () => savePrefs();
@@ -288,6 +289,7 @@ function appearancePage() {
       row('Mostrar imagens de links no chat', 'Pré-visualiza links que terminam em .png/.jpg/.gif.', toggle(S.prefs.embedLinks !== false, v => { S.prefs.embedLinks = v; save(); })),
       row('Cores dos cargos nos nomes', null, toggle(S.prefs.roleColors !== false, v => { S.prefs.roleColors = v; save(); }))),
     section('Animações'), card(row('Animações aprimoradas', 'Transições suaves ao trocar de canal, abrir janelas e menus e receber mensagens. "Reduzir animações" em Acessibilidade tem prioridade.', toggle(S.prefs.animations !== false, set('animations')))),
+    section('Avatares e banners animados'), card(h('label.f', 'Animar GIFs de perfil', seg({ always: 'Sempre', speak: 'Só quando a pessoa fala na voz' }, S.prefs.animMode === 'speak' ? 'speak' : 'always', (v) => { S.prefs.animMode = v; save(); refreshFreeze(); }))),
     section('Tradução'), card(
       h('label.f', 'Traduzir mensagens para', (() => { const s = h('select', { onchange: () => { S.prefs.trLang = s.value; save(); } }, Object.entries(LANGS).map(([k, l]) => h('option', { value: k, selected: myLang() === k }, l))); return s; })()),
       row('Manter o original ao enviar com $idioma', 'Ex.: "$en bom dia" envia "good morning" e, em spoiler, o texto original.', toggle(!!S.prefs.trSendOriginal, v => { S.prefs.trSendOriginal = v; save(); }))),
