@@ -524,3 +524,4 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 .livepip .lp-resize { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; }
 .tile .selfpause { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 12px; text-align: center; background: var(--bg-tert, #1e1f22); color: #fff; }
 .tile .selfpause b { font-size: 16px; } .tile .selfpause span { font-size: 13px; color: var(--text-muted); }
+.tile .selfpause .sp-live { position: absolute; top: 10px; left: 10px; font-size: 11px; padding: 1px 6px; }
