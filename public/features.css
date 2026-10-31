@@ -567,3 +567,6 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 .dm-radio { flex: none; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--interactive-muted, #80848e); box-sizing: border-box; }
 .dm-radio.on { border-color: var(--brand, #5865f2); background: radial-gradient(circle, var(--brand, #5865f2) 0 4px, transparent 4.5px); }
 .dm-item:hover .dm-radio.on { border-color: #fff; background: radial-gradient(circle, #fff 0 4px, transparent 4.5px); }
+.dmenu input.dm-range[type=range] { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 16px; margin: 0; padding: 0; background: transparent; outline: none; cursor: pointer; }
+.dmenu input.dm-range::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--brand, #5865f2) var(--p, 100%), var(--bg-mod-strong, #4e5058) var(--p, 100%)); }
+.dmenu input.dm-range::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
