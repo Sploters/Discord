@@ -498,3 +498,29 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 .tile.cstream { background: var(--bg-tert, #1e1f22); color: #fff; }
 .tile.cstream .cs { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px; text-align: center; }
 .tile.cstream .cs b { font-size: 14px; }
+
+/* ---- prévia ao passar o mouse e janela flutuante da transmissão (como no Discord) ---- */
+.streamcard { position: fixed; z-index: 1200; width: 260px; background: var(--bg-float, var(--bg-sec)); border: 1px solid var(--divider); border-radius: 8px; padding: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.4); color: var(--text); }
+.streamcard .sc-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+.streamcard .sc-prev { position: relative; aspect-ratio: 16/9; border-radius: 6px; overflow: hidden; background: #000; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
+.streamcard .sc-prev img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
+.streamcard .sc-prev.has img { display: block; } .streamcard .sc-prev.has .sc-ph { display: none; }
+.streamcard .sc-hover { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.6); color: #fff; font-size: 14px; opacity: 0; transition: opacity .15s; }
+.streamcard .sc-prev:hover .sc-hover { opacity: 1; }
+.streamcard .sc-btn { width: 100%; margin-top: 8px; display: flex; gap: 6px; align-items: center; justify-content: center; }
+.streamcard .sc-btn[disabled] { opacity: .6; cursor: default; }
+.livepip { position: fixed; left: 0; top: 0; z-index: 1100; width: 320px; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; background: #111; color: #fff; box-shadow: 0 8px 28px rgba(0,0,0,.55); cursor: grab; touch-action: none; user-select: none; }
+.livepip.drag { cursor: grabbing; }
+.livepip .lp-video, .livepip video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.livepip .lp-idle { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 8px; text-align: center; background: var(--bg-tert, #1e1f22); }
+.livepip .lp-idle b { font-size: 15px; } .livepip .lp-idle span { font-size: 13px; color: var(--text-muted); }
+.livepip .lp-top, .livepip .lp-bottom { position: absolute; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; opacity: 0; transition: opacity .15s; }
+.livepip .lp-top { top: 0; background: linear-gradient(rgba(0,0,0,.7), transparent); }
+.livepip .lp-bottom { bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,.7)); }
+.livepip:hover .lp-top, .livepip:hover .lp-bottom { opacity: 1; }
+.livepip .lp-title { display: flex; align-items: center; gap: 4px; cursor: pointer; font-weight: 600; font-size: 14px; }
+.livepip .lp-name { font-size: 14px; } .livepip .lp-btns { display: flex; gap: 2px; }
+.livepip .lp-btns .ibtn { color: #fff; }
+.livepip .lp-resize { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; }
+.tile .selfpause { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 12px; text-align: center; background: var(--bg-tert, #1e1f22); color: #fff; }
+.tile .selfpause b { font-size: 16px; } .tile .selfpause span { font-size: 13px; color: var(--text-muted); }

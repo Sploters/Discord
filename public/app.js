@@ -7,6 +7,7 @@ import { openSoundboard, onIncoming as sbIncoming, handleKey as sbKey } from './
 import { openAudioPanel, openStatusPanel, openMicPanel, volumeControl } from './quick.js';
 import { previewHooks, hidePreview, paintTyping as previewTyping, previewMessage } from './chpreview.js';
 import { chName } from './chnames.js';
+import { streamHover, updatePip } from './livepip.js';
 import { startBuffer, stopAllBuffers, pruneBuffers, clipping, saveClip, clipLengths } from './clips.js';
 import { seg, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
 import { openSettings, openFullProfile } from './settings.js';
@@ -245,7 +246,7 @@ function go(gid, cid) {
 const chNameKey = () => ['chCaps', 'chDashes', 'chNoEmoji', 'chNamesVoice', 'chNameWords'].map(k => S.prefs[k]).join('|');
 let lastChNames = chNameKey();
 document.addEventListener('settings-closed', () => { if (!ready || chNameKey() === lastChNames) return; lastChNames = chNameKey(); renderSide(); if (S.view.cid) renderMain(); });
-window.addEventListener('hashchange', () => { hidePreview(); if (ready) applyRoute(); });
+window.addEventListener('hashchange', () => { hidePreview(); if (ready) { applyRoute(); if (voice) updatePip(pipCtx); } });
 function applyRoute(first) {
   let [, gid, cid] = location.hash.match(/^#\/([^/]+)(?:\/(.+))?$/) || [];
   gid ||= '@me';
@@ -444,12 +445,21 @@ function renderSide() {
   list.scrollTop = keepScroll;
 }
 const lastActivity = (dm) => { const l = S.messages.get(dm.id); return l?.length ? l[l.length - 1].id : dm.id; };
+function watchFromList(v) {
+  const ch = channelById(v.channel_id); if (!ch) return;
+  go(ch.guild_id || '@me', ch.id);
+  if (voice.channelId !== ch.id) joinVoice(ch.id);
+  if (v.user_id !== S.me.id) { voice.openStream(v.user_id); S.focus = 's:' + v.user_id; }
+  renderVoiceUI();
+}
 function vuserRow(g, v) {
   const u = user(v.user_id);
-  return h('div.vuser', { 'data-uid': v.user_id, oncontextmenu: (e) => userMenu(e, v.user_id, g.id), onclick: (e) => profile(e.currentTarget, v.user_id, g.id) },
+  const row = h('div.vuser', { 'data-uid': v.user_id, oncontextmenu: (e) => userMenu(e, v.user_id, g.id), onclick: (e) => profile(e.currentTarget, v.user_id, g.id) },
     (() => { const a = avatar(u, 24, { status: false }); if (voice?.speaking.has(v.user_id)) a.classList.add('speaking'); if (voice?.sbActive.has(v.user_id)) a.classList.add('sbplay'); a.dataset.uid = v.user_id; return a; })(),
     h('span.nm', nameOf(v.user_id, g.id)), v.screen && h('span.live', 'Ao vivo'),
     h('span.ico', v.video && icon('video', 14), v.mute && icon('micoff', 14), v.deaf && icon('headoff', 14)));
+  if (v.screen) { const mine = v.user_id === S.me.id; streamHover(row, { uid: v.user_id, mine, getStream: () => (mine ? voice.screen : voice.peers.get(v.user_id)?.streams.screen), onWatch: () => watchFromList(v) }); }
+  return row;
 }
 function channelMenu(e, g, c) {
   menu(e, [
@@ -1417,6 +1427,7 @@ function renderVoiceUI(speakOnly) {
     return;
   }
   renderSide();
+  updatePip(pipCtx);
   if (!voice.active) stopAllBuffers();
   const stage = $('#stage'); if (!stage) return syncWatching(null);
   const ch = channelById(S.view.cid); if (!ch || ![1, 2].includes(ch.type)) return syncWatching(null);
@@ -1433,12 +1444,12 @@ function renderVoiceUI(speakOnly) {
       tiles.push(h('div.tile.cstream', { 'data-key': 's:' + uid }, h('div.cs', icon('screen', 36), h('b', `${nm(uid)} está transmitindo`), h('button.btn.green', { onclick: (e) => { e.stopPropagation(); voice.openStream(uid); renderVoiceUI(); } }, 'Assistir'))));
     } else if (scr && v.screen) {
       const key = 's:' + uid; live.add(key);
-      const vid = videoFor(key, scr), info = h('span.sinfo');
+      const vid = mine && !S.selfPreview ? h('div.selfpause', h('b', 'Sua transmissão continua ativa!'), h('span', 'Pausamos esta prévia para economizar recursos.')) : videoFor(key, scr), info = h('span.sinfo');
       if (S.prefs.clipsOn && inRoom) startBuffer(key, scr, mine ? null : p?.screenAudioEl?.raw);
       const upd = () => (info.textContent = vid.videoWidth ? `${vid.videoWidth}×${vid.videoHeight}` : '');
-      vid.onresize = vid.onloadedmetadata = upd; upd();
+      if (vid.tagName === 'VIDEO') { vid.onresize = vid.onloadedmetadata = upd; upd(); }
             tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { 'data-key': key, 'data-sid': uid, 'data-uid': uid, onclick: () => { if (S.streamsMini) { S.streamsMini = false; S.focus = key; } else S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid,
-        h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info), h('div.tctl', !mine && h('button.ibtn', { title: 'Fechar transmissão (parar de assistir)', onclick: (e) => { e.stopPropagation(); voice.closeStream(uid); if (S.focus === key) S.focus = null; renderVoiceUI(); } }, icon('x', 18)), h('button.ibtn' + (clipping(key) ? '.rec' : ''), { title: 'Clipes', onclick: (e) => { e.stopPropagation(); clipMenu(e, key, nm(uid)); } }, icon('clip', 18)), h('button.ibtn', { title: S.streamsMini ? 'Transmissões pequenas' : 'Minimizar transmissões (focar nos usuários)', onclick: (e) => { e.stopPropagation(); S.streamsMini = !S.streamsMini; S.focus = null; renderVoiceUI(); } }, icon(S.streamsMini ? 'expand' : 'shrink', 18)), h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18)))));
+        h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info), h('div.tctl', mine && h('button.ibtn', { title: S.selfPreview ? 'Pausar prévia' : 'Ver prévia da minha transmissão', onclick: (e) => { e.stopPropagation(); S.selfPreview = !S.selfPreview; renderVoiceUI(); } }, icon('eye', 18)), !mine && h('button.ibtn', { title: 'Fechar transmissão (parar de assistir)', onclick: (e) => { e.stopPropagation(); voice.closeStream(uid); if (S.focus === key) S.focus = null; renderVoiceUI(); } }, icon('x', 18)), h('button.ibtn' + (clipping(key) ? '.rec' : ''), { title: 'Clipes', onclick: (e) => { e.stopPropagation(); clipMenu(e, key, nm(uid)); } }, icon('clip', 18)), h('button.ibtn', { title: S.streamsMini ? 'Transmissões pequenas' : 'Minimizar transmissões (focar nos usuários)', onclick: (e) => { e.stopPropagation(); S.streamsMini = !S.streamsMini; S.focus = null; renderVoiceUI(); } }, icon(S.streamsMini ? 'expand' : 'shrink', 18)), h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18)))));
     }
     const ckey = 'c:' + uid;
     if (cam && v.video) live.add(ckey);
@@ -1512,6 +1523,15 @@ async function startShare() {
 }
 
 // durante a transmissão: mudar qualidade ao vivo, trocar fonte, parar
+const pipCtx = {
+  get voice() { return voice; },
+  roomName: () => { const ch = channelById(voice.channelId); return ch?.type === 1 ? 'Chamada com ' + user(dmPeer(ch).id).display_name : (ch?.name || 'Sala'); },
+  openRoom: () => { const ch = channelById(voice.channelId); if (ch) go(ch.type === 1 ? '@me' : ch.guild_id, ch.id); },
+  settings: () => liveShareModal(),
+  stop: () => voice.toggleScreen(),
+  streamOf: (uid) => voice.peers.get(uid)?.streams.screen,
+  nameOf: (uid) => { const ch = channelById(voice.channelId); return ch?.type === 1 ? user(uid).display_name : nameOf(uid, ch?.guild_id); },
+};
 function liveShareModal() {
   const o = { ...voice.screenOpts };
   const settings = h('div.qinfo'), net = h('div.qinfo'), updInfo = () => { const st = voice.screen?.getVideoTracks()[0]?.getSettings?.() || {}; settings.textContent = `Capturando: ${st.width || '?'}×${st.height || '?'} a ${Math.round(st.frameRate || 0) || '?'} fps — ${qualityLabel(o)}`; voice.screenStats().then(L => { if (!L?.length) return; const t = L[0], why = { cpu: 'limitado pelo processador', bandwidth: 'limitado pela sua internet (upload)', none: 'sem limitação', other: 'limitado' }[t.limit] || t.limit; net.textContent = `Enviando: ${t.w}×${t.h} a ${t.fps} fps, ${(t.kbps / 1000).toFixed(1)} Mbps — ${why}${/hw|h264|video toolbox|nvenc|media/i.test(t.enc) ? ' (placa de vídeo)' : t.enc ? ' (' + t.enc + ')' : ''}`; }); };
