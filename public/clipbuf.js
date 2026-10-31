@@ -12,12 +12,16 @@ export function createBuffer(stream, audio, opts = {}) {
   const tracks = liveTracks(stream, audio);
   if (!tracks.some(t => t.kind === 'video')) return null;
   const hasAudio = tracks.some(t => t.kind === 'audio');
-  const mimeType = (opts.mimes || (hasAudio ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus'] : ['video/webm;codecs=vp9', 'video/webm;codecs=vp8']).concat('video/webm')).find(m => MediaRecorder.isTypeSupported(m));
+  // o clipe grava a 30 fps mesmo que a transmissão seja de 120: codificar todos os quadros custava metade da CPU
+  const vt0 = tracks.find(t => t.kind === 'video'), vt = opts.fullRate ? vt0 : vt0.clone();
+  if (vt !== vt0) vt.applyConstraints({ frameRate: { ideal: 30, max: 30 } }).catch(() => { });
+  const rtracks = tracks.map(t => (t === vt0 ? vt : t));
+  const mimeType = (opts.mimes || (hasAudio ? ['video/webm;codecs=h264,opus', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus'] : ['video/webm;codecs=h264', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8']).concat('video/webm')).find(m => MediaRecorder.isTypeSupported(m));
   // qualidade: VP9 com bitrate proporcional à resolução da transmissão (teto 8 Mb/s: 60s ficam em ~60 MB, abaixo do limite de upload de 100 MB)
   const st = tracks.find(t => t.kind === 'video').getSettings?.() || {};
-  const bps = opts.bps || Math.round(Math.min(8_000_000, Math.max(3_000_000, (st.width || 1920) * (st.height || 1080) * (st.frameRate || 30) * 0.15)));
+  const bps = opts.bps || Math.round(Math.min(8_000_000, Math.max(3_000_000, (st.width || 1920) * (st.height || 1080) * Math.min(30, st.frameRate || 30) * 0.15)));
   let rec;
-  try { rec = new MediaRecorder(new MediaStream(tracks), { mimeType, videoBitsPerSecond: bps, audioBitsPerSecond: 160_000, videoKeyFrameIntervalDuration: 1000 }); } catch { return null; }
+  try { rec = new MediaRecorder(new MediaStream(rtracks), { mimeType, videoBitsPerSecond: bps, audioBitsPerSecond: 160_000, videoKeyFrameIntervalDuration: 1000 }); } catch { if (vt !== vt0) vt.stop(); return null; }
   const buf = { hasAudio, stream, sig: trackSig(stream, audio), rec, header: null, chunks: [], clusters: [], size: 0, tail: new Uint8Array(0), q: Promise.resolve(), onEnd: null };
   const ingest = async (blob, t) => {
     const bytes = new Uint8Array(await blob.arrayBuffer()), start = buf.size;
@@ -58,6 +62,6 @@ export function createBuffer(stream, audio, opts = {}) {
     const out = buildClip(buf.header, list.slice(pick), endTs);
     return out && new Blob([out], { type: 'video/webm' });
   };
-  buf.stop = () => { try { if (rec.state !== 'inactive') rec.stop(); } catch { /* já parado */ } buf.chunks = []; buf.clusters = []; buf.header = null; };
+  buf.stop = () => { try { if (rec.state !== 'inactive') rec.stop(); } catch { /* já parado */ } if (vt !== vt0) vt.stop(); buf.chunks = []; buf.clusters = []; buf.header = null; };
   return buf;
 }
