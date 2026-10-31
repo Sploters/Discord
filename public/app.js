@@ -1446,7 +1446,8 @@ function renderVoiceUI(speakOnly) {
   const dm = ch.type === 1, gid = ch.guild_id;
   const members = [...S.voice.values()].filter(v => v.channel_id === ch.id);
   const inRoom = voice.channelId === ch.id;
-  const tiles = [], live = new Set();
+  const tiles = [], live = new Set(), ctls = new Map(); // ctls: botões de cada transmissão, que ficam na linha da barra de baixo
+  let setCtl = () => { };
   const nm = (uid) => dm ? user(uid).display_name : nameOf(uid, gid);
   for (const v of members) {
     const uid = v.user_id, mine = uid === S.me.id, p = voice.peers.get(uid);
@@ -1460,8 +1461,9 @@ function renderVoiceUI(speakOnly) {
       if (S.prefs.clipsOn && inRoom) startBuffer(key, scr, mine ? null : p?.screenAudioEl?.raw);
       const upd = () => (info.textContent = vid.videoWidth ? `${vid.videoWidth}×${vid.videoHeight}` : '');
       if (vid.tagName === 'VIDEO') { vid.onresize = vid.onloadedmetadata = upd; upd(); }
-            tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { 'data-key': key, 'data-sid': uid, 'data-uid': uid, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid, vid.tagName === 'VIDEO' && zoomControls(key, vid, scr),
-        h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info), h('div.tctl', mine && h('button.ibtn', { title: S.selfPreview ? 'Pausar prévia' : 'Ver prévia da minha transmissão', onclick: (e) => { e.stopPropagation(); S.selfPreview = !S.selfPreview; renderVoiceUI(); } }, icon('eye', 18)), !mine && h('button.ibtn', { title: 'Fechar transmissão (parar de assistir)', onclick: (e) => { e.stopPropagation(); voice.closeStream(uid); if (S.focus === key) S.focus = null; renderVoiceUI(); } }, icon('x', 18)), h('button.ibtn' + (clipping(key) ? '.rec' : ''), { title: 'Clipes', onclick: (e) => { e.stopPropagation(); clipMenu(e, key, nm(uid)); } }, icon('clip', 18)), h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18)))));
+            ctls.set(key, h('div.tctl', mine && h('button.ibtn', { title: S.selfPreview ? 'Pausar prévia' : 'Ver prévia da minha transmissão', onclick: (e) => { e.stopPropagation(); S.selfPreview = !S.selfPreview; renderVoiceUI(); } }, icon('eye', 18)), !mine && h('button.ibtn', { title: 'Fechar transmissão (parar de assistir)', onclick: (e) => { e.stopPropagation(); voice.closeStream(uid); if (S.focus === key) S.focus = null; renderVoiceUI(); } }, icon('x', 18)), h('button.ibtn' + (clipping(key) ? '.rec' : ''), { title: 'Clipes', onclick: (e) => { e.stopPropagation(); clipMenu(e, key, nm(uid)); } }, icon('clip', 18)), h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18))));
+            tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { onmouseenter: () => setCtl(key), 'data-key': key, 'data-sid': uid, 'data-uid': uid, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid, vid.tagName === 'VIDEO' && zoomControls(key, vid, scr),
+        h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info)));
     }
     const ckey = 'c:' + uid;
     if (cam && v.video) live.add(ckey);
@@ -1487,6 +1489,13 @@ function renderVoiceUI(speakOnly) {
     !dm && h('button.roundbtn', { title: 'Música (bot) — indisponível', disabled: true, style: { opacity: .4, cursor: 'not-allowed' } }, icon('music', 24)),
     btn('phoneoff', 'Desconectar', false, () => voice.leave(), '.red'),
   ] : h('button.btn.green', { style: { minWidth: '220px', minHeight: '46px', fontSize: '16px' }, onclick: () => joinVoice(ch.id) }, dm ? 'Atender / entrar na chamada' : 'Entrar na sala de voz'));
+  if (inRoom) { // botões da transmissão na linha da barra, à direita: valem para o quadro grande (em destaque ou na grade), não para os minimizados
+    const barCtl = h('div.bar-ctl');
+    const eligible = () => (focusTile ? (focusTile.classList.contains('screen') ? [focusTile.dataset.key] : []) : screens.map(t => t.dataset.key));
+    const showCtl = () => { const el = eligible(), k = el.includes(S.ctlKey) ? S.ctlKey : el[0]; barCtl.replaceChildren(...(k && ctls.get(k) ? [ctls.get(k)] : [])); };
+    setCtl = (key) => { if (eligible().includes(key) && S.ctlKey !== key) { S.ctlKey = key; showCtl(); } };
+    bar.append(barCtl); showCtl();
+  }
   const rest = focusTile ? tiles.filter(t => t !== focusTile) : tiles;
   const empty = !tiles.length; // sala vazia: o botão de entrar fica junto do texto, no meio (como no Discord)
   stage.replaceChildren(...[

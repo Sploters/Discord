@@ -543,3 +543,11 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 .tile .zm-mini video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
 .tile .zm-ind { position: absolute; border: 2px solid var(--brand, #5865f2); background: rgba(88,101,242,.2); pointer-events: none; box-sizing: border-box; }
 #stage .strip .tile .zoomctl { display: none !important; }
+/* botões da transmissão: na linha da barra (canto direito); zoom: vertical no canto direito do quadro */
+#stage .bar { position: relative; }
+#stage .bar-ctl { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); display: flex; }
+#stage .bar-ctl .tctl { position: static; display: flex; gap: 8px; align-items: center; background: rgba(0,0,0,.6); border-radius: 6px; padding: 4px 8px; color: #fff; }
+#stage .bar-ctl .tctl .ibtn { color: #fff; } #stage .bar-ctl .tctl .ibtn.rec { color: #f23f42; }
+.tile .zoomctl { left: auto; right: 8px; bottom: auto; top: 50%; transform: translateY(-50%); flex-direction: row; align-items: center; }
+.tile .zoomctl .zm-row { flex-direction: column-reverse; padding: 6px 2px; }
+.tile .zoomctl input[type=range] { writing-mode: vertical-lr; direction: rtl; width: 4px; height: 110px; background: linear-gradient(0deg, var(--brand, #5865f2) var(--p, 0%), rgba(255,255,255,.3) var(--p, 0%)); }
