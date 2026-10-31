@@ -7,6 +7,7 @@ import { openSoundboard, onIncoming as sbIncoming, handleKey as sbKey } from './
 import { openAudioPanel, openStatusPanel, openMicPanel, volumeControl } from './quick.js';
 import { previewHooks, hidePreview, paintTyping as previewTyping, previewMessage } from './chpreview.js';
 import { chName } from './chnames.js';
+import { startBuffer, stopAllBuffers, pruneBuffers, clipping, saveClip, clipLengths } from './clips.js';
 import { seg, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
 import { openSettings, openFullProfile } from './settings.js';
 import { saveCustomTheme } from './themeeditor.js';
@@ -1426,6 +1427,7 @@ function renderVoiceUI(speakOnly) {
     return;
   }
   renderSide();
+  if (!voice.active) stopAllBuffers();
   const stage = $('#stage'); if (!stage) return syncWatching(null);
   const ch = channelById(S.view.cid); if (!ch || ![1, 2].includes(ch.type)) return syncWatching(null);
   const dm = ch.type === 1, gid = ch.guild_id;
@@ -1436,14 +1438,18 @@ function renderVoiceUI(speakOnly) {
   for (const v of members) {
     const uid = v.user_id, mine = uid === S.me.id, p = voice.peers.get(uid);
     const cam = mine ? voice.cam : (S.prefs.hiddenVideo?.[uid] ? null : p?.streams.cam), scr = mine ? voice.screen : p?.streams.screen;
-    if (scr && v.screen) {
+    if (!v.screen) voice.closedStreams.delete(uid);
+    if (scr && v.screen && !mine && voice.closedStreams.has(uid)) {
+      tiles.push(h('div.tile.cstream', { 'data-key': 's:' + uid }, h('div.cs', icon('screen', 36), h('b', `${nm(uid)} está transmitindo`), h('button.btn.green', { onclick: (e) => { e.stopPropagation(); voice.openStream(uid); renderVoiceUI(); } }, 'Assistir'))));
+    } else if (scr && v.screen) {
       const key = 's:' + uid; live.add(key);
       const vid = videoFor(key, scr), info = h('span.sinfo');
+      if (S.prefs.clipsOn && inRoom) startBuffer(key, scr, mine ? null : p?.screenAudioEl?.raw);
       const upd = () => (info.textContent = vid.videoWidth ? `${vid.videoWidth}×${vid.videoHeight}` : '');
       vid.onresize = vid.onloadedmetadata = upd; upd();
       const vol = !mine && h('input', { type: 'range', min: 0, max: 200, value: voice.streamVolumes[uid] ?? 100, title: 'Volume da transmissão', onclick: (e) => e.stopPropagation(), oninput: (e) => { voice.setStreamVolume(uid, +e.target.value); savePrefs(); } });
-      tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { 'data-key': key, 'data-sid': uid, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid,
-        h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info), viewersBadge(uid), h('div.tctl', vol, h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18)))));
+      tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { 'data-key': key, 'data-sid': uid, 'data-uid': uid, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid,
+        h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info), viewersBadge(uid), h('div.tctl', vol, !mine && h('button.ibtn', { title: 'Fechar transmissão (parar de assistir)', onclick: (e) => { e.stopPropagation(); voice.closeStream(uid); if (S.focus === key) S.focus = null; renderVoiceUI(); } }, icon('x', 18)), h('button.ibtn' + (clipping(key) ? '.rec' : ''), { title: 'Clipes', onclick: (e) => { e.stopPropagation(); clipMenu(e, key, nm(uid)); } }, icon('clip', 18)), h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18)))));
     }
     const ckey = 'c:' + uid;
     if (cam && v.video) live.add(ckey);
@@ -1453,9 +1459,13 @@ function renderVoiceUI(speakOnly) {
     tiles.push(paintTile(t, user(uid)));
   }
   for (const k of [...vidCache.keys()]) if (!live.has(k)) vidCache.delete(k);
-  syncWatching(inRoom ? members.filter(v => v.screen && v.user_id !== S.me.id && voice.peers.get(v.user_id)?.streams.screen).map(v => v.user_id) : null);
+  if (inRoom) pruneBuffers(live);
+  // com transmissão na tela, quem só tem avatar não ocupa espaço: some do palco (continua na lista lateral)
+  if (tiles.some(t => t.classList.contains('screen') || t.classList.contains('cstream'))) tiles.splice(0, tiles.length, ...tiles.filter(t => !t.classList.contains('utile') || t.querySelector('video')));
+  syncWatching(inRoom ? members.filter(v => v.screen && v.user_id !== S.me.id && !voice.closedStreams.has(v.user_id) && voice.peers.get(v.user_id)?.streams.screen).map(v => v.user_id) : null);
   const hasFocus = tiles.some(t => t.dataset.key === S.focus);
-  const focusTile = hasFocus ? tiles.find(t => t.dataset.key === S.focus) : tiles.find(t => t.classList.contains('screen'));
+  const screens = tiles.filter(t => t.classList.contains('screen')); // várias transmissões e nenhuma em destaque: grade com todas, do mesmo tamanho
+  const focusTile = hasFocus ? tiles.find(t => t.dataset.key === S.focus) : screens.length === 1 ? screens[0] : null;
   const btn = (ic, title, on, fn, cls = '') => h('button.roundbtn' + (on ? '.off' : '') + cls, { title, onclick: fn, oncontextmenu: cls === '.mic' ? noiseMenu : null }, icon(ic, 24));
   const bar = h('div.bar', inRoom ? [
     btn(voice.muted ? 'micoff' : 'mic', voice.muted ? 'Ativar microfone (clique direito: redução de ruído)' : 'Silenciar (clique direito: redução de ruído)', voice.muted, () => voiceToggle('mute'), '.mic'),
@@ -1473,6 +1483,11 @@ function renderVoiceUI(speakOnly) {
     voice.error && inRoom && h('div.verr', voice.error),
     !(empty && !inRoom) && bar].flat().filter(Boolean));
   watchStage();
+}
+function clipMenu(e, key, who) {
+  if (!S.prefs.clipsOn) return menu(e, [{ label: 'Ativar clipes', hint: 'Grava os últimos 60s das transmissões em segundo plano', fn: () => { S.prefs.clipsOn = true; savePrefs(); renderVoiceUI(); toast('Clipes ativados: em alguns segundos já dá para salvar'); } }]);
+  menu(e, [...clipLengths.map(n => ({ label: `Salvar os últimos ${n}s`, hint: 'Posta no chat da sala', fn: () => saveClip(key, n, { channelId: voice.channelId, who }) })), '-',
+    { label: 'Desativar clipes', danger: true, fn: () => { S.prefs.clipsOn = false; savePrefs(); stopAllBuffers(); renderVoiceUI(); } }]);
 }
 const ctxSettings = () => ({ voice, logout, go });
 function noiseMenu(e) {

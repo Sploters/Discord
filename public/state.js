@@ -31,7 +31,7 @@ export const S = {
     JSON.parse(localStorage.getItem('lc_prefs') || '{}')),
   replyTo: null, editing: null, pending: [], membersOpen: true, viewers: new Map(), watching: new Set(),
 };
-const DEVICE_KEYS = ['inputId', 'outputId', 'videoId']; // específicos de cada máquina: não sincronizam
+const DEVICE_KEYS = ['inputId', 'outputId', 'videoId', 'clipsOn']; // específicos de cada máquina: não sincronizam
 let syncTimer;
 export const savePrefs = () => {
   localStorage.setItem('lc_prefs', JSON.stringify(S.prefs));

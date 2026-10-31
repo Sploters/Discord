@@ -98,7 +98,7 @@ export class Voice {
     this.send = send; this.ice = ice; this.myId = myId; this.onUpdate = onUpdate; this.prefs = prefs;
     this.autoKbps = 128; // nível escolhido pelo modo automático
     this.channelId = null; this.peers = new Map(); this.micGraph = null; this.mic = null; this.cam = null; this.screen = null;
-    this.muted = false; this.deafened = false; this.ptt = false; this.speaking = new Set(); this.sbActive = new Set();
+    this.closedStreams = new Set(); this.muted = false; this.deafened = false; this.ptt = false; this.speaking = new Set(); this.sbActive = new Set();
     this.ctx = null; this.analysers = new Map(); this.timer = null; this.screenOpts = null;
   }
   get active() { return !!this.channelId; }
@@ -474,6 +474,8 @@ export class Voice {
     document.body.append(a); p[key] = a; this.applyVolume(p.uid); a.play?.().catch(() => { });
     if (kind === 'mic') this.watch(p.uid, stream);
   }
+  closeStream(uid) { this.closedStreams.add(uid); this.applyVolume(uid); }
+  openStream(uid) { this.closedStreams.delete(uid); this.applyVolume(uid); }
   applyVolume(uid) {
     const p = this.peers.get(uid); if (!p) return;
     const master = (this.prefs.volume ?? 100) / 100;
@@ -483,7 +485,8 @@ export class Voice {
   // até 100% usa o volume do elemento; acima disso o áudio passa por um ganho WebAudio (com limitador para não estourar)
   setLevel(p, key, f) {
     const a = p[key]; if (!a) return;
-    a.muted = this.deafened;
+    // ensurdecer silencia as vozes, mas não as transmissões (só ficam mudas se a transmissão foi fechada)
+    a.muted = key === 'screenAudioEl' ? this.closedStreams.has(p.uid) : this.deafened;
     const b = p[key + 'Boost'];
     if (f <= 1 && !b) { a.volume = f; return; }
     if (!b) {
