@@ -525,3 +525,8 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 .tile .selfpause { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 12px; text-align: center; background: var(--bg-tert, #1e1f22); color: #fff; }
 .tile .selfpause b { font-size: 16px; } .tile .selfpause span { font-size: 13px; color: var(--text-muted); }
 .tile .selfpause .sp-live { position: absolute; top: 10px; left: 10px; font-size: 11px; padding: 1px 6px; }
+/* controles da transmissão no canto inferior direito (como no Discord) */
+.tile .tctl { top: auto; bottom: 8px; right: 8px; }
+#stage .strip .tile .tctl { gap: 2px; padding: 0 2px; } #stage .strip .tile .tctl .ibtn svg { width: 14px !important; height: 14px !important; }
+#stage .strip .selfpause { padding: 4px; } #stage .strip .selfpause b { font-size: 11px; } #stage .strip .selfpause span:not(.live) { display: none; }
+#stage .spot .tile { cursor: pointer; }
