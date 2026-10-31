@@ -232,7 +232,8 @@ export class Voice {
     if (source === 'mic') opts.codecOptions = { opusStereo: true, opusDtx: true, opusFec: true, opusMaxAverageBitrate: OPUS_MAX * 1000 };
     if (source === 'screenaudio') opts.codecOptions = { opusStereo: true, opusFec: true, opusMaxAverageBitrate: 128000 };
     if (source === 'screen') {
-      opts.codecOptions = { videoGoogleStartBitrate: 2500 };
+      // começa já perto do bitrate alvo: com a partida baixa o Chromium só liga as camadas grandes depois de minutos
+      opts.codecOptions = { videoGoogleStartBitrate: Math.round(bitrateFor(this.screenOpts?.res || 1080, this.screenOpts?.fps || 30) * 0.8 / 1000) };
       // placa de vídeo codifica H.264 sem pesar na CPU (que o jogo está usando); sem hardware fica o VP8 com camadas temporais
       if (await this.hwH264()) {
         const c = s.device.rtpCapabilities.codecs.find(x => x.mimeType.toLowerCase() === 'video/h264' && String(x.parameters?.['profile-level-id']).toLowerCase() === '640032');
@@ -291,6 +292,7 @@ export class Voice {
   // se o PC ou a internet de quem transmite limitam a imagem por vários segundos, baixa um degrau (nunca sobe sozinho)
   watchScreen() {
     clearInterval(this._sw); let bad = 0, wait = 0;
+    if (!this.prefs?.autoQuality) return; // o app não rebaixa fps/resolução sozinho: só se a pessoa ligar a opção
     this._sw = setInterval(async () => {
       if (!this.screen) return clearInterval(this._sw);
       const st = await this.screenStats(); const top = st?.[0]; if (!top || !top.w) return;
