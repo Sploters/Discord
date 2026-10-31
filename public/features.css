@@ -583,3 +583,6 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 .menu .it:hover .cbx:not(.on) { border-color: var(--header, #fff); }
 .menu .it .radio.on { background: radial-gradient(circle, var(--brand, #5865f2) 0 4px, transparent 4.5px); }
 .menu .it:hover .radio.on { border-color: var(--brand, #5865f2); background: radial-gradient(circle, var(--brand, #5865f2) 0 4px, transparent 4.5px); }
+/* tela cheia: força composição normal do vídeo (o overlay de hardware mostrava a imagem escura/sem luminância em algumas GPUs) */
+.fsbox video, .tile video { will-change: transform; transform: translateZ(0); }
+.tile video.zoomed { will-change: transform; }
