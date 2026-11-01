@@ -162,3 +162,9 @@ export const EMOJIS = {
   'Corações': '❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟'.split(' '),
   'Objetos': '🎉 🎊 🎈 🎁 🏆 🥇 ⚽ 🏀 🎮 🎲 🎯 🎵 🎶 🎤 🎧 📷 💻 📱 💡 🔥 ⭐ 🌟 ✨ ⚡ 💥 💯 ✅ ❌ ❓ ❗ ⚠️ 🚀 🍕 🍔 🍟 🍺 ☕ 🍰 🍎 🐶 🐱 🦊 🐸 🐵 🌈 ☀️ 🌙'.split(' '),
 };
+
+// append/prepend/replaceChildren nativos escrevem "false"/"null" na tela quando recebem `cond && elemento`; aqui esses valores são ignorados
+for (const fn of ['append', 'prepend', 'replaceChildren']) for (const P of [Element.prototype, DocumentFragment.prototype]) {
+  const orig = P[fn]; if (!orig) continue;
+  P[fn] = function (...a) { return orig.apply(this, a.filter(x => x != null && x !== false)); };
+}
