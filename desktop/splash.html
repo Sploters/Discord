@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>LocalCord</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1e1f22; color: #dbdee1; font-family: "Segoe UI", sans-serif; -webkit-user-select: none; user-select: none; -webkit-app-region: drag; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; border: 1px solid #2b2d31; box-sizing: border-box; }
+  img { width: 88px; height: 88px; border-radius: 22px; animation: pulse 1.8s ease-in-out infinite; }
+  h1 { margin: 4px 0 0; font-size: 20px; font-weight: 700; color: #fff; }
+  p { margin: 0; font-size: 13px; color: #b5bac1; }
+  .bar { width: 160px; height: 4px; border-radius: 2px; background: #2b2d31; overflow: hidden; margin-top: 6px; }
+  .bar i { display: block; width: 40%; height: 100%; border-radius: 2px; background: #5865f2; animation: slide 1.3s ease-in-out infinite; }
+  @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(260%); } }
+  @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+</style></head>
+<body><img src="build/icon.png" alt=""><h1>LocalCord</h1><p>Iniciando…</p><div class="bar"><i></i></div></body></html>

@@ -20,6 +20,7 @@
       "main.js",
       "preload.js",
       "connect.html",
+      "splash.html",
       "build/icon.png",
       "build/tray.png"
     ],

@@ -73,6 +73,7 @@ function createWindow(forceShow) {
     const k = String(i.key).toLowerCase();
     if (k === 'alt' || k === 'f12' || k === 'f11' || (i.control && i.shift && ['i', 'j', 'c'].includes(k))) e.preventDefault();
   });
+  win.on('show', closeSplash);
   win.once('ready-to-show', () => { if (!(process.argv.includes('--hidden') || cfg.startMinimized) || forceShow) win.show(); });
   win.on('close', (e) => {
     cfg.bounds = win.isMaximized() ? cfg.bounds : win.getBounds(); saveCfg();
@@ -83,6 +84,17 @@ function createWindow(forceShow) {
   win.webContents.on('did-fail-load', (_e, code, desc, url, isMain) => { if (isMain && code !== -3 && !url.startsWith('file:')) showConnect(`Não foi possível carregar ${cfg.server} (${desc}).`); });
   win.on('page-title-updated', (e, t) => { win.setTitle(t); });
 }
+// janelinha de abertura: mostra que o programa abriu enquanto a janela principal carrega
+let splash = null;
+function showSplash() {
+  if (process.argv.includes('--hidden') || cfg.startMinimized) return;
+  splash = new BrowserWindow({ width: 300, height: 320, frame: false, resizable: false, movable: true, maximizable: false, minimizable: false, fullscreenable: false, center: true, alwaysOnTop: true, skipTaskbar: true, show: false, backgroundColor: '#1e1f22', icon: icon(), webPreferences: { devTools: false, sandbox: true } });
+  splash.once('ready-to-show', () => splash?.show());
+  splash.loadFile(path.join(__dirname, 'splash.html')).catch(() => { });
+  splash.on('closed', () => { splash = null; });
+  setTimeout(closeSplash, 20000); // garantia: nunca fica preso na tela
+}
+function closeSplash() { if (splash && !splash.isDestroyed()) splash.destroy(); splash = null; }
 function showWin() { if (!win) return; win.show(); win.focus(); }
 
 // ---------- bandeja / badge / atalhos ----------
@@ -221,7 +233,7 @@ app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => { if (quitting) app.quit(); });
 
 app.whenReady().then(() => {
-  setupSession(); createWindow(); buildTray(); registerHotkeys();
+  showSplash(); setupSession(); createWindow(); buildTray(); registerHotkeys();
   if (cfg.server) trustedHosts.add(serverHost());
   loadServer();
   setTimeout(checkUpdate, 5000); setInterval(checkUpdate, 3600e3);
