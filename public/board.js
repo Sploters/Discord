@@ -83,6 +83,6 @@ export function boardTools(id, extra) {
     h('input.bw', { type: 'range', min: 2, max: 20, step: 1, value: tool.w, title: 'Espessura', oninput: (e) => { tool.w = +e.target.value; } }),
     h('button.ibtn', { title: 'Desfazer meu último traço', onclick: () => undo(id) }, icon('rotate', 16)),
     h('button.ibtn', { title: 'Limpar tudo', onclick: () => clearBoard(id) }, icon('trash', 16)),
-    extra);
+    ...[].concat(extra || []));
   draw(); return bar;
 }

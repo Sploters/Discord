@@ -606,7 +606,9 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 .btools .bcol.on { border-color: #fff; box-shadow: 0 0 0 2px var(--brand, #5865f2); }
 .btools .bw { width: 70px; height: 16px; accent-color: var(--brand, #5865f2); }
 .btools .ibtn { color: #fff; }
-.tile.codetile { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; min-width: 320px; aspect-ratio: auto; height: 100%; min-height: 240px; text-align: left; }
+.tile.codetile { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; min-width: 0; aspect-ratio: 16/9; min-height: 0; text-align: left; }
+#stage .spot .tile.codetile { aspect-ratio: auto; }
+.codeta { min-height: 0; }
 .codebar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #2b2d31; color: #dbdee1; font-size: 13px; }
 .codebar .sp { flex: 1; } .codebar select { background: #1e1f22; color: #dbdee1; border: 0; border-radius: 4px; padding: 3px 6px; }
 .codebar .ibtn { color: #b5bac1; } .codebar .ibtn:hover { color: #fff; }

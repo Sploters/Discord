@@ -570,7 +570,7 @@ export class Voice {
   async toggleScreen(opts) {
     if (this.screen) return this.stopLocal('screen');
     opts = { res: 1080, fps: 30, audio: true, hint: 'motion', ...opts };
-    const video = { frameRate: { ideal: +opts.fps, max: +opts.fps } };
+    const video = { frameRate: { ideal: +opts.fps, max: +opts.fps }, cursor: opts.cursor === false ? 'never' : 'always' };
     if (opts.res !== 'source') { video.height = { ideal: +opts.res, max: +opts.res }; video.width = { ideal: Math.round(+opts.res * 16 / 9) }; }
     try {
       if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('indisponível (use HTTPS ou o app desktop)');

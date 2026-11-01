@@ -1544,7 +1544,7 @@ function noiseMenu(e) {
 async function startShare() {
   if (voice.screen) return liveShareModal();
   if (!voice.active) return toast('Entre em uma sala de voz primeiro.', true);
-  const o = { res: 1080, fps: 30, hint: 'motion', audio: true, ...S.prefs.screen };
+  const o = { res: 1080, fps: 30, hint: 'motion', audio: true, cursor: true, ...S.prefs.screen };
   let src = null, list = [], tab = 'screen', timer, loaded = false;
   const tabs = h('div.seg'), grid = h('div.sources');
   const drawSources = () => {
@@ -1556,12 +1556,13 @@ async function startShare() {
   };
   const refresh = async () => { try { const fresh = await desktop.getSources(); loaded = true; const ids = new Set(fresh.map(s => s.id)); list = [...fresh, ...list.filter(s => !ids.has(s.id) && s.type === 'window').map(s => ({ ...s, gone: true }))]; /* jogo em tela cheia some da lista ao dar alt+tab: mantém o que já foi visto */ if (!src) src = list.find(s => s.type === tab) || list[0] || null; drawSources(); } catch { } };
   const body = h('div', desktop && [h('label.f', 'O que compartilhar'), tabs, grid, h('div.qinfo', 'Jogo em tela cheia? Ele aparece em "Janelas" mesmo que suma ao dar alt+tab: selecione, clique em Transmitir e volte para o jogo. Se não funcionar, use a aba "Telas" (tela inteira).')], qualityPanel(o),
+    h('label.f', 'Cursor do mouse', seg({ 1: 'Mostrar o cursor', 0: 'Ocultar o cursor' }, o.cursor === false ? 0 : 1, v => (o.cursor = !!+v))),
     h('label.f', 'Áudio', seg({ 1: 'Áudio do sistema (tudo que toca no PC, menos o LocalCord)', 0: 'Sem áudio' }, o.audio ? 1 : 0, v => (o.audio = !!v))),
     !desktop && h('div.qinfo', 'Ao clicar em Transmitir, o navegador abrirá o seletor de tela/janela/aba. Para escolher dentro do app, use o aplicativo desktop.'));
   if (desktop) { drawSources(); refresh(); timer = setInterval(() => { if (!document.body.contains(body)) return clearInterval(timer); refresh(); }, 3000); }
   modal('Transmitir tela', 'Escolha o que mostrar, a resolução e os quadros por segundo.', body, [{ label: 'Cancelar', cls: 'link', fn: () => clearInterval(timer) }, { label: 'Transmitir', cls: 'green', fn: async () => {
     if (desktop) { if (!src) { toast('Selecione uma tela ou janela', true); return false; } await desktop.selectSource(src.id); }
-    clearInterval(timer); S.prefs.screen = { res: o.res, fps: o.fps, hint: o.hint, audio: o.audio, bitrate: o.bitrate || 0 }; savePrefs();
+    clearInterval(timer); S.prefs.screen = { res: o.res, fps: o.fps, hint: o.hint, audio: o.audio, cursor: o.cursor !== false, bitrate: o.bitrate || 0 }; savePrefs();
     // o Windows só entrega o áudio do sistema inteiro (também de outros apps), mas o LocalCord é excluído dele; vale para tela e janela
     voiceAct(() => voice.toggleScreen({ ...o }));
   } }], { width: desktop ? '780px' : '560px' });

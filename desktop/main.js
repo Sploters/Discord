@@ -146,7 +146,7 @@ ipcMain.handle('get-sources', async () => {
   const list = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: true });
   const now = Date.now(), out = [];
   for (const s of list) {
-    if (s.name === 'LocalCord') continue;
+    if (s.name === 'LocalCord' || /NVIDIA GeForce Overlay/i.test(s.name)) continue; // o overlay da NVIDIA só aparece preto
     const type = s.id.startsWith('screen') ? 'screen' : 'window';
     const item = { id: s.id, name: s.name, type, thumbnail: s.thumbnail.toDataURL(), appIcon: s.appIcon && !s.appIcon.isEmpty() ? s.appIcon.toDataURL() : null };
     out.push(item);
