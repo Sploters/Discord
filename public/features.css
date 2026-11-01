@@ -246,7 +246,7 @@ body:has(#lightbox) #layer { z-index: 130; } /* menus de clique direito por cima
 /* ---------- menu do usuário: fixar, convite, mute ---------- */
 .dmpin { margin-left: auto; color: var(--text-muted); display: flex; }
 .ch .pill + .dmpin { margin-left: 6px; }
-.tile .label .lmute { color: var(--red, #ed4245); display: flex; }
+
 .gplist { display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow-y: auto; }
 .gpick { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 0; border-radius: 8px; background: var(--bg-sec); color: var(--text); font: inherit; cursor: pointer; text-align: left; }
 .gpick:hover:not(:disabled) { background: var(--bg-mod-hover); } .gpick:disabled { opacity: .55; cursor: default; }
@@ -615,3 +615,12 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 .codeta { flex: 1; width: 100%; resize: none; border: 0; outline: none; background: #1e1f22; color: #e6e6e6; padding: 12px; font: 13px/1.5 Consolas, 'Cascadia Mono', monospace; tab-size: 2; white-space: pre; overflow: auto; }
 #stage .strip .tile canvas.board.live, #stage .strip .annot-bar, #stage .strip .wbbar { display: none; }
 #stage .strip .tile.codetile { min-width: 0; min-height: 0; } #stage .strip .tile.codetile .codeta { display: none; }
+.mico { display: inline-flex; } .mico.lmute, .vuser .ico .lmute { color: var(--red, #ed4245); }
+.tile .label .mico.lmute { color: var(--red, #ed4245); }
+/* barra da lousa: mais cores, seletor RGB, borracha e zoom */
+.btools { flex-wrap: wrap; justify-content: center; max-width: calc(100% - 16px); row-gap: 4px; }
+.btools .bcol { flex: none; } .btools .bpick { width: 26px; height: 22px; padding: 0; border: 2px solid transparent; border-radius: 6px; background: none; cursor: pointer; flex: none; }
+.btools .bpick.on { border-color: #fff; box-shadow: 0 0 0 2px var(--brand, #5865f2); }
+.btools .btool.on { background: var(--brand, #5865f2); color: #fff; border-radius: 6px; }
+.btools .bsep { width: 1px; height: 18px; background: rgba(255,255,255,.2); margin: 0 2px; flex: none; }
+.btools .bzoom { min-width: 44px; height: 24px; border: 0; border-radius: 6px; background: rgba(255,255,255,.1); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; } .btools .bzoom:hover { background: rgba(255,255,255,.2); }

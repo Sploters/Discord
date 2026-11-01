@@ -998,8 +998,9 @@ wss.on('connection', (ws) => {
           const c = currentVoice(uid); if (!c) return;
           const board = String(d.board || ''); if (!BOARD_OK(board)) return;
           const a = actOf(c); if (board === 'wb' && !a.wb) return;
-          const list = a.boards[board] || (a.boards[board] = []); let out = null;
+          const list = a.boards[board] || (a.boards[board] = []); let out = null, ids;
           if (d.op === 'clear') { a.boards[board] = []; }
+          else if (d.op === 'erase' && Array.isArray(d.ids)) { const gone = new Set(d.ids.slice(0, 200).map(x => String(x).slice(0, 40))); ids = [...gone]; a.boards[board] = list.filter(s => !gone.has(s.id)); }
           else if (d.op === 'undo') { const i = list.findLastIndex(s => s.uid === uid); if (i >= 0) list.splice(i, 1); }
           else if (d.op === 'stroke' && d.stroke && Array.isArray(d.stroke.pts)) {
             const id = String(d.stroke.id || '').slice(0, 40), pts = d.stroke.pts.slice(0, 200).filter(p => Array.isArray(p) && isFinite(p[0]) && isFinite(p[1])).map(p => [Math.round(p[0] * 1e4) / 1e4, Math.round(p[1] * 1e4) / 1e4]);
@@ -1008,7 +1009,7 @@ wss.on('connection', (ws) => {
             if (s.pts.length < 4000) s.pts.push(...pts);
             out = { id, color: s.color, w: s.w, pts };
           } else return;
-          roomSend(c, 'ROOM_DRAW', { channel_id: c, board, op: d.op, stroke: out, user_id: uid }, uid);
+          roomSend(c, 'ROOM_DRAW', { channel_id: c, board, op: d.op, stroke: out, ids, user_id: uid }, uid);
           break;
         }
         case 'ROOM_CODE': {

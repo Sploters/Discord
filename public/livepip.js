@@ -1,5 +1,5 @@
 import { h, icon } from './util.js';
-import { S } from './state.js';
+import { S, toast } from './state.js';
 
 // ---------- prévia (quadro) de uma transmissão ----------
 const thumbs = new Map(); // uid -> { url, at }
@@ -100,7 +100,7 @@ export function updatePip(ctx) {
       h('div.lp-video', body),
       h('div.lp-top', h('div.lp-title', { role: 'button', title: 'Voltar para a sala', onclick: ctx.openRoom }, icon('chevl', 18), h('span', ctx.roomName()))),
       h('div.lp-bottom', h('span.lp-name', mineUp ? S.me.display_name : ctx.nameOf(theirs)),
-        h('span.lp-btns', h('button.ibtn', { title: 'Voltar para a transmissão em tela cheia (clique duplo)', onclick: () => { ctx.openRoom(); ctx.fullscreen?.(mineUp ? null : theirs); } }, icon('expand', 20)), mineUp && h('button.ibtn', { title: 'Configurações da transmissão', onclick: ctx.settings }, icon('gear', 20)),
+        h('span.lp-btns', h('button.ibtn', { title: 'Janela flutuante sobre outros apps', onclick: () => popOut(mineUp ? voice.screen : stream) }, icon('external', 20)), h('button.ibtn', { title: 'Voltar para a transmissão em tela cheia (clique duplo)', onclick: () => { ctx.openRoom(); ctx.fullscreen?.(mineUp ? null : theirs); } }, icon('expand', 20)), mineUp && h('button.ibtn', { title: 'Configurações da transmissão', onclick: ctx.settings }, icon('gear', 20)),
           h('button.ibtn', { title: mineUp ? 'Parar transmissão' : 'Fechar transmissão', onclick: () => (mineUp ? ctx.stop() : (voice.closeStream(theirs), updatePip(ctx))) }, icon(mineUp ? 'screen' : 'x', 20)))),
       resizer());
   }
@@ -108,3 +108,19 @@ export function updatePip(ctx) {
   clamp();
 }
 addEventListener('resize', clamp);
+
+// ---------- janela flutuante do sistema (Picture-in-Picture): fica por cima de outros apps ----------
+// usa um <video> próprio e fixo, fora da árvore que se redesenha (remover o <video> da página fecharia a janela)
+export async function popOut(stream) {
+  if (!stream?.getVideoTracks().length) return toast('Transmissão indisponível.', true);
+  if (!document.pictureInPictureEnabled) return toast('Seu sistema não suporta janela flutuante.', true);
+  try { if (document.pictureInPictureElement) await document.exitPictureInPicture(); } catch { }
+  const v = h('video', { autoplay: true, playsInline: true, muted: true, style: { position: 'fixed', left: '0', bottom: '0', width: '2px', height: '2px', opacity: '0', pointerEvents: 'none' } });
+  v.muted = true; v.srcObject = stream; document.body.append(v);
+  const end = () => { stream.removeEventListener('inactive', quit); v.srcObject = null; v.remove(); };
+  const quit = () => { if (document.pictureInPictureElement === v) document.exitPictureInPicture().catch(() => { }); else end(); };
+  v.addEventListener('leavepictureinpicture', end);
+  stream.addEventListener('inactive', quit);
+  try { await v.play(); await v.requestPictureInPicture(); }
+  catch (e) { end(); toast('Não foi possível abrir a janela flutuante: ' + (e.message || e.name), true); }
+}
