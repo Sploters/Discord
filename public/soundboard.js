@@ -122,8 +122,9 @@ export function openSoundboard(anchor, voice, { openSettings } = {}) {
   const volBtn = h('button.sbvolbtn', { title: 'Volume da soundboard', onclick: () => {
     const open = document.querySelector('.sbvolmenu'); if (open) { open.remove(); volBtn.classList.remove('on'); return; }
     const m = volMenu(); (pop?.parentElement || document.body).append(m); volBtn.classList.add('on');
-    const r = volBtn.getBoundingClientRect(), w = m.getBoundingClientRect();
-    m.style.left = Math.max(8, Math.min(r.right - w.width, innerWidth - w.width - 8)) + 'px'; m.style.top = Math.min(r.bottom + 6, innerHeight - w.height - 8) + 'px';
+    const r = volBtn.getBoundingClientRect(), p = pop.getBoundingClientRect(), w = m.getBoundingClientRect();
+    let x = p.right + 8; if (x + w.width > innerWidth - 8) x = p.left - w.width - 8; // à direita do painel; sem espaço, à esquerda
+    m.style.left = Math.max(8, x) + 'px'; m.style.top = Math.max(8, Math.min(r.top, innerHeight - w.height - 8)) + 'px';
   } }, icon('voice', 20));
   // seções: favoritos, frequentes, meus sons e cada servidor (com sons, ou vazio se eu puder adicionar)
   const sections = () => {
