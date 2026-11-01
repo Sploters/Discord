@@ -43,6 +43,7 @@ export function onIncoming(msg, voice) {
 }
 export function trigger(sound, voice, { preview = false } = {}) {
   if (!sound) return;
+  if (!preview && voice?.deafened) return toast('Soundboard indisponível enquanto você está ensurdecido.', true);
   if (!preview && sound.id) { const u = (S.prefs.sbUse ||= {}); u[sound.id] = (u[sound.id] || 0) + 1; savePrefs(); } // alimenta "Usados com frequência"
   if (!preview && voice?.active) voice.send('SOUNDBOARD', { url: sound.url, volume: vol(sound), name: sound.name, emoji: sound.emoji });
   else { if (!preview && !voice?.active) toast('Entre em uma sala de voz para tocar para os outros. Tocando prévia.'); playLocal(sound.url, vol(sound)); }
@@ -107,12 +108,23 @@ const guildIcon = (g) => g.icon ? h('img.sbgi', { src: g.icon, alt: '' }) : h('s
 export function openSoundboard(anchor, voice, { openSettings } = {}) {
   const closed = () => (S.prefs.sbClosed ||= {}); // seções recolhidas
   let q = '', cur = null, lock = 0;
-  const body = h('div.sbpick'), rail = h('div.sbrail'), list = h('div.sblist'), volBox = h('div.sbvolbox.hidden');
+  const body = h('div.sbpick'), rail = h('div.sbrail'), list = h('div.sblist');
   const search = h('input', { placeholder: 'Encontre o som perfeito', oninput: () => { q = search.value.trim().toLowerCase(); draw(); } });
-  const volBtn = h('button.sbvolbtn', { title: 'Volume da soundboard', onclick: () => { volBox.classList.toggle('hidden'); volBtn.classList.toggle('on', !volBox.classList.contains('hidden')); } }, icon('voice', 20));
-  volBox.append(h('label.f', 'Volume dos sons que você ouve', slider(0, 100, S.prefs.sbVolume ?? 70, 5, v => { S.prefs.sbVolume = v; savePrefs(); }, v => v + '%')),
-    h('div.sbvolrow', h('span', 'Silenciar soundboard'), toggle(!!S.prefs.sbMuted, v => { S.prefs.sbMuted = v; savePrefs(); })),
-    openSettings && h('button.btn.link', { onclick: () => { closeFloating(); openSettings('soundboard'); } }, 'Gerenciar sons…'));
+  let pop = null;
+  // popup de volume (como o do Discord): menu flutuante ao lado do botão, por cima do painel
+  const volMenu = () => {
+    const m = h('div.menu.sbvolmenu', { onclick: (e) => e.stopPropagation() },
+      h('div.mnode', h('div.sbvl-t', 'Volume da soundboard'), slider(0, 100, S.prefs.sbVolume ?? 70, 1, v => { S.prefs.sbVolume = v; savePrefs(); }, v => v + '%')),
+      h('div.mnode.sbvolrow', h('span', 'Silenciar soundboard'), toggle(!!S.prefs.sbMuted, v => { S.prefs.sbMuted = v; savePrefs(); })),
+      openSettings && h('div.mnode', h('button.btn.link', { onclick: () => { closeFloating(); openSettings('soundboard'); } }, 'Gerenciar sons…')));
+    return m;
+  };
+  const volBtn = h('button.sbvolbtn', { title: 'Volume da soundboard', onclick: () => {
+    const open = document.querySelector('.sbvolmenu'); if (open) { open.remove(); volBtn.classList.remove('on'); return; }
+    const m = volMenu(); (pop?.parentElement || document.body).append(m); volBtn.classList.add('on');
+    const r = volBtn.getBoundingClientRect(), w = m.getBoundingClientRect();
+    m.style.left = Math.max(8, Math.min(r.right - w.width, innerWidth - w.width - 8)) + 'px'; m.style.top = Math.min(r.bottom + 6, innerHeight - w.height - 8) + 'px';
+  } }, icon('voice', 20));
   // seções: favoritos, frequentes, meus sons e cada servidor (com sons, ou vazio se eu puder adicionar)
   const sections = () => {
     const own = { key: 'me', own: true, title: 'Meus sons', sounds: mySounds() };
@@ -164,12 +176,12 @@ export function openSoundboard(anchor, voice, { openSettings } = {}) {
     rail.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.k === k));
   };
   list.onscroll = spy;
-  body.append(h('div.sbtop', h('div.sbsearch', icon('search', 16), search), volBtn), volBox, rail, list,
+  body.append(h('div.sbtop', h('div.sbsearch', icon('search', 16), search), volBtn), rail, list,
     !voice?.active && h('div.sbhint', 'Você não está em uma sala de voz: os sons tocam só para você.'));
   const onChange = () => document.body.contains(body) ? draw() : document.removeEventListener('sb-changed', onChange);
   document.addEventListener('sb-changed', onChange);
   draw();
-  const el = popout(anchor, body, 'up'); el.classList.add('sb-pop');
+  const el = pop = popout(anchor, body, 'up'); el.classList.add('sb-pop');
   const r = anchor.getBoundingClientRect(); el.style.top = Math.max(8, r.top - el.getBoundingClientRect().height - 12) + 'px'; el.style.left = Math.max(8, Math.min(r.left - 120, innerWidth - el.getBoundingClientRect().width - 8)) + 'px';
   spy(); setTimeout(() => search.focus(), 0);
 }

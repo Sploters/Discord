@@ -149,3 +149,8 @@ html, body, button, input, textarea, select { font-family: var(--font, "gg sans"
 .popout.mefly { width: 230px; padding: 6px; border-radius: 8px; }
 
 .mepop .meav { cursor: pointer; } .mepop .meav:hover .avatar { filter: brightness(.85); }
+.menu.sbvolmenu { z-index: 97; width: 240px; padding: 8px; }
+.sbvolmenu .mnode { padding: 8px; } .sbvolmenu .mnode + .mnode { border-top: 0; }
+.sbvolmenu .sbvl-t { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+.sbvolmenu .sbvolrow { margin-top: 0; }
+.sbvolmenu .btn.link { padding: 0; min-height: 0; height: auto; }
