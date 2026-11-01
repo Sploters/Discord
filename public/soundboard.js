@@ -21,6 +21,7 @@ const sink = (el) => { if (S.prefs.outputId && el.setSinkId) el.setSinkId(S.pref
 export function playLocal(url, volumePct = 100) {
   try {
     const a = new Audio(url); a.volume = Math.min(1, volumePct / 100 * (S.prefs.sbVolume ?? 70) / 100); sink(a); a.play().catch(() => { });
+    a.addEventListener('timeupdate', () => { if (a.currentTime >= MAX_SECS) { a.pause(); a.dispatchEvent(new Event('ended')); } }); // nunca toca além do limite, mesmo se o arquivo for maior
     return a;
   } catch { }
 }
@@ -78,7 +79,7 @@ export async function addSound(guildId) {
   const name = h('input', { value: st.name, maxLength: 32, oninput: () => (st.name = name.value) });
   const emo = h('button.btn.grey', { style: { minWidth: '48px', fontSize: '20px' }, onclick: (e) => emojiPicker(e.currentTarget, (x) => { if (x.startsWith('<:')) return; st.emoji = x; emo.textContent = x; }, { noCustom: true }) }, st.emoji);
   const prev = h('button.btn.grey', { onclick: () => playLocal(f.url, st.volume) }, '▶ Ouvir');
-  modal('Novo som', guildId ? 'Será visível para todos do servidor.' : 'Fica na sua conta, em qualquer dispositivo.', h('div',
+  modal('Novo som', (guildId ? 'Será visível para todos do servidor.' : 'Fica na sua conta, em qualquer dispositivo.') + ` Duração máxima: ${MAX_SECS}s.`, h('div',
     h('label.f', 'Nome', name), h('label.f', 'Emoji'), emo, h('label.f', { style: { marginTop: '14px' } }, 'Volume ', h('span', '100%'), slider(10, 200, 100, 5, v => (st.volume = v), v => v + '%')), prev),
   [{ label: 'Cancelar', cls: 'link' }, { label: 'Adicionar', fn: async () => {
     if (!st.name.trim()) { toast('Dê um nome ao som', true); return false; }
