@@ -1,6 +1,6 @@
 {
   "name": "localcord-desktop",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "LocalCord Desktop — cliente do seu servidor LocalCord",
   "main": "main.js",
   "author": "LocalCord",
@@ -38,6 +38,7 @@
       "artifactName": "LocalCord-Setup-${version}.${ext}"
     },
     "portable": {
+      "splashImage": "build/splash.bmp",
       "artifactName": "LocalCord-Portable-${version}.${ext}"
     }
   },

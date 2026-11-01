@@ -88,8 +88,7 @@ function createWindow(forceShow) {
 let splash = null;
 function showSplash() {
   if (process.argv.includes('--hidden') || cfg.startMinimized) return;
-  splash = new BrowserWindow({ width: 300, height: 320, frame: false, resizable: false, movable: true, maximizable: false, minimizable: false, fullscreenable: false, center: true, alwaysOnTop: true, skipTaskbar: true, show: false, backgroundColor: '#1e1f22', icon: icon(), webPreferences: { devTools: false, sandbox: true } });
-  splash.once('ready-to-show', () => splash?.show());
+  splash = new BrowserWindow({ width: 300, height: 320, frame: false, resizable: false, movable: true, maximizable: false, minimizable: false, fullscreenable: false, center: true, alwaysOnTop: true, skipTaskbar: true, show: true, backgroundColor: '#1e1f22', icon: icon(), webPreferences: { devTools: false, sandbox: true } });
   splash.loadFile(path.join(__dirname, 'splash.html')).catch(() => { });
   splash.on('closed', () => { splash = null; });
   setTimeout(closeSplash, 20000); // garantia: nunca fica preso na tela
@@ -233,9 +232,12 @@ app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => { if (quitting) app.quit(); });
 
 app.whenReady().then(() => {
-  showSplash(); setupSession(); createWindow(); buildTray(); registerHotkeys();
-  if (cfg.server) trustedHosts.add(serverHost());
-  loadServer();
-  setTimeout(checkUpdate, 5000); setInterval(checkUpdate, 3600e3);
-  if (process.env.LC_TEST_SERVER && !cfg.server) { cfg.server = process.env.LC_TEST_SERVER; trustedHosts.add(serverHost()); loadServer(); }
+  showSplash(); // primeira coisa: a janelinha aparece na hora, o resto carrega logo depois (sem travar o desenho dela)
+  setTimeout(() => {
+    setupSession(); createWindow(); buildTray(); registerHotkeys();
+    if (cfg.server) trustedHosts.add(serverHost());
+    loadServer();
+    setTimeout(checkUpdate, 5000); setInterval(checkUpdate, 3600e3);
+    if (process.env.LC_TEST_SERVER && !cfg.server) { cfg.server = process.env.LC_TEST_SERVER; trustedHosts.add(serverHost()); loadServer(); }
+  }, 80);
 });
