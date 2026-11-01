@@ -25,7 +25,7 @@ export const SHARE_PRESETS = [
   ['Original • 60 fps', { res: 'source', fps: 60, hint: 'motion' }],
 ];
 export const qualityLabel = (o) => `${o.res === 'source' ? 'Original' : o.res + 'p'} • ${o.fps} fps • ${o.hint === 'detail' ? 'nitidez' : 'movimento'}${o.audio ? ' • com áudio' : ''}`;
-export const estMbps = (o) => (({ 720: 2.2, 1080: 4.5, 1440: 8, source: 9 })[o.res] * (o.fps >= 120 ? 2.4 : o.fps >= 60 ? 1.6 : o.fps <= 15 ? .6 : 1)).toFixed(1);
+export const estMbps = (o) => (+o.bitrate > 0 ? (+o.bitrate).toFixed(1) : (({ 720: 2.2, 1080: 4.5, 1440: 8, source: 9 })[o.res] * (o.fps >= 120 ? 2.4 : o.fps >= 60 ? 1.6 : o.fps <= 15 ? .6 : 1)).toFixed(1));
 
 // painel de qualidade da transmissão (antes e durante)
 export function qualityPanel(o, onChange) {
@@ -34,7 +34,8 @@ export function qualityPanel(o, onChange) {
     h('label.f', 'Resolução', seg(SCREEN_PRESETS.res, o.res, v => { o.res = v; draw(); onChange?.(o); })),
     h('label.f', 'Taxa de quadros (FPS)', seg(SCREEN_PRESETS.fps, o.fps, v => { o.fps = v; draw(); onChange?.(o); })),
     h('label.f', 'Otimizar para', seg({ motion: 'Movimento (jogos/vídeo)', detail: 'Nitidez (texto/apresentação)' }, o.hint, v => { o.hint = v; draw(); onChange?.(o); })),
-    h('div.qinfo', `Taxa de dados estimada: ~${estMbps(o)} Mbps por espectador`));
+    h('label.f', 'Taxa de dados (bitrate)', seg({ 0: 'Automática', 8: '8 Mbps', 16: '16 Mbps', 24: '24 Mbps', 32: '32 Mbps', 50: '50 Mbps' }, +o.bitrate || 0, v => { o.bitrate = +v; draw(); onChange?.(o); })),
+    h('div.qinfo', `Taxa de dados ${+o.bitrate > 0 ? 'fixa' : 'estimada'}: ~${estMbps(o)} Mbps por espectador${+o.bitrate >= 24 ? ' — exige upload e placa de vídeo fortes; quem assiste precisa de banda parecida' : ''}`));
   draw(); return box;
 }
 

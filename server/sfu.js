@@ -113,7 +113,7 @@ export async function sfuRequest(cid, uid, op, d) {
   switch (op) {
     case 'transport': {
       if (peer.transports.size >= 2) throw new Error('transportes demais');
-      const t = await r.router.createWebRtcTransport({ webRtcServer, enableUdp: true, enableTcp: true, preferUdp: true, initialAvailableOutgoingBitrate: 4_000_000, appData: { dir: d.dir === 'send' ? 'send' : 'recv' } });
+      const t = await r.router.createWebRtcTransport({ webRtcServer, enableUdp: true, enableTcp: true, preferUdp: true, initialAvailableOutgoingBitrate: 8_000_000, appData: { dir: d.dir === 'send' ? 'send' : 'recv' } });
       peer.transports.set(t.id, t);
       return { id: t.id, iceParameters: t.iceParameters, iceCandidates: t.iceCandidates, dtlsParameters: t.dtlsParameters };
     }
@@ -141,6 +141,8 @@ export async function sfuRequest(cid, uid, op, d) {
       c.on('producerclose', drop); c.on('transportclose', () => peer.consumers.delete(c.id));
       return { id: c.id, producer_id: pid, kind: c.kind, rtpParameters: c.rtpParameters };
     }
+    case 'pause': { const c = peer.consumers.get(String(d.consumer_id)); if (c) d.paused ? await c.pause() : await c.resume(); return {}; }
+    case 'layers': { const c = peer.consumers.get(String(d.consumer_id)); if (c?.kind === 'video') await c.setPreferredLayers({ spatialLayer: Math.max(0, Math.min(2, d.spatial | 0)), temporalLayer: 2 }).catch(() => { }); return {}; }
     case 'resume': { await peer.consumers.get(String(d.consumer_id))?.resume(); return {}; }
     default: throw new Error('operação desconhecida');
   }

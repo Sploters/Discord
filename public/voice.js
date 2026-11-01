@@ -25,7 +25,8 @@ const opusHi = (sdp) => {
   const pt = sdp.match(/a=rtpmap:(\d+) opus\/48000/i)?.[1]; if (!pt) return sdp;
   return sdp.replace(new RegExp(`a=fmtp:${pt} (.*)`), (_, f) => `a=fmtp:${pt} ${f.replace(/;?(maxaveragebitrate|stereo|sprop-stereo)=\d+/g, '')};stereo=1;sprop-stereo=1;maxaveragebitrate=${OPUS_MAX * 1000}`);
 };
-const bitrateFor = (res, fps) => {
+const bitrateFor = (res, fps, mbps) => {
+  if (+mbps > 0) return Math.round(Math.min(+mbps, 64) * 1e6); // taxa escolhida (até 64 Mbps)
   const base = { 720: 2.2, 1080: 4.5, 1440: 8, source: 9 }[res] || 4.5;
   return Math.round(base * (fps >= 120 ? 2.4 : fps >= 60 ? 1.6 : fps <= 15 ? .6 : 1) * 1e6);
 };
@@ -214,7 +215,7 @@ export class Voice {
       { rid: 'r1', scaleResolutionDownBy: 2, maxBitrate: 500_000 },
       { rid: 'r2', scaleResolutionDownBy: 1, maxBitrate: 2_000_000 }];
     if (source === 'screen') {
-      const top = bitrateFor(o.res || 1080, o.fps || 30);
+      const top = bitrateFor(o.res || 1080, o.fps || 30, o.bitrate);
       // fps vem da restrição da trilha (prioridade/fps por camada não são aceitos pelo Chromium no simulcast)
       // 3 camadas: quem tem internet fraca recebe a pequena, o resto a cheia; L1T3 deixa o servidor reduzir só os fps antes da resolução
       const t = temporal ? { scalabilityMode: 'L1T3' } : {};
@@ -233,7 +234,7 @@ export class Voice {
     if (source === 'screenaudio') opts.codecOptions = { opusStereo: true, opusFec: true, opusMaxAverageBitrate: 128000 };
     if (source === 'screen') {
       // começa já perto do bitrate alvo: com a partida baixa o Chromium só liga as camadas grandes depois de minutos
-      opts.codecOptions = { videoGoogleStartBitrate: Math.round(bitrateFor(this.screenOpts?.res || 1080, this.screenOpts?.fps || 30) * 0.8 / 1000) };
+      opts.codecOptions = { videoGoogleStartBitrate: Math.round(bitrateFor(this.screenOpts?.res || 1080, this.screenOpts?.fps || 30, this.screenOpts?.bitrate) * 0.8 / 1000) };
       // placa de vídeo codifica H.264 sem pesar na CPU (que o jogo está usando); sem hardware fica o VP8 com camadas temporais
       if (await this.hwH264()) {
         const c = s.device.rtpCapabilities.codecs.find(x => x.mimeType.toLowerCase() === 'video/h264' && /^64/.test(String(x.parameters?.['profile-level-id']).toLowerCase()));
@@ -331,11 +332,12 @@ export class Voice {
       if (this.sfu !== s) return c.close();
       const p = this.ensurePeer(user_id), stream = new MediaStream([c.track]);
       s.consumers.set(c.id, { c, uid: user_id, source });
-      p.consumers.set(c.id, source);
+      p.consumers.set(c.id, source); p.layer = undefined;
       if (source === 'mic') this.attachAudio(p, stream, 'mic');
       else if (source === 'screenaudio') this.attachAudio(p, stream, 'screen');
       else { p.streams[source] = stream; c.track.onmute = c.track.onunmute = () => this.onUpdate(); }
-      await this.sfuReq('resume', { consumer_id: c.id });
+      const held = (source === 'screen' || source === 'screenaudio') && this.closedStreams.has(user_id); // transmissão fechada: nem baixa o vídeo
+      if (!held) await this.sfuReq('resume', { consumer_id: c.id });
       this.onUpdate();
     } catch (e) { console.warn('consume', e); s.seen.delete(producer_id); }
   }
@@ -440,7 +442,7 @@ export class Voice {
         const prm = s.getParameters(); if (!prm.encodings?.length) prm.encodings = [{}];
         const o = this.screenOpts || {};
         if (kind === 'screen') {
-          prm.encodings[0].maxBitrate = bitrateFor(o.res || 1080, o.fps || 30); prm.encodings[0].maxFramerate = +o.fps || 30;
+          prm.encodings[0].maxBitrate = bitrateFor(o.res || 1080, o.fps || 30, o.bitrate); prm.encodings[0].maxFramerate = +o.fps || 30;
           prm.degradationPreference = o.hint === 'detail' ? 'maintain-resolution' : 'maintain-framerate';
         } else prm.encodings[0].maxBitrate = 2_000_000;
         prm.encodings[0].networkPriority = 'high';
@@ -484,8 +486,18 @@ export class Voice {
     document.body.append(a); p[key] = a; this.applyVolume(p.uid); a.play?.().catch(() => { });
     if (kind === 'mic') this.watch(p.uid, stream);
   }
-  closeStream(uid) { this.closedStreams.add(uid); this.applyVolume(uid); }
-  openStream(uid) { this.closedStreams.delete(uid); this.applyVolume(uid); }
+  closeStream(uid) { this.closedStreams.add(uid); this.applyVolume(uid); this.flow(uid, true); }
+  openStream(uid) { this.closedStreams.delete(uid); this.applyVolume(uid); this.flow(uid, false); }
+  // pausa/retoma no servidor o que vem da transmissão de alguém: quem não está assistindo não gasta a banda (nem o servidor)
+  flow(uid, paused) {
+    const p = this.peers.get(uid); if (!p || !this.sfu?.ready) return;
+    for (const [id, src] of p.consumers) if (src === 'screen' || src === 'screenaudio') this.sfuReq('pause', { consumer_id: id, paused }).catch(() => { });
+  }
+  // camada da transmissão pedida ao servidor: 0 = 1/4 da resolução (miniaturas), 2 = completa
+  setStreamLayer(uid, spatial) {
+    const p = this.peers.get(uid); if (!p || !this.sfu?.ready || p.layer === spatial) return; p.layer = spatial;
+    for (const [id, src] of p.consumers) if (src === 'screen') this.sfuReq('layers', { consumer_id: id, spatial }).catch(() => { });
+  }
   applyVolume(uid) {
     const p = this.peers.get(uid); if (!p) return;
     const master = (this.prefs.volume ?? 100) / 100;

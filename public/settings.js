@@ -467,6 +467,8 @@ function keysPage() {
   return h('div', h('h2', 'Atalhos'),
     card(row('Silenciar / ativar microfone', desktop ? 'Funciona também com o app em segundo plano.' : 'Com a aba em foco.', cap('keyMute', '', 'hotkeyMute')),
       row('Ensurdecer / ativar áudio', null, cap('keyDeafen', '', 'hotkeyDeafen')),
+      row('Salvar clipe da transmissão', 'Salva os últimos segundos da transmissão em destaque no chat da sala (clipes precisam estar ativados).', cap('keyClip', '', 'hotkeyClip')),
+      row('Duração do clipe do atalho', null, seg({ 15: '15s', 30: '30s', 60: '60s' }, S.prefs.clipSecs || 30, (v) => { S.prefs.clipSecs = +v; save(); })),
       row('Push-to-talk', 'Segurar para falar (modo "Push-to-talk" em Voz e vídeo).', captureKey(h('button.btn.grey', { style: { minWidth: '190px' } }), S.prefs.pttKey, (c) => { S.prefs.pttKey = c; save(); }, { combo: false }))),
     section('Fixos'), card(...rows.map(([k, d]) => row(d, null, h('kbd', k)))),
     hint('Atalhos para tocar sons do soundboard: clique direito no som → "Definir atalho".'));

@@ -5,6 +5,7 @@ import { createBuffer, trackSig } from './clipbuf.js';
 const bufs = new Map(); // chave da transmissão -> buffer
 export const clipping = (key) => bufs.has(key);
 export const clipLengths = [5, 15, 30, 60];
+export const clipKeys = () => [...bufs.keys()];
 
 export function startBuffer(key, stream, audio) {
   const cur = bufs.get(key);

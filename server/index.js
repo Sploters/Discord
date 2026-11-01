@@ -30,6 +30,12 @@ const COLORS = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55d'
 // ---------- helpers ----------
 const hashPw = (pw, salt) => crypto.scryptSync(pw, salt, 64).toString('hex');
 const conns = new Map(); // userId -> Set<ws>
+// atividades compartilhadas da sala: lousa, editor de código e desenhos sobre as transmissões
+const acts = new Map(); // channelId -> { wb: bool, code: {text, lang}|null, boards: { [board]: [{id, uid, color, w, pts}] } }
+const actOf = (c) => { let a = acts.get(c); if (!a) acts.set(c, a = { wb: false, code: null, boards: {} }); return a; };
+const roomSend = (c, type, d, except) => { for (const [id, st] of voice.get(c) || []) if (id !== except) send(st.ws, type, d); };
+const actState = (c) => { const a = actOf(c); return { channel_id: c, wb: a.wb, code: a.code, boards: a.boards }; };
+const BOARD_OK = (b) => b === 'wb' || /^s:[w-]{1,40}$/.test(b);
 const voice = new Map(); // channelId -> Map<userId, {ws, mute, deaf, video, screen}>
 
 const NAME_FONTS = ['default', 'serif', 'mono', 'rounded', 'script', 'display', 'comic', 'type'];
@@ -889,7 +895,7 @@ function dropWatching(uid, cid) { // tira uid das transmissões que assistia e e
 }
 function leaveVoice(uid, cid) {
   const m = voice.get(cid); if (!m || !m.has(uid)) return;
-  m.delete(uid); dropWatching(uid, cid); if (!m.size) { voice.delete(cid); roomStart.delete(cid); }
+  m.delete(uid); dropWatching(uid, cid); if (!m.size) { voice.delete(cid); roomStart.delete(cid); acts.delete(cid); }
   sfuLeave(cid, uid);
   const ch = get('SELECT * FROM channels WHERE id=?', cid);
   if (ch) dispatch(channelAudience(ch), 'VOICE_STATE', { channel_id: null, prev_channel_id: cid, user_id: uid, guild_id: ch.guild_id });
@@ -941,6 +947,7 @@ wss.on('connection', (ws) => {
           if (!sfuEnabled()) send(ws, 'VOICE_JOINED', { channel_id: ch.id, peers });
           dispatch(channelAudience(ch), 'VOICE_STATE', { ...vsObj(ch.id, uid, st), guild_id: ch.guild_id });
           musicOnJoin(ch.id, ws);
+          if (acts.has(ch.id)) send(ws, 'ROOM_STATE', actState(ch.id));
           for (const k of watchers.keys()) if (k.startsWith(ch.id + ':')) pushViewers(ch.id, k.slice(ch.id.length + 1));
           if (!sfuEnabled()) break;
           sfuJoin(ch.id, uid, (t, x) => send(ws, t, { ...x, channel_id: ch.id })).then(sfu => {
@@ -978,11 +985,45 @@ wss.on('connection', (ws) => {
           pushViewers(c, target);
           break;
         }
+        case 'ROOM_ACT': { // abre/fecha a lousa ou o editor de código para a sala toda
+          const c = currentVoice(uid); if (!c) return;
+          const a = actOf(c), on = !!d.on;
+          if (d.act === 'wb') { a.wb = on; if (!on) delete a.boards.wb; }
+          else if (d.act === 'code') a.code = on ? (a.code || { text: '', lang: 'javascript' }) : null;
+          else return;
+          roomSend(c, 'ROOM_STATE', actState(c));
+          break;
+        }
+        case 'ROOM_DRAW': { // traços da lousa / anotações sobre uma transmissão
+          const c = currentVoice(uid); if (!c) return;
+          const board = String(d.board || ''); if (!BOARD_OK(board)) return;
+          const a = actOf(c); if (board === 'wb' && !a.wb) return;
+          const list = a.boards[board] || (a.boards[board] = []); let out = null;
+          if (d.op === 'clear') { a.boards[board] = []; }
+          else if (d.op === 'undo') { const i = list.findLastIndex(s => s.uid === uid); if (i >= 0) list.splice(i, 1); }
+          else if (d.op === 'stroke' && d.stroke && Array.isArray(d.stroke.pts)) {
+            const id = String(d.stroke.id || '').slice(0, 40), pts = d.stroke.pts.slice(0, 200).filter(p => Array.isArray(p) && isFinite(p[0]) && isFinite(p[1])).map(p => [Math.round(p[0] * 1e4) / 1e4, Math.round(p[1] * 1e4) / 1e4]);
+            let s = list.find(x => x.id === id && x.uid === uid);
+            if (!s) { s = { id, uid, color: /^#[0-9a-f]{6}$/i.test(d.stroke.color) ? d.stroke.color : '#ffffff', w: Math.max(1, Math.min(40, +d.stroke.w || 4)), pts: [] }; list.push(s); if (list.length > 400) list.shift(); }
+            if (s.pts.length < 4000) s.pts.push(...pts);
+            out = { id, color: s.color, w: s.w, pts };
+          } else return;
+          roomSend(c, 'ROOM_DRAW', { channel_id: c, board, op: d.op, stroke: out, user_id: uid }, uid);
+          break;
+        }
+        case 'ROOM_CODE': {
+          const c = currentVoice(uid); if (!c) return;
+          const a = actOf(c); if (!a.code) return;
+          a.code = { text: String(d.text ?? '').slice(0, 200000), lang: String(d.lang || 'javascript').slice(0, 20) };
+          roomSend(c, 'ROOM_CODE', { channel_id: c, ...a.code, user_id: uid }, uid);
+          break;
+        }
         case 'VOICE_LEAVE': { const c = currentVoice(uid); if (c) leaveVoice(uid, c); break; }
         case 'VOICE_STATE': {
           const c = currentVoice(uid); if (!c) return;
           const st = voice.get(c).get(uid);
           for (const k of ['mute', 'deaf', 'video', 'screen']) if (typeof d[k] === 'boolean') st[k] = d[k];
+          if (!st.screen && acts.get(c)?.boards['s:' + uid]) { delete acts.get(c).boards['s:' + uid]; roomSend(c, 'ROOM_DRAW', { channel_id: c, board: 's:' + uid, op: 'clear', user_id: uid }); }
           if (!st.screen && watchers.has(c + ':' + uid)) { watchers.delete(c + ':' + uid); pushViewers(c, uid); }
           const ch = get('SELECT * FROM channels WHERE id=?', c);
           dispatch(channelAudience(ch), 'VOICE_STATE', { ...vsObj(c, uid, st), guild_id: ch.guild_id });

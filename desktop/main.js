@@ -8,7 +8,7 @@ app.setAppUserModelId('br.local.localcord');
 if (!app.requestSingleInstanceLock()) { app.quit(); return; }
 
 const cfgPath = () => path.join(app.getPath('userData'), 'config.json');
-const defaults = { server: '', autoStart: false, startMinimized: false, closeToTray: true, globalHotkeys: true, hotkeyMute: 'CommandOrControl+Shift+M', hotkeyDeafen: 'CommandOrControl+Shift+D', hardwareAcceleration: true, bounds: { width: 1360, height: 860 } };
+const defaults = { server: '', autoStart: false, startMinimized: false, closeToTray: true, globalHotkeys: true, hotkeyMute: 'CommandOrControl+Shift+M', hotkeyDeafen: 'CommandOrControl+Shift+D', hotkeyClip: 'CommandOrControl+Alt+C', hardwareAcceleration: true, bounds: { width: 1360, height: 860 } };
 let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; } catch { /* primeira execução */ }
 const saveCfg = () => { try { fs.mkdirSync(path.dirname(cfgPath()), { recursive: true }); fs.writeFileSync(cfgPath(), JSON.stringify(cfg, null, 2)); } catch (e) { console.error(e); } };
@@ -105,7 +105,7 @@ function registerHotkeys() {
   if (!cfg.globalHotkeys) return;
   const send = (k) => win?.webContents.send('hotkey', k);
   const reg = (acc, k) => { try { if (acc && !globalShortcut.register(acc, () => send(k))) log('atalho em uso por outro app:', acc); } catch (e) { log('atalho inválido', acc, e.message); } };
-  reg(cfg.hotkeyMute, 'mute'); reg(cfg.hotkeyDeafen, 'deafen');
+  reg(cfg.hotkeyMute, 'mute'); reg(cfg.hotkeyDeafen, 'deafen'); reg(cfg.hotkeyClip, 'clip');
 }
 function setBadge(n) {
   badge = n | 0;
@@ -164,9 +164,9 @@ ipcMain.on('set-badge', (_e, n) => setBadge(n));
 ipcMain.handle('get-settings', () => ({ ...cfg, version: app.getVersion() }));
 ipcMain.handle('set-settings', (_e, patch) => {
   for (const k of ['autoStart', 'startMinimized', 'closeToTray', 'globalHotkeys']) if (k in patch) cfg[k] = !!patch[k];
-  for (const k of ['hotkeyMute', 'hotkeyDeafen']) if (typeof patch[k] === 'string') cfg[k] = patch[k];
+  for (const k of ['hotkeyMute', 'hotkeyDeafen', 'hotkeyClip']) if (typeof patch[k] === 'string') cfg[k] = patch[k];
   if ('hardwareAcceleration' in patch) cfg.hardwareAcceleration = !!patch.hardwareAcceleration;
-  if ('hotkeyMute' in patch || 'hotkeyDeafen' in patch) registerHotkeys();
+  if ('hotkeyMute' in patch || 'hotkeyDeafen' in patch || 'hotkeyClip' in patch) registerHotkeys();
   if ('autoStart' in patch) app.setLoginItemSettings({ openAtLogin: cfg.autoStart, args: ['--hidden'] });
   if ('globalHotkeys' in patch) registerHotkeys();
   saveCfg(); return true;

@@ -10,7 +10,9 @@ import { chName } from './chnames.js';
 import { streamHover, updatePip } from './livepip.js';
 import { zoomControls, pruneZoom } from './zoom.js';
 import { refreshFreeze } from './freeze.js';
-import { startBuffer, stopAllBuffers, pruneBuffers, clipping, saveClip, clipLengths } from './clips.js';
+import { initBoard, boardState, onDraw, boardCanvas, boardTools, clearBoard } from './board.js';
+import { initCode, codeSet, codeReset, codeTile, keepEditorFocus } from './code.js';
+import { startBuffer, stopAllBuffers, pruneBuffers, clipping, saveClip, clipLengths, clipKeys } from './clips.js';
 import { seg, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
 import { openSettings, openFullProfile } from './settings.js';
 import { saveCustomTheme } from './themeeditor.js';
@@ -94,6 +96,7 @@ function onEvent(t, d) {
       for (const v of d.dm_voice || []) S.voice.set(v.user_id, v);
       for (const dm of d.dms) { S.dms.set(dm.id, dm); dm.recipients.forEach(u => S.users.set(u.id, u)); }
       for (const r of d.relationships) { S.rels.set(r.user.id, r); S.users.set(r.user.id, r.user); }
+      if (!voice) { initBoard((t, d) => voice?.active && voice.send(t, d)); initCode((t, d) => voice?.active && voice.send(t, d)); }
       if (!voice) voice = new Voice({ send: gwSend, ice: S.ice, myId: S.me.id, prefs: S.prefs, onUpdate: (speakOnly) => renderVoiceUI(speakOnly) });
       voice.onAutoAdjust = (msg) => toast(msg);
       voice.ice = S.ice;
@@ -171,6 +174,9 @@ function onEvent(t, d) {
     }
     case 'STREAM_VIEWERS': if (d.viewers.length) S.viewers.set(d.streamer_id, d.viewers); else S.viewers.delete(d.streamer_id); renderVoiceUI(); break;
     case 'SOUNDBOARD': sbIncoming(d, voice); break;
+    case 'ROOM_STATE': if (d.channel_id === voice?.channelId) { if (d.code && !(S.room?.cid === d.channel_id && S.room.code)) codeSet(d.code); if (!d.code) codeReset(); S.room = { cid: d.channel_id, wb: d.wb, code: !!d.code }; boardState(d.boards); if (S.annot && !hasScreenOf(S.annot)) S.annot = null; renderVoiceUI(); } break;
+    case 'ROOM_DRAW': if (d.channel_id === voice?.channelId) onDraw(d); break;
+    case 'ROOM_CODE': if (d.channel_id === voice?.channelId) codeSet(d); break;
     case 'MUSIC_STATE': if (d.channel_id === voice.channelId) musicOnState(d); break;
     case 'MUSIC_RES': musicOnRes(d); break;
     case 'SOUNDS_UPDATE': { const g = guild(d.guild_id); if (g) { g.sounds = d.sounds; document.dispatchEvent(new Event('sb-changed')); } break; }
@@ -1462,8 +1468,8 @@ function renderVoiceUI(speakOnly) {
       if (S.prefs.clipsOn && inRoom) startBuffer(key, scr, mine ? null : p?.screenAudioEl?.raw);
       const upd = () => (info.textContent = vid.videoWidth ? `${vid.videoWidth}×${vid.videoHeight}` : '');
       if (vid.tagName === 'VIDEO') { vid.onresize = vid.onloadedmetadata = upd; upd(); }
-            ctls.set(key, h('div.tctl', mine && h('button.ibtn', { title: S.selfPreview ? 'Pausar prévia' : 'Ver prévia da minha transmissão', onclick: (e) => { e.stopPropagation(); S.selfPreview = !S.selfPreview; renderVoiceUI(); } }, icon('eye', 18)), !mine && h('button.ibtn', { title: 'Fechar transmissão (parar de assistir)', onclick: (e) => { e.stopPropagation(); voice.closeStream(uid); if (S.focus === key) S.focus = null; renderVoiceUI(); } }, icon('x', 18)), h('button.ibtn' + (clipping(key) ? '.rec' : ''), { title: 'Clipes', onclick: (e) => { e.stopPropagation(); clipMenu(e, key, nm(uid)); } }, icon('clip', 18)), h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18))));
-            tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { onmouseenter: () => setCtl(key), 'data-key': key, 'data-sid': uid, 'data-uid': uid, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid, vid.tagName === 'VIDEO' && zoomControls(key, vid, scr),
+            ctls.set(key, h('div.tctl', mine && h('button.ibtn', { title: S.selfPreview ? 'Pausar prévia' : 'Ver prévia da minha transmissão', onclick: (e) => { e.stopPropagation(); S.selfPreview = !S.selfPreview; renderVoiceUI(); } }, icon('eye', 18)), !mine && h('button.ibtn', { title: 'Fechar transmissão (parar de assistir)', onclick: (e) => { e.stopPropagation(); voice.closeStream(uid); if (S.focus === key) S.focus = null; renderVoiceUI(); } }, icon('x', 18)), h('button.ibtn' + (clipping(key) ? '.rec' : ''), { title: 'Clipes', onclick: (e) => { e.stopPropagation(); clipMenu(e, key, nm(uid)); } }, icon('clip', 18)), h('button.ibtn' + (S.annot === key ? '.rec' : ''), { title: S.annot === key ? 'Parar de desenhar' : 'Desenhar sobre a transmissão (todos veem)', onclick: (e) => { e.stopPropagation(); S.annot = S.annot === key ? null : key; renderVoiceUI(); } }, icon('edit', 18)), h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18))));
+            tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { onmouseenter: () => setCtl(key), 'data-key': key, 'data-sid': uid, 'data-uid': uid, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid, vid.tagName === 'VIDEO' && boardCanvas('s:' + uid, { interactive: S.annot === key, video: vid }), S.annot === key && vid.tagName === 'VIDEO' && h('div.annot-bar', boardTools('s:' + uid, h('button.ibtn', { title: 'Terminar', onclick: () => { S.annot = null; renderVoiceUI(); } }, icon('check', 16)))), vid.tagName === 'VIDEO' && zoomControls(key, vid, scr),
         h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info)));
     }
     const ckey = 'c:' + uid;
@@ -1473,6 +1479,9 @@ function renderVoiceUI(speakOnly) {
       h('div.label', v.mute && icon('micoff', 14), v.deaf && icon('headoff', 14), isLocalMuted(uid) && h('span.lmute', { title: 'Silenciado por você' }, icon('headoff', 14)), styleName(h('span', nm(uid)), user(uid).name_style)));
     tiles.push(paintTile(t, user(uid)));
   }
+  const room = S.room?.cid === voice.channelId ? S.room : null;
+  if (inRoom && room?.wb) tiles.push(h('div.tile.wbtile', { 'data-key': 'wb' }, boardCanvas('wb', { interactive: true }), h('div.wbbar', boardTools('wb', [h('button.ibtn', { title: 'Destacar / voltar à grade', onclick: () => { S.focus = S.focus === 'wb' ? null : 'wb'; renderVoiceUI(); } }, icon('expand', 16)), h('button.ibtn', { title: 'Fechar a lousa para todos', onclick: () => { clearBoard('wb'); voice.send('ROOM_ACT', { act: 'wb', on: false }); } }, icon('x', 16))]))));
+  if (inRoom && room?.code) tiles.push(codeTile({ onFocus: () => { S.focus = S.focus === 'code' ? null : 'code'; renderVoiceUI(); }, onClose: () => voice.send('ROOM_ACT', { act: 'code', on: false }) }));
   const hasScreen = tiles.some(t => t.classList.contains('screen') || t.classList.contains('cstream'));
   if (S.hideMembers && hasScreen) tiles.splice(0, tiles.length, ...tiles.filter(t => !t.classList.contains('utile'))); // oculta os participantes: só as transmissões
   for (const k of [...vidCache.keys()]) if (!live.has(k)) vidCache.delete(k);
@@ -1482,12 +1491,15 @@ function renderVoiceUI(speakOnly) {
   const hasFocus = tiles.some(t => t.dataset.key === S.focus);
   const screens = tiles.filter(t => t.classList.contains('screen')); // várias transmissões e nenhuma em destaque: grade com todas, do mesmo tamanho
   const focusTile = hasFocus && tiles.length > 1 ? tiles.find(t => t.dataset.key === S.focus) : null; // sozinho no palco não há o que minimizar: fica a grade normal
+  const abtn = (ic, title, on, fn) => h('button.roundbtn' + (on ? '.active' : ''), { title, onclick: fn }, icon(ic, 24));
   const btn = (ic, title, on, fn, cls = '') => h('button.roundbtn' + (on ? '.off' : '') + cls, { title, onclick: fn, oncontextmenu: cls === '.mic' ? noiseMenu : null }, icon(ic, 24));
   const bar = h('div.bar', inRoom ? [
     btn(voice.muted ? 'micoff' : 'mic', voice.muted ? 'Ativar microfone (clique direito: redução de ruído)' : 'Silenciar (clique direito: redução de ruído)', voice.muted, () => voiceToggle('mute'), '.mic'),
     btn(voice.deafened ? 'headoff' : 'headset', 'Ensurdecer', voice.deafened, () => voiceToggle('deaf')),
     btn('video', 'Câmera', !!voice.cam, () => voiceAct(() => voice.toggleCam())),
     btn('screen', voice.screen ? 'Parar transmissão' : 'Transmitir tela', !!voice.screen, startShare),
+    abtn('edit', room?.wb ? 'Fechar a lousa' : 'Lousa compartilhada', !!room?.wb, () => voice.send('ROOM_ACT', { act: 'wb', on: !room?.wb })),
+    abtn('code', room?.code ? 'Fechar o editor de código' : 'Editor de código compartilhado', !!room?.code, () => voice.send('ROOM_ACT', { act: 'code', on: !room?.code })),
     btn('voice', 'Soundboard', false, (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) })),
     !dm && h('button.roundbtn', { title: 'Música (bot) — indisponível', disabled: true, style: { opacity: .4, cursor: 'not-allowed' } }, icon('music', 24)),
     btn('phoneoff', 'Desconectar', false, () => voice.leave(), '.red'),
@@ -1500,13 +1512,24 @@ function renderVoiceUI(speakOnly) {
     setCtl = (key) => { if (eligible().includes(key) && S.ctlKey !== key) { S.ctlKey = key; showCtl(); } };
     bar.append(barCtl); showCtl();
   }
+  for (const t of screens) { const sid = t.dataset.sid; if (sid && sid !== S.me.id) voice.setStreamLayer(sid, focusTile && t !== focusTile ? 0 : screens.length > 2 && !focusTile ? 1 : 2); } // miniaturas e grades cheias pedem a camada menor
   const rest = focusTile ? tiles.filter(t => t !== focusTile) : tiles;
   const empty = !tiles.length; // sala vazia: o botão de entrar fica junto do texto, no meio (como no Discord)
-  stage.replaceChildren(...[
+  keepEditorFocus(() => stage.replaceChildren(...[
     !empty ? (focusTile ? [h('div.spot', focusTile), h('div.strip', rest)] : (() => { const gr = h('div.grid.fit', tiles); if (lastTw) gr.style.setProperty('--tw', lastTw); return gr; })()) : h('div.grid', h('div.empty', { style: { color: '#fff' } }, h('h2', dm ? 'Chamada' : chName(ch)), h('p', dm ? 'Ninguém está na chamada.' : 'Ninguém está nesta sala de voz ainda.'), !inRoom && bar)),
     voice.error && inRoom && h('div.verr', voice.error),
-    !(empty && !inRoom) && bar].flat().filter(Boolean));
+    !(empty && !inRoom) && bar].flat().filter(Boolean)));
   watchStage();
+}
+// atalho de clipe: salva os últimos segundos da transmissão em destaque (ou da primeira que está sendo gravada)
+const hasScreenOf = (key) => !!S.voice.get(key.slice(2))?.screen;
+function clipHotkey() {
+  if (!voice?.active) return;
+  if (!S.prefs.clipsOn) return toast('Ative os clipes (botão de clipe na transmissão) para usar o atalho.', true);
+  const keys = clipKeys(), key = [S.focus, S.ctlKey].find(k => k && keys.includes(k)) || keys[0];
+  if (!key) return toast('Nenhuma transmissão sendo gravada ainda.', true);
+  const uid = key.slice(2), ch = channelById(voice.channelId);
+  saveClip(key, S.prefs.clipSecs || 30, { channelId: voice.channelId, who: ch?.type === 1 ? user(uid).display_name : nameOf(uid, ch?.guild_id) });
 }
 function clipMenu(e, key, who) {
   if (!S.prefs.clipsOn) return menu(e, [{ label: 'Ativar clipes', hint: 'Grava os últimos 60s das transmissões em segundo plano', fn: () => { S.prefs.clipsOn = true; savePrefs(); renderVoiceUI(); toast('Clipes ativados: em alguns segundos já dá para salvar'); } }]);
@@ -1538,7 +1561,7 @@ async function startShare() {
   if (desktop) { drawSources(); refresh(); timer = setInterval(() => { if (!document.body.contains(body)) return clearInterval(timer); refresh(); }, 3000); }
   modal('Transmitir tela', 'Escolha o que mostrar, a resolução e os quadros por segundo.', body, [{ label: 'Cancelar', cls: 'link', fn: () => clearInterval(timer) }, { label: 'Transmitir', cls: 'green', fn: async () => {
     if (desktop) { if (!src) { toast('Selecione uma tela ou janela', true); return false; } await desktop.selectSource(src.id); }
-    clearInterval(timer); S.prefs.screen = { res: o.res, fps: o.fps, hint: o.hint, audio: o.audio }; savePrefs();
+    clearInterval(timer); S.prefs.screen = { res: o.res, fps: o.fps, hint: o.hint, audio: o.audio, bitrate: o.bitrate || 0 }; savePrefs();
     // o Windows só entrega o áudio do sistema inteiro (também de outros apps), mas o LocalCord é excluído dele; vale para tela e janela
     voiceAct(() => voice.toggleScreen({ ...o }));
   } }], { width: desktop ? '780px' : '560px' });
@@ -1559,7 +1582,7 @@ function liveShareModal() {
   const o = { ...voice.screenOpts };
   const settings = h('div.qinfo'), net = h('div.qinfo'), updInfo = () => { const st = voice.screen?.getVideoTracks()[0]?.getSettings?.() || {}; settings.textContent = `Capturando: ${st.width || '?'}×${st.height || '?'} a ${Math.round(st.frameRate || 0) || '?'} fps — ${qualityLabel(o)}`; voice.screenStats().then(L => { if (!L?.length) return; const t = L[0], why = { cpu: 'limitado pelo processador', bandwidth: 'limitado pela sua internet (upload)', none: 'sem limitação', other: 'limitado' }[t.limit] || t.limit; net.textContent = `Enviando: ${t.w}×${t.h} a ${t.fps} fps, ${(t.kbps / 1000).toFixed(1)} Mbps — ${why}${/hw|h264|video toolbox|nvenc|media/i.test(t.enc) ? ' (placa de vídeo)' : t.enc ? ' (' + t.enc + ')' : ''}`; }); };
   updInfo(); const iv = setInterval(() => { if (!document.body.contains(settings)) return clearInterval(iv); updInfo(); }, 1000);
-  const body = h('div', settings, net, qualityPanel(o, async (n) => { await voice.changeScreenQuality(n); S.prefs.screen = { ...S.prefs.screen, res: n.res, fps: n.fps, hint: n.hint }; savePrefs(); setTimeout(updInfo, 400); }),
+  const body = h('div', settings, net, qualityPanel(o, async (n) => { await voice.changeScreenQuality(n); S.prefs.screen = { ...S.prefs.screen, res: n.res, fps: n.fps, hint: n.hint, bitrate: n.bitrate || 0 }; savePrefs(); setTimeout(updInfo, 400); }),
     h('div', { style: { fontSize: '14px', color: 'var(--text-muted)' } }, `${[...S.voice.values()].filter(v => v.channel_id === voice.channelId).length - 1} pessoa(s) na sala podem assistir.`));
   modal('Transmissão ao vivo', 'Mudanças valem imediatamente.', body, [
     { label: 'Parar transmissão', cls: 'red', fn: () => voice.toggleScreen() },
@@ -1686,11 +1709,12 @@ function setupDesktop() {
     const c = comboFromEvent(e);
     if (c && c === (S.prefs.keyMute || 'Ctrl+Shift+KeyM')) { e.preventDefault(); voiceToggle('mute'); }
     if (c && c === (S.prefs.keyDeafen || 'Ctrl+Shift+KeyD')) { e.preventDefault(); voiceToggle('deaf'); }
+    if (c && c === (S.prefs.keyClip || 'Ctrl+Alt+KeyC')) { e.preventDefault(); clipHotkey(); }
   });
   addEventListener('keyup', (e) => { if (e.code === S.prefs.pttKey) voice?.setPtt(false); });
   addEventListener('blur', () => voice?.setPtt(false));
-  desktop?.setSettings?.({ hotkeyMute: comboToAccel(S.prefs.keyMute || 'Ctrl+Shift+KeyM'), hotkeyDeafen: comboToAccel(S.prefs.keyDeafen || 'Ctrl+Shift+KeyD') });
-  desktop?.onHotkey?.((k) => { if (k === 'mute') voiceToggle('mute'); if (k === 'deafen') voiceToggle('deaf'); });
+  desktop?.setSettings?.({ hotkeyMute: comboToAccel(S.prefs.keyMute || 'Ctrl+Shift+KeyM'), hotkeyDeafen: comboToAccel(S.prefs.keyDeafen || 'Ctrl+Shift+KeyD'), hotkeyClip: comboToAccel(S.prefs.keyClip || 'Ctrl+Alt+KeyC') });
+  desktop?.onHotkey?.((k) => { if (k === 'mute') voiceToggle('mute'); if (k === 'deafen') voiceToggle('deaf'); if (k === 'clip') clipHotkey(); });
 }
 
 // gancho de depuração/testes automatizados

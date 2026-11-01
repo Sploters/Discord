@@ -591,3 +591,25 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 #stage .bar .partbtn { position: absolute; left: 50%; top: -18px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 4px 12px; border: 0; border-radius: 12px; background: var(--bg-float, #111214); color: var(--interactive, #b5bac1); cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,.4); z-index: 3; }
 #stage .bar .partbtn:hover { color: #fff; background: var(--bg-mod-hover, #2b2d31); }
 #stage .bar .partbtn.membershid svg:first-child { transform: rotate(180deg); }
+
+/* lousa, desenhos sobre a transmissão e editor de código */
+.roundbtn.active { background: var(--brand, #5865f2) !important; color: #fff; }
+.tile canvas.board { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+.tile canvas.board.live { pointer-events: auto; cursor: crosshair; touch-action: none; }
+.tile canvas.board.wb { background: #1e1f22; z-index: 0; }
+.tile.wbtile, .tile.codetile { background: #1e1f22; cursor: default; overflow: hidden; }
+.tile.wbtile { aspect-ratio: 16/9; min-width: 280px; }
+.wbbar, .annot-bar { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 5; }
+.annot-bar { top: 10px; bottom: auto; }
+.btools { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; background: rgba(17,18,20,.9); box-shadow: 0 2px 8px rgba(0,0,0,.5); color: #fff; }
+.btools .bcol { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.btools .bcol.on { border-color: #fff; box-shadow: 0 0 0 2px var(--brand, #5865f2); }
+.btools .bw { width: 70px; height: 16px; accent-color: var(--brand, #5865f2); }
+.btools .ibtn { color: #fff; }
+.tile.codetile { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; min-width: 320px; aspect-ratio: auto; height: 100%; min-height: 240px; text-align: left; }
+.codebar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #2b2d31; color: #dbdee1; font-size: 13px; }
+.codebar .sp { flex: 1; } .codebar select { background: #1e1f22; color: #dbdee1; border: 0; border-radius: 4px; padding: 3px 6px; }
+.codebar .ibtn { color: #b5bac1; } .codebar .ibtn:hover { color: #fff; }
+.codeta { flex: 1; width: 100%; resize: none; border: 0; outline: none; background: #1e1f22; color: #e6e6e6; padding: 12px; font: 13px/1.5 Consolas, 'Cascadia Mono', monospace; tab-size: 2; white-space: pre; overflow: auto; }
+#stage .strip .tile canvas.board.live, #stage .strip .annot-bar, #stage .strip .wbbar { display: none; }
+#stage .strip .tile.codetile { min-width: 0; min-height: 0; } #stage .strip .tile.codetile .codeta { display: none; }
