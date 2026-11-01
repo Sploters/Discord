@@ -62,6 +62,7 @@
 .sbgi { border-radius: 8px; object-fit: cover; display: inline-flex; align-items: center; justify-content: center; background: var(--bg-tert); color: var(--header); font-weight: 600; flex: none; overflow: hidden; }
 .sbsec-h .sbgi, .sbsec-h .avatar { width: 18px !important; height: 18px !important; font-size: 8px !important; border-radius: 6px; }
 .sbsec-h .avatar { border-radius: 50%; }
+.sblist::after { content: ""; display: block; height: calc(min(500px, 75vh) - 120px); }
 .sblist { grid-row: 3; overflow-y: auto; padding: 0 12px 12px; min-height: 0; }
 .sbsec-h { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 12px 0 8px; background: var(--bg-float); color: var(--text-muted); cursor: pointer; user-select: none; }
 .sbsec-h b { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

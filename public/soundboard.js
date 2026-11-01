@@ -106,7 +106,7 @@ const toggleFav = (id) => { S.prefs.sbFav = favs().includes(id) ? favs().filter(
 const guildIcon = (g) => g.icon ? h('img.sbgi', { src: g.icon, alt: '' }) : h('span.sbgi', initials(g.name));
 export function openSoundboard(anchor, voice, { openSettings } = {}) {
   const closed = () => (S.prefs.sbClosed ||= {}); // seções recolhidas
-  let q = '', cur = null;
+  let q = '', cur = null, lock = 0;
   const body = h('div.sbpick'), rail = h('div.sbrail'), list = h('div.sblist'), volBox = h('div.sbvolbox.hidden');
   const search = h('input', { placeholder: 'Encontre o som perfeito', oninput: () => { q = search.value.trim().toLowerCase(); draw(); } });
   const volBtn = h('button.sbvolbtn', { title: 'Volume da soundboard', onclick: () => { volBox.classList.toggle('hidden'); volBtn.classList.toggle('on', !volBox.classList.contains('hidden')); } }, icon('voice', 20));
@@ -140,7 +140,9 @@ export function openSoundboard(anchor, voice, { openSettings } = {}) {
   const draw = () => {
     const secs = sections(), top = list.scrollTop;
     rail.replaceChildren(...secs.map(sec => h('button' + (sec.key === cur ? '.on' : ''), { title: sec.title, 'data-k': sec.key, onclick: () => {
-      const el = list.querySelector(`[data-sec="${sec.key}"]`); if (el) list.scrollTo({ top: el.offsetTop - list.offsetTop, behavior: 'smooth' });
+      const el = list.querySelector(`[data-sec="${sec.key}"]`); if (!el) return;
+      cur = sec.key; lock = Date.now() + 700; rail.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.k === cur)); // marca já, mesmo que a lista não role (seção curta)
+      list.scrollTo({ top: el.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop, behavior: 'smooth' });
     } }, sec.ic())));
     const shown = secs.map(sec => {
       const items = q ? sec.items.filter(x => x.s.name.toLowerCase().includes(q)) : sec.items;
@@ -156,6 +158,7 @@ export function openSoundboard(anchor, voice, { openSettings } = {}) {
   };
   // categoria marcada no trilho = seção visível no topo da lista
   const spy = () => {
+    if (Date.now() < lock) return;
     let k = null; for (const el of list.querySelectorAll('[data-sec]')) if (el.offsetTop - list.offsetTop <= list.scrollTop + 8) k = el.dataset.sec;
     k ||= list.querySelector('[data-sec]')?.dataset.sec; if (k === cur) return; cur = k;
     rail.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.k === k));
