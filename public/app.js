@@ -1421,6 +1421,17 @@ function fitStage() {
   lastTw = Math.max(120, Math.floor(Math.min(best, 1280))) + 'px';
   grid.style.setProperty('--tw', lastTw);
 }
+const STAGE_LAYOUTS = [
+  { id: 'auto', label: 'Automático', hint: 'Grade; clique numa transmissão para destacá-la' },
+  { id: 'grid', label: 'Grade', hint: 'Todos do mesmo tamanho' },
+  { id: 'spot', label: 'Destaque + faixa', hint: 'Um grande, os outros embaixo' },
+  { id: 'sidebar', label: 'Principal + miniaturas', hint: 'Um grande, os outros na lateral' },
+  { id: 'side', label: 'Lado a lado', hint: 'Duas colunas iguais' },
+  { id: 'cinema', label: 'Cinema', hint: 'Só a transmissão em destaque' },
+];
+function layoutMenu(e, cur) {
+  menu(e, STAGE_LAYOUTS.map(l => ({ label: (cur === l.id ? '✓ ' : '   ') + l.label, hint: l.hint, fn: () => { S.prefs.stageLayout = l.id; savePrefs(); renderVoiceUI(); } })));
+}
 let lastTw = null; // tamanho calculado na última vez: a grade redesenhada já nasce com ele (sem piscar)
 const stageObs = new ResizeObserver(() => fitStage());
 let observedStage = null;
@@ -1493,7 +1504,11 @@ function renderVoiceUI(speakOnly) {
   syncWatching(inRoom ? members.filter(v => v.screen && v.user_id !== S.me.id && !voice.closedStreams.has(v.user_id) && voice.peers.get(v.user_id)?.streams.screen).map(v => v.user_id) : null);
   const hasFocus = tiles.some(t => t.dataset.key === S.focus);
   const screens = tiles.filter(t => t.classList.contains('screen')); // várias transmissões e nenhuma em destaque: grade com todas, do mesmo tamanho
-  const focusTile = hasFocus && tiles.length > 1 ? tiles.find(t => t.dataset.key === S.focus) : null; // sozinho no palco não há o que minimizar: fica a grade normal
+  // layouts nomeados (preferência sincronizada): auto = comportamento clássico (grade, ou destaque ao clicar)
+  const layout = STAGE_LAYOUTS.some(l => l.id === S.prefs.stageLayout) ? S.prefs.stageLayout : 'auto';
+  let focusTile = hasFocus && tiles.length > 1 ? tiles.find(t => t.dataset.key === S.focus) : null; // sozinho no palco não há o que minimizar: fica a grade normal
+  if (layout === 'grid' || layout === 'side') focusTile = null;
+  else if (['spot', 'sidebar', 'cinema'].includes(layout) && tiles.length > 1 && !focusTile) focusTile = screens[0] || tiles[0]; // sem destaque escolhido: a primeira transmissão
   const abtn = (ic, title, on, fn) => h('button.roundbtn' + (on ? '.active' : ''), { title, onclick: fn }, icon(ic, 24));
   const btn = (ic, title, on, fn, cls = '') => h('button.roundbtn' + (on ? '.off' : '') + cls, { title, onclick: fn, oncontextmenu: cls === '.mic' ? noiseMenu : null }, icon(ic, 24));
   const bar = h('div.bar', inRoom ? [
@@ -1507,6 +1522,7 @@ function renderVoiceUI(speakOnly) {
     !dm && h('button.roundbtn', { title: 'Música (bot) — indisponível', disabled: true, style: { opacity: .4, cursor: 'not-allowed' } }, icon('music', 24)),
     btn('phoneoff', 'Desconectar', false, () => voice.leave(), '.red'),
   ] : h('button.btn.green', { style: { minWidth: '220px', minHeight: '46px', fontSize: '16px' }, onclick: () => joinVoice(ch.id) }, dm ? 'Atender / entrar na chamada' : 'Entrar na sala de voz'));
+  if (inRoom && tiles.length > 1) bar.append(h('button.layoutbtn', { title: 'Layout do palco: ' + STAGE_LAYOUTS.find(l => l.id === layout).label, onclick: (e) => layoutMenu(e, layout) }, icon('sidebar', 18)));
   if (hasScreen) bar.append(h('button.partbtn' + (S.hideMembers ? '.membershid' : ''), { title: S.hideMembers ? 'Mostrar participantes' : 'Ocultar participantes', onclick: () => { S.hideMembers = !S.hideMembers; renderVoiceUI(); } }, icon('caret', 16), icon('users', 18)));
   if (inRoom) { // botões da transmissão na linha da barra, à direita: valem para o quadro grande (em destaque ou na grade), não para os minimizados
     const barCtl = h('div.bar-ctl');
@@ -1519,7 +1535,7 @@ function renderVoiceUI(speakOnly) {
   const rest = focusTile ? tiles.filter(t => t !== focusTile) : tiles;
   const empty = !tiles.length; // sala vazia: o botão de entrar fica junto do texto, no meio (como no Discord)
   keepEditorFocus(() => stage.replaceChildren(...[
-    !empty ? (focusTile ? [h('div.spot', focusTile), h('div.strip', rest)] : (() => { const gr = h('div.grid.fit', tiles); if (lastTw) gr.style.setProperty('--tw', lastTw); return gr; })()) : h('div.grid', h('div.empty', { style: { color: '#fff' } }, h('h2', dm ? 'Chamada' : chName(ch)), h('p', dm ? 'Ninguém está na chamada.' : 'Ninguém está nesta sala de voz ainda.'), !inRoom && bar)),
+    !empty ? (focusTile ? (layout === 'cinema' ? [h('div.spot', focusTile)] : layout === 'sidebar' ? [h('div.splitwrap', h('div.spot', focusTile), h('div.strip', rest))] : [h('div.spot', focusTile), h('div.strip', rest)]) : layout === 'side' && tiles.length > 1 ? h('div.grid.sidebyside', tiles) : (() => { const gr = h('div.grid.fit', tiles); if (lastTw) gr.style.setProperty('--tw', lastTw); return gr; })()) : h('div.grid', h('div.empty', { style: { color: '#fff' } }, h('h2', dm ? 'Chamada' : chName(ch)), h('p', dm ? 'Ninguém está na chamada.' : 'Ninguém está nesta sala de voz ainda.'), !inRoom && bar)),
     voice.error && inRoom && h('div.verr', voice.error),
     !(empty && !inRoom) && bar].flat().filter(Boolean)));
   watchStage();
