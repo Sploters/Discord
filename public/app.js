@@ -1421,6 +1421,30 @@ function fitStage() {
   lastTw = Math.max(120, Math.floor(Math.min(best, 1280))) + 'px';
   grid.style.setProperty('--tw', lastTw);
 }
+// painel de qualidade por transmissão: o que está CHEGANDO (resolução, fps, bitrate, perda), áudio e escolha da camada
+function qstatsPanel(uid) {
+  const body = h('div.qs-body', 'medindo…'), pref = voice.layerPref?.[uid] ?? 'auto';
+  const lb = (v, label) => h('button.qs-layer' + (pref === v ? '.on' : ''), { onclick: (e) => { e.stopPropagation(); voice.setLayerPref(uid, v); } }, label);
+  return h('div.qstats', { 'data-uid': uid, onclick: (e) => e.stopPropagation(), ondblclick: (e) => e.stopPropagation() }, body,
+    h('div.qs-layers', lb('auto', 'Auto'), lb(0, 'Baixa'), lb(1, 'Média'), lb(2, 'Alta')));
+}
+let qsTimer = null;
+function pollQstats() {
+  if (qsTimer) return;
+  qsTimer = setInterval(async () => {
+    const el = S.qstats && document.querySelector('.qstats[data-uid]');
+    if (!el) { clearInterval(qsTimer); qsTimer = null; return; }
+    const uid = el.dataset.uid, s = await voice.streamStats(uid), body = el.querySelector('.qs-body');
+    if (!body) return;
+    if (!s) { body.textContent = 'Sem dados de recepção.'; return; }
+    const L = ['Baixa', 'Média', 'Alta'];
+    body.replaceChildren(
+      h('div', h('b', s.w ? `${s.w}×${s.h}` : '—'), ` · ${s.fps ?? '—'} FPS recebidos`),
+      h('div', `${s.kbps != null ? (s.kbps >= 1000 ? (s.kbps / 1000).toFixed(1) + ' Mbps' : s.kbps + ' kbps') : '—'} · perda ${s.loss ?? '—'}%${s.jitter != null ? ' · jitter ' + s.jitter + ' ms' : ''}`),
+      h('div', icon('wifi', 12), ` Conexão ${s.quality}`, s.freezes ? ` · ${s.freezes} travadas` : ''),
+      h('div', `Áudio da transmissão: ${s.audio ? 'ligado' : 'sem áudio'} · Camada: ${s.layerPref === 'auto' ? 'auto (' + (L[s.layer] || '—') + ')' : L[s.layerPref]}`));
+  }, 1000);
+}
 const STAGE_LAYOUTS = [
   { id: 'auto', label: 'Automático', hint: 'Grade; clique numa transmissão para destacá-la' },
   { id: 'grid', label: 'Grade', hint: 'Todos do mesmo tamanho' },
@@ -1482,8 +1506,8 @@ function renderVoiceUI(speakOnly) {
       if (clipsAuto(mine) && inRoom) startBuffer(key, scr, mine ? null : p?.screenAudioEl?.raw);
       const upd = () => (info.textContent = vid.videoWidth ? `${vid.videoWidth}×${vid.videoHeight}` : '');
       if (vid.tagName === 'VIDEO') { vid.onresize = vid.onloadedmetadata = upd; upd(); }
-            ctls.set(key, h('div.tctl', mine && h('button.ibtn', { title: S.selfPreview ? 'Pausar prévia' : 'Ver prévia da minha transmissão', onclick: (e) => { e.stopPropagation(); S.selfPreview = !S.selfPreview; renderVoiceUI(); } }, icon('eye', 18)), !mine && h('button.ibtn', { title: 'Fechar transmissão (parar de assistir)', onclick: (e) => { e.stopPropagation(); voice.closeStream(uid); if (S.focus === key) S.focus = null; renderVoiceUI(); } }, icon('x', 18)), h('button.ibtn' + (clipping(key) ? '.rec' : ''), { title: 'Clipes', onclick: (e) => { e.stopPropagation(); clipMenu(e, key, nm(uid)); } }, icon('clip', 18)), h('button.ibtn' + (S.annot === key ? '.rec' : ''), { title: S.annot === key ? 'Parar de desenhar' : 'Desenhar sobre a transmissão (todos veem)', onclick: (e) => { e.stopPropagation(); S.annot = S.annot === key ? null : key; renderVoiceUI(); } }, icon('edit', 18)), h('button.ibtn', { title: 'Janela flutuante sobre outros apps', onclick: (e) => { e.stopPropagation(); popOut(scr); } }, icon('external', 18)), h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18))));
-            tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { onmouseenter: () => setCtl(key), 'data-key': key, 'data-sid': uid, 'data-uid': uid, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid, mine && voice.captureBlack && h('button.blackwarn', { title: 'Como corrigir', onclick: (e) => { e.stopPropagation(); liveShareModal(); } }, icon('screen', 18), h('span', 'Transmissão preta — jogos em tela cheia exclusiva/anti-cheat bloqueiam a captura. Use "Janela sem bordas".')), vid.tagName === 'VIDEO' && boardCanvas('s:' + uid, { interactive: S.annot === key, video: vid }), S.annot === key && vid.tagName === 'VIDEO' && h('div.annot-bar', boardTools('s:' + uid, h('button.ibtn', { title: 'Terminar', onclick: () => { S.annot = null; renderVoiceUI(); } }, icon('check', 16)))), vid.tagName === 'VIDEO' && zoomControls(key, vid, scr),
+            ctls.set(key, h('div.tctl', mine && h('button.ibtn', { title: S.selfPreview ? 'Pausar prévia' : 'Ver prévia da minha transmissão', onclick: (e) => { e.stopPropagation(); S.selfPreview = !S.selfPreview; renderVoiceUI(); } }, icon('eye', 18)), !mine && h('button.ibtn', { title: 'Fechar transmissão (parar de assistir)', onclick: (e) => { e.stopPropagation(); voice.closeStream(uid); if (S.focus === key) S.focus = null; renderVoiceUI(); } }, icon('x', 18)), h('button.ibtn' + (clipping(key) ? '.rec' : ''), { title: 'Clipes', onclick: (e) => { e.stopPropagation(); clipMenu(e, key, nm(uid)); } }, icon('clip', 18)), h('button.ibtn' + (S.annot === key ? '.rec' : ''), { title: S.annot === key ? 'Parar de desenhar' : 'Desenhar sobre a transmissão (todos veem)', onclick: (e) => { e.stopPropagation(); S.annot = S.annot === key ? null : key; renderVoiceUI(); } }, icon('edit', 18)), !mine && h('button.ibtn' + (S.qstats === key ? '.rec' : ''), { title: 'Qualidade desta transmissão', onclick: (e) => { e.stopPropagation(); S.qstats = S.qstats === key ? null : key; renderVoiceUI(); pollQstats(); } }, icon('sliders', 18)), h('button.ibtn', { title: 'Janela flutuante sobre outros apps', onclick: (e) => { e.stopPropagation(); popOut(scr); } }, icon('external', 18)), h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18))));
+            tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { onmouseenter: () => setCtl(key), 'data-key': key, 'data-sid': uid, 'data-uid': uid, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid, mine && voice.captureBlack && h('button.blackwarn', { title: 'Como corrigir', onclick: (e) => { e.stopPropagation(); liveShareModal(); } }, icon('screen', 18), h('span', 'Transmissão preta — jogos em tela cheia exclusiva/anti-cheat bloqueiam a captura. Use "Janela sem bordas".')), vid.tagName === 'VIDEO' && boardCanvas('s:' + uid, { interactive: S.annot === key, video: vid }), S.annot === key && vid.tagName === 'VIDEO' && h('div.annot-bar', boardTools('s:' + uid, h('button.ibtn', { title: 'Terminar', onclick: () => { S.annot = null; renderVoiceUI(); } }, icon('check', 16)))), vid.tagName === 'VIDEO' && zoomControls(key, vid, scr), S.qstats === key && !mine && qstatsPanel(uid),
         h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info)));
     }
     const ckey = 'c:' + uid;

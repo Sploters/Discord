@@ -532,8 +532,39 @@ export class Voice {
   }
   // camada da transmissão pedida ao servidor: 0 = 1/4 da resolução (miniaturas), 2 = completa
   setStreamLayer(uid, spatial) {
+    const pref = this.layerPref?.[uid]; if (pref === 0 || pref === 1 || pref === 2) spatial = pref; // escolha manual do painel de qualidade vence a automática
     const p = this.peers.get(uid); if (!p || !this.sfu?.ready || p.layer === spatial) return; p.layer = spatial;
     for (const [id, src] of p.consumers) if (src === 'screen') this.sfuReq('layers', { consumer_id: id, spatial }).catch(() => { });
+  }
+  // qualidade escolhida para uma transmissão: 'auto' | 0 | 1 | 2 (camada simulcast)
+  setLayerPref(uid, v) {
+    this.layerPref ||= {};
+    if (v === 'auto') delete this.layerPref[uid]; else this.layerPref[uid] = v;
+    const p = this.peers.get(uid); if (p) p.layer = undefined;
+    this.setStreamLayer(uid, v === 'auto' ? 2 : v); this.onUpdate();
+  }
+  // estatísticas de RECEPÇÃO de uma transmissão (SFU): resolução/fps/bitrate reais do que chega, perda, codec, áudio
+  async streamStats(uid) {
+    const p = this.peers.get(uid); if (!p || !this.sfu) return null;
+    let vc = null, ac = null;
+    for (const [id, src] of p.consumers) { const e = this.sfu.consumers.get(id); if (src === 'screen') vc = e?.c; else if (src === 'screenaudio') ac = e?.c; }
+    if (!vc) return null;
+    this._rs ||= new Map(); const now = performance.now(), out = { layerPref: this.layerPref?.[uid] ?? 'auto', layer: p.layer, audio: !!ac && !ac.closed && !ac.paused };
+    try {
+      for (const r of (await vc.getStats()).values()) {
+        if (r.type !== 'inbound-rtp' || r.kind !== 'video') continue;
+        const prev = this._rs.get(uid); this._rs.set(uid, { t: now, b: r.bytesReceived, f: r.framesDecoded, pl: r.packetsLost, pr: r.packetsReceived });
+        Object.assign(out, { w: r.frameWidth || 0, h: r.frameHeight || 0, fps: Math.round(r.framesPerSecond || 0), jitter: r.jitter != null ? Math.round(r.jitter * 1000) : null, freezes: r.freezeCount || 0, decoder: r.decoderImplementation || '' });
+        if (prev && now > prev.t) {
+          const dt = (now - prev.t) / 1000, dl = r.packetsLost - prev.pl, dr = r.packetsReceived - prev.pr;
+          out.kbps = Math.round((r.bytesReceived - prev.b) * 8 / dt / 1000);
+          out.fps = Math.round((r.framesDecoded - prev.f) / dt);
+          out.loss = dl + dr > 0 ? +(Math.max(0, dl) / (dl + dr) * 100).toFixed(1) : 0;
+        }
+      }
+    } catch { return null; }
+    out.quality = out.loss > 8 || out.freezes > 3 ? 'ruim' : out.loss > 2 ? 'média' : 'boa';
+    return out;
   }
   applyVolume(uid) {
     const p = this.peers.get(uid); if (!p) return;
