@@ -245,7 +245,7 @@ try {
     // servidor
     const prod = Sv.filter(Boolean).map(s => s.producers.find(p => p.source === 'screen')).filter(Boolean), cons = Sv.filter(Boolean).map(s => s.consumers.find(c => c.source === 'screen')).filter(Boolean);
     const sumPk = (list) => list.length > 1 ? list[list.length - 1].stats.reduce((n, x) => n + (x.packetCount || 0), 0) - list[0].stats.reduce((n, x) => n + (x.packetCount || 0), 0) : null;
-    row.server = { prodMbps: r1(median(prod.map(p => p.stats.reduce((n, x) => n + (x.bitrate || 0), 0))) / 1e6), prodPkts: sumPk(prod), prodLost: prod.length ? prod[prod.length - 1].stats.reduce((n, x) => n + (x.packetsLost || 0), 0) : null, consMbps: r1(median(cons.map(c => c.stats.reduce((n, x) => n + (x.bitrate || 0), 0))) / 1e6), consPkts: sumPk(cons), layers: cons[cons.length - 1]?.layers || null, prodScore: prod[prod.length - 1]?.stats.map(x => x.score) };
+    row.server = { prodMbps: r1(median(prod.map(p => p.stats.reduce((n, x) => n + (x.bitrate || 0), 0))) / 1e6), prodPkts: sumPk(prod), prodLost: prod.length ? prod[prod.length - 1].stats.reduce((n, x) => n + (x.packetsLost || 0), 0) : null, consMbps: r1(median(cons.map(c => c.stats.reduce((n, x) => n + (x.bitrate || 0), 0))) / 1e6), consPkts: sumPk(cons), layers: cons[cons.length - 1]?.layers || null, layerSeries: cons.map(c => c.layers ? c.layers.spatialLayer + '/' + c.layers.temporalLayer : '-').join(' '), availOutMbps: Sv.filter(Boolean).map(s => { const t = (s.transports || []).find(x => x.dir === 'recv'); return t?.availOut ? +(t.availOut / 1e6).toFixed(1) : null; }).join(' '), prodScore: prod[prod.length - 1]?.stats.map(x => x.score) };
     // espectador
     const rv = Rv.filter(r => r?.inb); const vids = Rv.filter(r => r?.vid), sameVid = vids.filter(r => r.vid.id === vids[vids.length - 1]?.vid.id);
     const dec = delta(rv, r => r.inb.framesDecoded), dt = delta(rv, r => r.inb.totalDecodeTime);
@@ -255,7 +255,7 @@ try {
     if (!row.valid && (cfg.attempt || 1) < 3) { console.log('  conteúdo inválido, repetindo:', cfg.name, JSON.stringify(row.capture)); await sleep(1500); return runPipe({ ...cfg, attempt: (cfg.attempt || 1) + 1 }); }
     results.pipe.push(row); save();
     const L = rids.map(id => `${id}:${row.layers_out[id].res} enc ${row.layers_out[id].encoded.mean} ${row.layers_out[id].mbps}Mb ${row.layers_out[id].encMs}ms ${row.layers_out[id].limit}`).join(' | ');
-    console.log(` ${cfg.name}\n    fonte ${row.src.mean} | captura ${row.capture?.fps} | entrega ${row.deliver.mean} | ${L}\n    servidor in ${row.server.prodMbps}Mb out ${row.server.consMbps}Mb | recep ${row.recv.received.mean} dec ${row.recv.decoded.mean} (${row.recv.res}) | render ${row.render.presented.mean}/${row.render.rvfc.mean}`);
+    console.log(` ${cfg.name}\n    fonte ${row.src.mean} | captura ${row.capture?.fps} | entrega ${row.deliver.mean} | ${L}\n    servidor in ${row.server.prodMbps}Mb out ${row.server.consMbps}Mb camadas[${row.server.layerSeries}] bwe[${row.server.availOutMbps}] | recep ${row.recv.received.mean} dec ${row.recv.decoded.mean} (${row.recv.res}) | render ${row.render.presented.mean}/${row.render.rvfc.mean}`);
     await sleep(2500);
   };
   if (groups.includes('pipe')) {
@@ -280,7 +280,8 @@ try {
       P('D4 janela source fps120 3L vp8', 'window', 'source', 120, 3, 'vp8'),
       P('A3b tela 1080 fps120 3L h264 (repetição)', 'screen', 1080, 120, 3, 'h264'),
     ];
-    for (const cfg of list) { try { await runPipe(cfg); } catch (e) { console.log('  ERRO', cfg.name, e.message); try { await ev(`window.__lc.voice.stopLocal('screen'); true`); } catch { } await sleep(2000); } }
+    const only = (process.env.PIPE_ONLY || '').split(',').filter(Boolean); // ex.: PIPE_ONLY=B5,B2 roda só essas configurações
+    for (const cfg of list.filter(c => !only.length || only.some(o => c.name.startsWith(o + ' ')))) { try { await runPipe(cfg); } catch (e) { console.log('  ERRO', cfg.name, e.message); try { await ev(`window.__lc.voice.stopLocal('screen'); true`); } catch { } await sleep(2000); } }
   }
 
   // ===== validação da métrica do app (voice.captureFps) contra a contagem independente do track =====

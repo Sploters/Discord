@@ -9,7 +9,7 @@ import https from 'node:https';
 import { execFileSync } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 import { all, get, run, newId, UPLOAD_DIR, DATA_DIR } from './db.js';
-import { startSfu, sfuEnabled, sfuJoin, sfuLeave, sfuRequest, sfuAttachRtp } from './sfu.js';
+import { startSfu, sfuEnabled, sfuJoin, sfuLeave, sfuRequest, sfuAttachRtp, sfuLoad } from './sfu.js';
 import { translate, translateEnabled, engineName } from './translate.js';
 import { initMusic, handle as musicHandle, onVoiceJoin as musicOnJoin, onVoiceLeave as musicOnLeave } from './music.js';
 
@@ -32,9 +32,9 @@ const hashPw = (pw, salt) => crypto.scryptSync(pw, salt, 64).toString('hex');
 const conns = new Map(); // userId -> Set<ws>
 // atividades compartilhadas da sala: lousa, editor de código e desenhos sobre as transmissões
 const acts = new Map(); // channelId -> { wb: bool, code: {text, lang}|null, boards: { [board]: [{id, uid, color, w, pts}] } }
-const actOf = (c) => { let a = acts.get(c); if (!a) acts.set(c, a = { wb: false, code: null, boards: {} }); return a; };
+const actOf = (c) => { let a = acts.get(c); if (!a) acts.set(c, a = { wb: false, code: null, boards: {}, spot: null, spotBy: null }); return a; };
 const roomSend = (c, type, d, except) => { for (const [id, st] of voice.get(c) || []) if (id !== except) send(st.ws, type, d); };
-const actState = (c) => { const a = actOf(c); return { channel_id: c, wb: a.wb, code: a.code, boards: a.boards }; };
+const actState = (c) => { const a = actOf(c); return { channel_id: c, wb: a.wb, code: a.code, boards: a.boards, spot: a.spot, spot_by: a.spotBy }; };
 const BOARD_OK = (b) => b === 'wb' || /^s:[w-]{1,40}$/.test(b);
 const voice = new Map(); // channelId -> Map<userId, {ws, mute, deaf, video, screen}>
 
@@ -841,6 +841,10 @@ app.get('/files/:f/:name?', (req, res) => {
   res.sendFile(f, { root: UPLOAD_DIR, dotfiles: 'allow' });
 });
 
+app.get('/api/sfu/load', auth, (req, res) => { // só donos de servidor: carga do worker do mediasoup
+  if (!get('SELECT 1 AS x FROM guilds WHERE owner_id=?', req.uid)) return bad(res, 'Sem permissão', 403);
+  sfuLoad().then(d => res.json(d), e => bad(res, e.message, 500));
+});
 app.get('/api/server-info', (req, res) => res.json({ name: 'LocalCord', registration: OPEN_REGISTRATION, default_avatars: DEFAULT_AVATARS }));
 app.use(express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
 app.get(/^\/(?!api|files|gateway).*/, (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
@@ -896,6 +900,7 @@ function dropWatching(uid, cid) { // tira uid das transmissões que assistia e e
 function leaveVoice(uid, cid) {
   const m = voice.get(cid); if (!m || !m.has(uid)) return;
   m.delete(uid); dropWatching(uid, cid); if (!m.size) { voice.delete(cid); roomStart.delete(cid); acts.delete(cid); }
+  else { const a = acts.get(cid); if (a?.spot && (a.spot.slice(2) === uid)) { a.spot = a.spotBy = null; roomSend(cid, 'ROOM_STATE', actState(cid)); } } // quem estava em destaque saiu
   sfuLeave(cid, uid);
   const ch = get('SELECT * FROM channels WHERE id=?', cid);
   if (ch) dispatch(channelAudience(ch), 'VOICE_STATE', { channel_id: null, prev_channel_id: cid, user_id: uid, guild_id: ch.guild_id });
@@ -994,6 +999,15 @@ wss.on('connection', (ws) => {
           roomSend(c, 'ROOM_STATE', actState(c));
           break;
         }
+        case 'ROOM_SPOTLIGHT': { // destaca uma transmissão/câmera para a sala toda (quem quiser acompanha); d.key = 's:<uid>' | 'c:<uid>' | null
+          const c = currentVoice(uid); if (!c) return;
+          const a = actOf(c), key = d.key == null ? null : String(d.key);
+          if (key !== null) { const m = /^([sc]):(.+)$/.exec(key), st = m && voice.get(c).get(m[2]); if (!st || (m[1] === 's' ? !st.screen : !st.video)) return; }
+          if (ws.lastSpot && Date.now() - ws.lastSpot < 500) return; ws.lastSpot = Date.now();
+          a.spot = key; a.spotBy = key ? uid : null;
+          roomSend(c, 'ROOM_STATE', actState(c));
+          break;
+        }
         case 'ROOM_DRAW': { // traços da lousa / anotações sobre uma transmissão
           const c = currentVoice(uid); if (!c) return;
           const board = String(d.board || ''); if (!BOARD_OK(board)) return;
@@ -1025,6 +1039,7 @@ wss.on('connection', (ws) => {
           const st = voice.get(c).get(uid);
           for (const k of ['mute', 'deaf', 'video', 'screen']) if (typeof d[k] === 'boolean') st[k] = d[k];
           if (!st.screen && acts.get(c)?.boards['s:' + uid]) { delete acts.get(c).boards['s:' + uid]; roomSend(c, 'ROOM_DRAW', { channel_id: c, board: 's:' + uid, op: 'clear', user_id: uid }); }
+          { const a = acts.get(c); if (a?.spot && (!st.screen && a.spot === 's:' + uid || !st.video && a.spot === 'c:' + uid)) { a.spot = a.spotBy = null; roomSend(c, 'ROOM_STATE', actState(c)); } }
           if (!st.screen && watchers.has(c + ':' + uid)) { watchers.delete(c + ':' + uid); pushViewers(c, uid); }
           const ch = get('SELECT * FROM channels WHERE id=?', c);
           dispatch(channelAudience(ch), 'VOICE_STATE', { ...vsObj(c, uid, st), guild_id: ch.guild_id });

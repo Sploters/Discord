@@ -175,7 +175,10 @@ function onEvent(t, d) {
     }
     case 'STREAM_VIEWERS': if (d.viewers.length) S.viewers.set(d.streamer_id, d.viewers); else S.viewers.delete(d.streamer_id); renderVoiceUI(); break;
     case 'SOUNDBOARD': sbIncoming(d, voice); break;
-    case 'ROOM_STATE': if (d.channel_id === voice?.channelId) { if (d.code && !(S.room?.cid === d.channel_id && S.room.code)) codeSet(d.code); if (!d.code) codeReset(); S.room = { cid: d.channel_id, wb: d.wb, code: !!d.code }; boardState(d.boards); if (S.annot && !hasScreenOf(S.annot)) S.annot = null; renderVoiceUI(); } break;
+    case 'ROOM_STATE': if (d.channel_id === voice?.channelId) { if (d.code && !(S.room?.cid === d.channel_id && S.room.code)) codeSet(d.code); if (!d.code) codeReset(); const prevSpot = S.room?.cid === d.channel_id ? S.room.spot : null; S.room = { cid: d.channel_id, wb: d.wb, code: !!d.code, spot: d.spot || null, spotBy: d.spot_by || null }; boardState(d.boards);
+      if ((d.spot || null) !== prevSpot && S.prefs.followSpot !== false) { // destaque para todos: acompanha, a não ser que tenha desligado
+        if (d.spot) { S.focus = d.spot; if (d.spot_by && d.spot_by !== S.me.id) toast(`${nameOf(d.spot_by, channelById(d.channel_id)?.guild_id)} destacou uma transmissão para a sala`); } else if (S.focus === prevSpot) S.focus = null;
+      } if (S.annot && !hasScreenOf(S.annot)) S.annot = null; renderVoiceUI(); } break;
     case 'ROOM_DRAW': if (d.channel_id === voice?.channelId) onDraw(d); break;
     case 'ROOM_CODE': if (d.channel_id === voice?.channelId) codeSet(d); break;
     case 'MUSIC_STATE': if (d.channel_id === voice.channelId) musicOnState(d); break;
@@ -1454,8 +1457,32 @@ const STAGE_LAYOUTS = [
   { id: 'cinema', label: 'Cinema', hint: 'Só a transmissão em destaque' },
 ];
 function layoutMenu(e, cur) {
-  menu(e, STAGE_LAYOUTS.map(l => ({ label: (cur === l.id ? '✓ ' : '   ') + l.label, hint: l.hint, fn: () => { S.prefs.stageLayout = l.id; savePrefs(); renderVoiceUI(); } })));
+  const tog = (k, label, hint) => ({ label: (S.prefs[k] !== false ? '✓ ' : '   ') + label, hint, fn: () => { S.prefs[k] = S.prefs[k] === false; savePrefs(); renderVoiceUI(); applyVisibility(); } });
+  menu(e, [...STAGE_LAYOUTS.map(l => ({ label: (cur === l.id ? '✓ ' : '   ') + l.label, hint: l.hint, fn: () => { S.prefs.stageLayout = l.id; savePrefs(); renderVoiceUI(); } })), '-',
+    tog('followSpot', 'Acompanhar destaques da sala', 'Quando alguém destaca uma transmissão, ela abre em destaque para você'),
+    tog('autoPause', 'Pausar vídeo fora da tela', 'Economiza banda: o vídeo de quadros escondidos pausa (o áudio continua). Também pausa os clipes desse quadro')]);
 }
+// pausa automática: o vídeo de uma transmissão que não está à vista (quadro oculto, rolado para fora, janela minimizada) pausa no servidor após 4 s
+const tileVis = new Map(), pauseTimers = new Map();
+const visObs = new IntersectionObserver((es) => { for (const en of es) tileVis.set(en.target.dataset.sid, en.isIntersecting); applyVisibility(); }, { threshold: 0.05 });
+function observeTiles() {
+  visObs.disconnect(); tileVis.clear();
+  document.querySelectorAll('#stage .tile.screen[data-sid]').forEach(t => visObs.observe(t));
+  applyVisibility();
+}
+function applyVisibility() {
+  if (!voice?.active) return;
+  const inStage = S.view.cid === voice.channelId, keep = !inStage || S.prefs.autoPause === false || document.pictureInPictureElement || document.fullscreenElement; // janela flutuante/PiP/tela cheia continuam exibindo
+  for (const uid of S.watching) {
+    if (voice.closedStreams.has(uid)) continue;
+    const show = keep || (!document.hidden && tileVis.get(uid) === true);
+    if (show) { clearTimeout(pauseTimers.get(uid)); pauseTimers.delete(uid); if (voice.autoPaused?.has(uid)) voice.flowVideo(uid, false); }
+    else if (!pauseTimers.has(uid) && !voice.autoPaused?.has(uid)) pauseTimers.set(uid, setTimeout(() => { pauseTimers.delete(uid); voice.flowVideo(uid, true); }, 4000));
+  }
+  for (const uid of [...(voice.autoPaused || [])]) if (!S.watching.has(uid)) voice.autoPaused.delete(uid); // parou de assistir: nada a retomar
+}
+document.addEventListener('visibilitychange', applyVisibility);
+document.addEventListener('fullscreenchange', applyVisibility);
 let lastTw = null; // tamanho calculado na última vez: a grade redesenhada já nasce com ele (sem piscar)
 const stageObs = new ResizeObserver(() => fitStage());
 let observedStage = null;
@@ -1506,8 +1533,8 @@ function renderVoiceUI(speakOnly) {
       if (clipsAuto(mine) && inRoom) startBuffer(key, scr, mine ? null : p?.screenAudioEl?.raw);
       const upd = () => (info.textContent = vid.videoWidth ? `${vid.videoWidth}×${vid.videoHeight}` : '');
       if (vid.tagName === 'VIDEO') { vid.onresize = vid.onloadedmetadata = upd; upd(); }
-            ctls.set(key, h('div.tctl', mine && h('button.ibtn', { title: S.selfPreview ? 'Pausar prévia' : 'Ver prévia da minha transmissão', onclick: (e) => { e.stopPropagation(); S.selfPreview = !S.selfPreview; renderVoiceUI(); } }, icon('eye', 18)), !mine && h('button.ibtn', { title: 'Fechar transmissão (parar de assistir)', onclick: (e) => { e.stopPropagation(); voice.closeStream(uid); if (S.focus === key) S.focus = null; renderVoiceUI(); } }, icon('x', 18)), h('button.ibtn' + (clipping(key) ? '.rec' : ''), { title: 'Clipes', onclick: (e) => { e.stopPropagation(); clipMenu(e, key, nm(uid)); } }, icon('clip', 18)), h('button.ibtn' + (S.annot === key ? '.rec' : ''), { title: S.annot === key ? 'Parar de desenhar' : 'Desenhar sobre a transmissão (todos veem)', onclick: (e) => { e.stopPropagation(); S.annot = S.annot === key ? null : key; renderVoiceUI(); } }, icon('edit', 18)), !mine && h('button.ibtn' + (S.qstats === key ? '.rec' : ''), { title: 'Qualidade desta transmissão', onclick: (e) => { e.stopPropagation(); S.qstats = S.qstats === key ? null : key; renderVoiceUI(); pollQstats(); } }, icon('sliders', 18)), h('button.ibtn', { title: 'Janela flutuante sobre outros apps', onclick: (e) => { e.stopPropagation(); popOut(scr); } }, icon('external', 18)), h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18))));
-            tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : ''), { onmouseenter: () => setCtl(key), 'data-key': key, 'data-sid': uid, 'data-uid': uid, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid, mine && voice.captureBlack && h('button.blackwarn', { title: 'Como corrigir', onclick: (e) => { e.stopPropagation(); liveShareModal(); } }, icon('screen', 18), h('span', 'Transmissão preta — jogos em tela cheia exclusiva/anti-cheat bloqueiam a captura. Use "Janela sem bordas".')), vid.tagName === 'VIDEO' && boardCanvas('s:' + uid, { interactive: S.annot === key, video: vid }), S.annot === key && vid.tagName === 'VIDEO' && h('div.annot-bar', boardTools('s:' + uid, h('button.ibtn', { title: 'Terminar', onclick: () => { S.annot = null; renderVoiceUI(); } }, icon('check', 16)))), vid.tagName === 'VIDEO' && zoomControls(key, vid, scr), S.qstats === key && !mine && qstatsPanel(uid),
+            ctls.set(key, h('div.tctl', mine && h('button.ibtn', { title: S.selfPreview ? 'Pausar prévia' : 'Ver prévia da minha transmissão', onclick: (e) => { e.stopPropagation(); S.selfPreview = !S.selfPreview; renderVoiceUI(); } }, icon('eye', 18)), !mine && h('button.ibtn', { title: 'Fechar transmissão (parar de assistir)', onclick: (e) => { e.stopPropagation(); voice.closeStream(uid); if (S.focus === key) S.focus = null; renderVoiceUI(); } }, icon('x', 18)), h('button.ibtn' + (clipping(key) ? '.rec' : ''), { title: 'Clipes', onclick: (e) => { e.stopPropagation(); clipMenu(e, key, nm(uid)); } }, icon('clip', 18)), h('button.ibtn' + (S.annot === key ? '.rec' : ''), { title: S.annot === key ? 'Parar de desenhar' : 'Desenhar sobre a transmissão (todos veem)', onclick: (e) => { e.stopPropagation(); S.annot = S.annot === key ? null : key; renderVoiceUI(); } }, icon('edit', 18)), h('button.ibtn' + (S.room?.spot === key ? '.rec' : ''), { title: S.room?.spot === key ? 'Parar de destacar para todos' : 'Destacar para todos', onclick: (e) => { e.stopPropagation(); voice.send('ROOM_SPOTLIGHT', { key: S.room?.spot === key ? null : key }); } }, icon('star', 18)), !mine && h('button.ibtn' + (S.qstats === key ? '.rec' : ''), { title: 'Qualidade desta transmissão', onclick: (e) => { e.stopPropagation(); S.qstats = S.qstats === key ? null : key; renderVoiceUI(); pollQstats(); } }, icon('sliders', 18)), h('button.ibtn', { title: 'Janela flutuante sobre outros apps', onclick: (e) => { e.stopPropagation(); popOut(scr); } }, icon('external', 18)), h('button.ibtn', { title: 'Tela cheia', onclick: (e) => { e.stopPropagation(); fullscreenStream(scr); } }, icon('expand', 18))));
+            tiles.push(h('div.tile.screen' + (S.focus === key ? '.focus' : '') + (S.room?.cid === voice.channelId && S.room.spot === key ? '.spotlit' : ''), { onmouseenter: () => setCtl(key), 'data-key': key, 'data-sid': uid, 'data-uid': uid, onclick: () => { S.focus = S.focus === key ? null : key; renderVoiceUI(); }, oncontextmenu: (e) => !mine && menu(e, [{ node: volumeControl(voice, uid, 'screen', 'Volume da transmissão de ' + nm(uid)) }]) }, vid, mine && voice.captureBlack && h('button.blackwarn', { title: 'Como corrigir', onclick: (e) => { e.stopPropagation(); liveShareModal(); } }, icon('screen', 18), h('span', 'Transmissão preta — jogos em tela cheia exclusiva/anti-cheat bloqueiam a captura. Use "Janela sem bordas".')), vid.tagName === 'VIDEO' && boardCanvas('s:' + uid, { interactive: S.annot === key, video: vid }), S.annot === key && vid.tagName === 'VIDEO' && h('div.annot-bar', boardTools('s:' + uid, h('button.ibtn', { title: 'Terminar', onclick: () => { S.annot = null; renderVoiceUI(); } }, icon('check', 16)))), vid.tagName === 'VIDEO' && zoomControls(key, vid, scr), S.qstats === key && !mine && qstatsPanel(uid),
         h('div.label', icon('screen', 14), `${nm(uid)} — tela`, info)));
     }
     const ckey = 'c:' + uid;
@@ -1562,7 +1589,7 @@ function renderVoiceUI(speakOnly) {
     !empty ? (focusTile ? (layout === 'cinema' ? [h('div.spot', focusTile)] : layout === 'sidebar' ? [h('div.splitwrap', h('div.spot', focusTile), h('div.strip', rest))] : [h('div.spot', focusTile), h('div.strip', rest)]) : layout === 'side' && tiles.length > 1 ? h('div.grid.sidebyside', tiles) : (() => { const gr = h('div.grid.fit', tiles); if (lastTw) gr.style.setProperty('--tw', lastTw); return gr; })()) : h('div.grid', h('div.empty', { style: { color: '#fff' } }, h('h2', dm ? 'Chamada' : chName(ch)), h('p', dm ? 'Ninguém está na chamada.' : 'Ninguém está nesta sala de voz ainda.'), !inRoom && bar)),
     voice.error && inRoom && h('div.verr', voice.error),
     !(empty && !inRoom) && bar].flat().filter(Boolean)));
-  watchStage();
+  watchStage(); observeTiles();
 }
 // atalho de clipe: salva os últimos segundos da transmissão em destaque (ou da primeira que está sendo gravada)
 const hasScreenOf = (key) => !!S.voice.get(key.slice(2))?.screen;

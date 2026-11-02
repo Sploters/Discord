@@ -13,6 +13,9 @@ const MEDIA_CODECS = [
 ];
 
 let worker = null, webRtcServer = null;
+// Piso da banda estimada de cada espectador. Sem ele o consumidor começa na camada MENOR (480x270) e leva 10-25 s (às vezes nunca) para subir,
+// porque a estimativa de banda no servidor fica em ~0,3-0,5 Mbps enquanto só a camada pequena é enviada. 0 desliga (internet muito lenta).
+const MIN_OUT_KBPS = process.env.SFU_MIN_OUT_KBPS != null ? Math.max(0, +process.env.SFU_MIN_OUT_KBPS || 0) : 6000;
 const rooms = new Map(); // channelId -> { router, peers: Map<userId, Peer> }
 
 // IPs anunciados: RTC_ANNOUNCED_IP (Docker/NAT) ou todos os IPv4 das interfaces (inclui a da VPN)
@@ -114,6 +117,7 @@ export async function sfuRequest(cid, uid, op, d) {
     case 'transport': {
       if (peer.transports.size >= 2) throw new Error('transportes demais');
       const t = await r.router.createWebRtcTransport({ webRtcServer, enableUdp: true, enableTcp: true, preferUdp: true, initialAvailableOutgoingBitrate: 8_000_000, appData: { dir: d.dir === 'send' ? 'send' : 'recv' } });
+      if (t.appData.dir === 'recv' && MIN_OUT_KBPS > 0) await t.setMinOutgoingBitrate(MIN_OUT_KBPS * 1000).catch(() => { });
       peer.transports.set(t.id, t);
       return { id: t.id, iceParameters: t.iceParameters, iceCandidates: t.iceCandidates, dtlsParameters: t.dtlsParameters };
     }
@@ -150,3 +154,25 @@ export async function sfuRequest(cid, uid, op, d) {
 
 // Para o painel de admin / diagnóstico
 export const sfuStats = () => ({ enabled: sfuEnabled(), rooms: rooms.size, peers: [...rooms.values()].reduce((n, r) => n + r.peers.size, 0) });
+
+// Carga do worker único do mediasoup: CPU (% de um núcleo, entre duas amostras), memória e contagem de objetos.
+// Amostrado a cada 15 s; guarda o pico e as últimas amostras. Se o pico se aproximar de 100% de um núcleo, é hora de usar mais workers.
+const loadHist = []; let lastRu = null, peakCpu = 0;
+async function sampleLoad() {
+  if (!worker) return null;
+  const ru = await worker.getResourceUsage(), now = Date.now();
+  let cpu = null;
+  if (lastRu) { const dt = (now - lastRu.t) * 1000, du = (ru.ru_utime + ru.ru_stime) - (lastRu.cpu); cpu = dt > 0 ? +(du / dt * 100).toFixed(1) : null; } // ru_* em microssegundos
+  lastRu = { t: now, cpu: ru.ru_utime + ru.ru_stime };
+  let transports = 0, producers = 0, consumers = 0;
+  for (const r of rooms.values()) for (const p of r.peers.values()) { transports += p.transports.size; producers += p.producers.size; consumers += p.consumers.size; }
+  const smp = { t: now, cpu, rssMB: Math.round(ru.ru_maxrss / 1024), rooms: rooms.size, peers: [...rooms.values()].reduce((n, r) => n + r.peers.size, 0), transports, producers, consumers };
+  if (cpu != null) peakCpu = Math.max(peakCpu, cpu);
+  loadHist.push(smp); if (loadHist.length > 240) loadHist.shift();
+  return smp;
+}
+setInterval(() => { sampleLoad().catch(() => { }); }, 15000).unref();
+export async function sfuLoad() {
+  const cur = await sampleLoad();
+  return { enabled: sfuEnabled(), workers: worker ? 1 : 0, current: cur, peakCpuPercent: peakCpu, history: loadHist.slice(-40) };
+}

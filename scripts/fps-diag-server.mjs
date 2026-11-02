@@ -4,8 +4,9 @@
 import http from 'node:http';
 import { observer } from 'mediasoup';
 
-const producers = new Set(), consumers = new Set();
+const producers = new Set(), consumers = new Set(), transports = new Set();
 observer.on('newworker', w => w.observer.on('newrouter', r => r.observer.on('newtransport', t => {
+  transports.add(t); t.observer.on('close', () => transports.delete(t));
   t.observer.on('newproducer', p => { producers.add(p); p.observer.on('close', () => producers.delete(p)); });
   t.observer.on('newconsumer', c => { consumers.add(c); c.observer.on('close', () => consumers.delete(c)); });
 })));
@@ -23,6 +24,8 @@ const snap = async () => {
     if (c.kind !== 'video') continue;
     out.consumers.push({ id: c.id, producerId: c.producerId, source: src.get(c.producerId), layers: c.currentLayers, paused: c.paused, stats: (await c.getStats().catch(() => [])).map(slim) });
   }
+  out.transports = [];
+for (const t of transports) { const st = (await t.getStats().catch(() => []))[0]; if (st) out.transports.push({ dir: t.appData?.dir, availOut: st.availableOutgoingBitrate, availIn: st.availableIncomingBitrate, recvMbps: st.recvBitrate, sendMbps: st.sendBitrate, rtt: st.rtt }); }
   return out;
 };
 http.createServer(async (req, res) => {

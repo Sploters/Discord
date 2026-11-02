@@ -523,12 +523,18 @@ export class Voice {
     document.body.append(a); p[key] = a; this.applyVolume(p.uid); a.play?.().catch(() => { });
     if (kind === 'mic') this.watch(p.uid, stream);
   }
-  closeStream(uid) { this.closedStreams.add(uid); this.applyVolume(uid); this.flow(uid, true); }
-  openStream(uid) { this.closedStreams.delete(uid); this.applyVolume(uid); this.flow(uid, false); }
+  closeStream(uid) { this.autoPaused?.delete(uid); this.closedStreams.add(uid); this.applyVolume(uid); this.flow(uid, true); }
+  openStream(uid) { this.autoPaused?.delete(uid); this.closedStreams.delete(uid); this.applyVolume(uid); this.flow(uid, false); }
   // pausa/retoma no servidor o que vem da transmissão de alguém: quem não está assistindo não gasta a banda (nem o servidor)
   flow(uid, paused) {
     const p = this.peers.get(uid); if (!p || !this.sfu?.ready) return;
     for (const [id, src] of p.consumers) if (src === 'screen' || src === 'screenaudio') this.sfuReq('pause', { consumer_id: id, paused }).catch(() => { });
+  }
+  // pausa só o VÍDEO da transmissão (o áudio dela continua): usado quando o quadro não está à vista
+  flowVideo(uid, paused) {
+    const p = this.peers.get(uid); if (!p || !this.sfu?.ready) return;
+    if (paused) (this.autoPaused ||= new Set()).add(uid); else this.autoPaused?.delete(uid);
+    for (const [id, src] of p.consumers) if (src === 'screen') this.sfuReq('pause', { consumer_id: id, paused }).catch(() => { });
   }
   // camada da transmissão pedida ao servidor: 0 = 1/4 da resolução (miniaturas), 2 = completa
   setStreamLayer(uid, spatial) {

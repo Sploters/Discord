@@ -175,3 +175,6 @@ html, body, button, input, textarea, select { font-family: var(--font, "gg sans"
 .tile .qstats .qs-layer { flex: 1; padding: 3px 6px; border: 0; border-radius: 4px; background: rgba(255,255,255,.14); color: #fff; font-size: 11px; cursor: pointer; }
 .tile .qstats .qs-layer.on { background: var(--brand, #5865f2); }
 #stage .strip .tile .qstats { display: none; }
+
+/* ======== Fase 2: destaque para todos ======== */
+.tile.spotlit { box-shadow: 0 0 0 3px var(--yellow, #faa61a); border-color: var(--yellow, #faa61a); }
