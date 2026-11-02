@@ -6,3 +6,4 @@ desktop/node_modules
 desktop/dist
 .testshots
 .testdata*
+spikes/*/target

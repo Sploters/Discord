@@ -9,11 +9,12 @@
 //   render     → <video> do espectador: getVideoPlaybackQuality + requestVideoFrameCallback
 // Uso: node scripts/fps-diag.mjs [cap] [pipe] [loop]   (sem argumentos roda tudo)  — saída em .testshots/fps-diag.json
 import puppeteer from 'puppeteer-core';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, execSync, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import { animToFront } from './fps-diag-front.mjs';
 const require = createRequire(import.meta.url);
 const electronPath = require('../desktop/node_modules/electron');
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -36,16 +37,19 @@ D.pick = async (kind) => {
   await lcDesktop.selectSource(it.id); return { id: it.id, name: it.name };
 };
 D.capStart = (track, clone) => {
-  const t = clone ? track.clone() : track, ts = [], c = D.cap = { ts, t, stop: false };
+  const t = clone ? track.clone() : track, ts = [], ids = [], c = D.cap = { ts, ids, t, stop: false };
   const rd = new MediaStreamTrackProcessor({ track: t }).readable.getReader();
-  (async () => { for (;;) { let r; try { r = await rd.read(); } catch { break; } if (r.done || c.stop) break; ts.push(performance.now()); r.value.close(); } })();
+  (async () => { for (;;) { let r; try { r = await rd.read(); } catch { break; } if (r.done || c.stop) break; ts.push(performance.now()); ids.push(await D.frameId(r.value)); r.value.close(); } })();
 };
+D.capIds = () => D.cap.ids;
+D.capErr = () => D.frameErr || null;
+D.frameId = async (f) => { try { const rect = { x: 0, y: 4, width: 256, height: 2 }, buf = new Uint8Array(f.allocationSize({ rect })), lay = await f.copyTo(buf, { rect }), bgra = /BGR|RGB/.test(f.format || ''); let id = 0; for (let b = 0; b < 32; b++) { const x = b * 8 + 4, v = bgra ? buf[lay[0].offset + x * 4 + 1] : buf[lay[0].offset + x]; if (v > 128) id += 2 ** b; } return id; } catch (e) { D.frameErr = String(e) + ' fmt=' + f.format; return -1; } };
 D.capStop = () => { const c = D.cap; c.stop = true; try { c.t.stop(); } catch { } return c.ts; };
 D.captureOnly = async (video, secs) => {
   const s = await navigator.mediaDevices.getDisplayMedia({ video, audio: false });
   const tr = s.getVideoTracks()[0], st = tr.getSettings(); D.capStart(tr, false);
   const t0 = performance.now(); await sleep(secs * 1000); const t1 = performance.now();
-  const ts = D.capStop(); tr.stop(); return { settings: st, ts, t0, t1 };
+  const ts = D.capStop(); const ids = D.cap.ids; tr.stop(); return { settings: st, ts, ids, t0, t1, err: D.frameErr || null };
 };
 const parse = (rep) => {
   const o = { t: performance.now(), out: [], media: null, cp: null }, codecs = {};
@@ -160,19 +164,28 @@ try {
   await ev(SENDER_JS); await ev('__diag.patch()'); await B.evaluate(RECV_JS);
   const aliceId = await E.evaluate(() => window.__lc.S.me.id);
 
-  const animBrowser = await puppeteer.launch({ executablePath: EDGE, headless: false, defaultViewport: null, args: ['--kiosk', '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--user-data-dir=' + process.cwd() + '/.testdata-diag-a', pathToFileURL(path.resolve('scripts/fps-diag-anim.html')).href] }); browsers.push(animBrowser);
+  const animBrowser = await puppeteer.launch({ executablePath: EDGE, headless: false, defaultViewport: null, ignoreDefaultArgs: ['--enable-automation'], args: ['--kiosk', '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--user-data-dir=' + process.cwd() + '/.testdata-diag-a', pathToFileURL(path.resolve('scripts/fps-diag-anim.html')).href] }); browsers.push(animBrowser);
   await sleep(2500);
-  const A = (await animBrowser.pages()).find(p => p.url().includes('fps-diag-anim')); await A.bringToFront();
+  const A = (await animBrowser.pages()).find(p => p.url().includes('fps-diag-anim')); await A.bringToFront(); animToFront(); await sleep(800);
   const animSnap = () => A.evaluate(() => ({ n: window.__anim.n, t: performance.now() }));
+  if (process.env.DEBUG_FRONT) for (let i = 0; i < 6; i++) { const v = await A.evaluate(() => document.visibilityState); console.log('  [front]', v, execFileSync('powershell', ['-NoProfile', '-File', '.testshots/fg.ps1'], { encoding: 'utf8' }).trim()); await sleep(700); }
   const a0 = await animSnap(); await sleep(2000); const a1 = await animSnap();
   const srcFps = r1((a1.n - a0.n) / ((a1.t - a0.t) / 1000)); console.log(`Fonte (rAF da animação, 2 s): ${srcFps} fps; monitor reportado 143 Hz`);
   const env = { srcFps, electron: process.versions && require('../desktop/node_modules/electron/package.json').version, date: new Date().toISOString(), warm: WARM, meas: MEAS };
   const results = { env, cap: [], pipe: [], loop: [] };
   const save = () => fs.writeFileSync(OUT, JSON.stringify(results, null, 1));
 
-  const sigma = (ts, t0, t1) => { // estatística dos quadros capturados dentro da janela [t0,t1]
-    const w = ts.filter(t => t >= t0 && t <= t1), iv = []; for (let i = 1; i < w.length; i++) iv.push(w[i] - w[i - 1]);
-    return { fps: r1(w.length / ((t1 - t0) / 1000)), ivMed: r1(median(iv)), ivP95: r1(pct(iv, .95)), ivMax: r1(Math.max(...iv)) };
+  const sigma = (ts, t0, t1, ids) => { // estatística dos quadros capturados dentro da janela [t0,t1]; com ids, mede o CONTEÚDO (únicos/duplicados/saltos)
+    const sel = ts.map((t, i) => i).filter(i => ts[i] >= t0 && ts[i] <= t1), w = sel.map(i => ts[i]), iv = []; for (let i = 1; i < w.length; i++) iv.push(w[i] - w[i - 1]);
+    const out = { fps: r1(w.length / ((t1 - t0) / 1000)), ivMed: r1(median(iv)), ivP95: r1(pct(iv, .95)), ivMax: r1(Math.max(...iv)) };
+    if (ids) {
+      const v = sel.map(i => ids[i]), dur = (t1 - t0) / 1000; let uniq = 0, dup = 0, bad = 0, prev = null;
+      for (const x of v) { if (x < 1) { bad++; continue; } if (x === prev) dup++; else uniq++; prev = x; }
+      const good = v.filter(x => x > 0); out.uniq = r1(uniq / dur); out.dup = dup; out.badFrames = bad;
+      out.srcSpan = good.length > 1 ? r1((good[good.length - 1] - good[0]) / dur) : 0; // quadros da fonte que passaram pela janela
+      out.valid = good.length > v.length * 0.9 && out.srcSpan > 100; // a animação (144 fps) estava mesmo na tela?
+    }
+    return out;
   };
 
   // ===== grupo 1: SÓ captura (sem WebRTC) =====
@@ -180,21 +193,29 @@ try {
     console.log('\n== CAPTURA APENAS (getDisplayMedia, sem codificação) ==');
     const cases = [];
     for (const target of ['screen', 'window']) for (const fps of [30, 60, 120, 240, 'livre']) cases.push({ target, fps });
-    for (const c of cases) {
+    for (const c of cases) for (let attempt = 1; attempt <= 3; attempt++) {
+      animToFront(); await sleep(700);
       const pick = await ev(`__diag.pick('${c.target}')`); if (pick.error) { console.log('  pulou', c.target, pick.error, pick.all); continue; }
       const video = c.fps === 'livre' ? true : { frameRate: { ideal: c.fps, max: c.fps }, cursor: 'always' };
+      if (process.env.CAP_ONLY && !process.env.CAP_ONLY.split(',').includes(c.target + c.fps)) continue;
+      const vis0 = await A.evaluate(() => document.visibilityState);
       const a = await animSnap();
+      const watch = setInterval(async () => { try { const v = await A.evaluate(() => document.visibilityState); if (v !== 'visible') console.log('   anim ficou', v); } catch { } }, 1000);
       const r = await ev(`__diag.captureOnly(${JSON.stringify(video)}, 10)`);
+      clearInterval(watch);
       const b = await animSnap();
-      const s = sigma(r.ts, r.t0 + 1500, r.t1); // descarta 1,5 s de aquecimento
+      const s = sigma(r.ts, r.t0 + 1500, r.t1, r.ids); // descarta 1,5 s de aquecimento
+      if (r.err) console.log('   erro ao ler o quadro:', r.err);
       const row = { ...c, name: pick.name, declared: r.settings.frameRate, w: r.settings.width, h: r.settings.height, src: r1((b.n - a.n) / ((b.t - a.t) / 1000)), ...s };
+      row.attempt = attempt; if (!row.valid && attempt < 3) { console.log('  conteúdo inválido (animação não estava visível); repetindo', JSON.stringify({ c, src: row.src, srcSpan: row.srcSpan })); await sleep(1500); continue; }
       results.cap.push(row); save(); console.log(' ', JSON.stringify(row));
-      await sleep(800);
+      await sleep(800); break;
     }
   }
 
   // ===== grupo 2: pipeline completo pelo SFU =====
   const runPipe = async (cfg) => {
+    animToFront(); await sleep(700);
     await ev(`__diag.cfg = ${JSON.stringify({ layers: cfg.layers, codec: cfg.codec })}; true`);
     const pick = await ev(`__diag.pick('${cfg.target}')`); if (pick.error) { console.log('  pulou', cfg.name, pick.error, pick.all); return; }
     await ev(`window.__lc.voice.toggleScreen({ res: ${JSON.stringify(cfg.res)}, fps: ${cfg.fps}, audio: false, hint: 'motion' }).then(() => true)`);
@@ -206,11 +227,11 @@ try {
       const [s, r, sv, an] = await Promise.all([ev('__diag.sender()'), B.evaluate(() => window.__rd.snap()), fetchServer(), animSnap()]);
       S.push(s); Rv.push(r); Sv.push(sv); An.push(an); await sleep(1000);
     }
-    const ts = await ev('__diag.capStop()'); await ev(`window.__lc.voice.stopLocal('screen'); true`);
+    const ts = await ev('__diag.capStop()'); const ids = await ev('__diag.capIds()'); await ev(`window.__lc.voice.stopLocal('screen'); true`);
     const sv0 = S.filter(Boolean); const t0 = sv0[0]?.t, t1 = sv0[sv0.length - 1]?.t;
     const row = { ...cfg, source: pick.name, track: { declared: trk.frameRate, w: trk.width, h: trk.height } };
     row.src = stat(rate(An, s => s?.n)); // fonte
-    row.capture = t0 ? sigma(ts, t0, t1) : null;
+    row.capture = t0 ? sigma(ts, t0, t1, ids) : null;
     row.deliver = stat(rate(sv0, s => s.media?.frames)); row.deliverFpsField = r1(median(sv0.map(s => s.media?.fps)));
     row.layers_out = {};
     const rids = [...new Set(sv0.flatMap(s => s.out.map(o => o.rid)))];
@@ -230,6 +251,8 @@ try {
     const dec = delta(rv, r => r.inb.framesDecoded), dt = delta(rv, r => r.inb.totalDecodeTime);
     row.recv = { received: stat(rate(rv, r => r.inb.framesReceived)), decoded: stat(rate(rv, r => r.inb.framesDecoded)), dropped: delta(rv, r => r.inb.framesDropped), fpsField: r1(median(rv.map(r => r.inb.fps))), decMs: dec ? r1(dt / dec * 1000) : null, lost: delta(rv, r => r.inb.packetsLost), freezes: delta(rv, r => r.inb.freezeCount), res: rv.length ? `${rv[rv.length - 1].inb.w}x${rv[rv.length - 1].inb.h}` : null, decoder: rv.length ? rv[rv.length - 1].inb.dec : null, jbMs: (() => { const e = delta(rv, r => r.inb.jbEmitted), d = delta(rv, r => r.inb.jbDelay); return e ? r1(d / e * 1000) : null; })() };
     row.render = { presented: stat(rate(sameVid, r => r.vid.presented)), rvfc: stat(rate(sameVid, r => r.vid.rvfc)), quality: stat(rate(sameVid, r => r.vid.total)), droppedByVideo: delta(sameVid, r => r.vid.dropped), res: vids.length ? `${vids[vids.length - 1].vid.w}x${vids[vids.length - 1].vid.h}` : null };
+    row.valid = !!row.capture?.valid;
+    if (!row.valid && (cfg.attempt || 1) < 3) { console.log('  conteúdo inválido, repetindo:', cfg.name, JSON.stringify(row.capture)); await sleep(1500); return runPipe({ ...cfg, attempt: (cfg.attempt || 1) + 1 }); }
     results.pipe.push(row); save();
     const L = rids.map(id => `${id}:${row.layers_out[id].res} enc ${row.layers_out[id].encoded.mean} ${row.layers_out[id].mbps}Mb ${row.layers_out[id].encMs}ms ${row.layers_out[id].limit}`).join(' | ');
     console.log(` ${cfg.name}\n    fonte ${row.src.mean} | captura ${row.capture?.fps} | entrega ${row.deliver.mean} | ${L}\n    servidor in ${row.server.prodMbps}Mb out ${row.server.consMbps}Mb | recep ${row.recv.received.mean} dec ${row.recv.decoded.mean} (${row.recv.res}) | render ${row.render.presented.mean}/${row.render.rvfc.mean}`);
@@ -258,6 +281,28 @@ try {
       P('A3b tela 1080 fps120 3L h264 (repetição)', 'screen', 1080, 120, 3, 'h264'),
     ];
     for (const cfg of list) { try { await runPipe(cfg); } catch (e) { console.log('  ERRO', cfg.name, e.message); try { await ev(`window.__lc.voice.stopLocal('screen'); true`); } catch { } await sleep(2000); } }
+  }
+
+  // ===== validação da métrica do app (voice.captureFps) contra a contagem independente do track =====
+  if (groups.includes('meter')) {
+    console.log('\n== MÉTRICA DO APP (voice.captureFps) x CONTAGEM INDEPENDENTE ==');
+    await ev(`__diag.pick('screen')`);
+    for (const fps of [30, 60, 120]) {
+      await ev(`__diag.cfg = { layers: 3, codec: 'h264' }; window.__lc.voice.toggleScreen({ res: 1080, fps: ${fps}, audio: false, hint: 'motion' }).then(() => true)`);
+      for (let i = 0; i < 30 && !(await ev('!!window.__lc.voice.sfu?.producers.screen')); i++) await sleep(300);
+      await ev(`__diag.capStart(window.__lc.voice.screen.getVideoTracks()[0], true); true`);
+      await sleep(WARM * 1000);
+      const t0 = await ev('performance.now()'); const vals = [];
+      for (let i = 0; i < 10; i++) { vals.push(await ev('window.__lc.voice.captureFps')); await sleep(1000); }
+      const t1 = await ev('performance.now()'); const ts = await ev('__diag.capStop()');
+      const direct = sigma(ts, t0, t1).fps, shown = median(vals);
+      const text = await ev(`(() => { window.__lc.voice.onUpdate?.(); return window.__lc.voice.captureFps })()`);
+      await ev(`window.__lc.voice.stopLocal('screen'); true`);
+      const stopped = await ev('window.__lc.voice.captureFps');
+      const row = { requested: fps, appMetric: shown, direct, diff: r1(Math.abs(shown - direct)), series: vals, afterStop: stopped };
+      results.pipe.push({ name: 'meter', ...row }); save(); console.log(' ', JSON.stringify(row));
+      await sleep(2000);
+    }
   }
 
   // ===== grupo 3: só o codificador (loopback local, sem SFU), codecs diferentes =====

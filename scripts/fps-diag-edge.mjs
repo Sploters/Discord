@@ -2,13 +2,14 @@
 // com a mesma animação em tela cheia. Compara o capturador do Chromium do Edge com o do Electron.
 import puppeteer from 'puppeteer-core';
 import path from 'node:path';
+import { animToFront } from './fps-diag-front.mjs';
 import { pathToFileURL } from 'node:url';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
-const b = await puppeteer.launch({ executablePath: EDGE, headless: false, defaultViewport: null, args: ['--kiosk', '--auto-select-desktop-capture-source=Entire screen', '--use-fake-ui-for-media-stream', '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows', '--user-data-dir=' + process.cwd() + '/.testdata-diag-edge', pathToFileURL(path.resolve('scripts/fps-diag-anim.html')).href] });
+const b = await puppeteer.launch({ executablePath: EDGE, headless: false, defaultViewport: null, ignoreDefaultArgs: ['--enable-automation'], args: ['--kiosk', '--auto-select-desktop-capture-source=Entire screen', '--use-fake-ui-for-media-stream', '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows', '--user-data-dir=' + process.cwd() + '/.testdata-diag-edge', pathToFileURL(path.resolve('scripts/fps-diag-anim.html')).href] });
 try {
   await sleep(2500);
-  const p = (await b.pages()).find(x => x.url().includes('fps-diag-anim')); await p.bringToFront();
+  const p = (await b.pages()).find(x => x.url().includes('fps-diag-anim')); await p.bringToFront(); animToFront(); await sleep(800);
   console.log('Edge', await b.version());
   const cdp = await p.createCDPSession();
   const ev = async (expression) => { const r = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true }); if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text); return r.result.value; };

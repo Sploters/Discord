@@ -18,6 +18,7 @@ function frame(now) {
     const px = (Math.sin(n / 40 + k) * .5 + .5) * (w - 140), py = (Math.cos(n / 55 + k * 1.7) * .5 + .5) * (h - 140);
     x.fillStyle = `hsl(${(k * 30 + n * 5) % 360} 90% 60%)`; x.fillRect(px, py, 140, 140);
   }
+  for (let b = 0; b < 32; b++) { x.fillStyle = (n >>> b) & 1 ? '#fff' : '#000'; x.fillRect(b * 8, 0, 8, 8); } // número do quadro em binário (lido pelos spikes nativos)
   x.fillStyle = '#000'; x.fillRect(20, 20, 380, 90);
   x.fillStyle = '#fff'; x.font = '56px monospace'; x.fillText('frame ' + n, 36, 80);
   requestAnimationFrame(frame);
