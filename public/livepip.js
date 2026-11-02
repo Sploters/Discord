@@ -122,5 +122,5 @@ export async function popOut(stream) {
   v.addEventListener('leavepictureinpicture', end);
   stream.addEventListener('inactive', quit);
   try { await v.play(); await v.requestPictureInPicture(); }
-  catch (e) { end(); toast('Não foi possível abrir a janela flutuante: ' + (e.message || e.name), true); }
+  catch (e) { const gone = !stream.active; end(); toast(gone ? 'A transmissão não está mais ativa.' : 'Não foi possível abrir a janela flutuante: ' + (e.message || e.name), true); }
 }

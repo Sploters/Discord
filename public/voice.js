@@ -290,6 +290,43 @@ export class Voice {
       return layers.sort((a, b) => b.w - a.w);
     } catch { return null; }
   }
+  // captura PRETA: jogos em tela cheia exclusiva ou protegidos por anti-cheat (ex.: Valorant) entregam quadros totalmente pretos.
+  // A cada 2 s olha uma miniatura (32x18) da própria transmissão; preto absoluto por ~6 s = aviso. Não tenta contornar a proteção.
+  meterBlack() {
+    clearInterval(this._bk); this.captureBlack = false; let n = 0, src = null;
+    const v = document.createElement('video'); v.muted = true; v.playsInline = true;
+    const c = document.createElement('canvas'); c.width = 32; c.height = 18; const x = c.getContext('2d', { willReadFrequently: true });
+    this._bk = setInterval(() => {
+      const st = this.screen; if (!st) { clearInterval(this._bk); v.srcObject = null; return; }
+      if (src !== st) { src = st; n = 0; v.srcObject = new MediaStream(st.getVideoTracks()); v.play?.().catch(() => { }); }
+      if (v.readyState < 2 || !v.videoWidth) return; // ainda sem quadro
+      let mx = 0;
+      try { x.drawImage(v, 0, 0, 32, 18); const d = x.getImageData(0, 0, 32, 18).data; for (let i = 0; i < d.length; i += 4) mx = Math.max(mx, d[i], d[i + 1], d[i + 2]); } catch { return; }
+      n = mx <= 6 ? n + 1 : 0;
+      const black = n >= 3;
+      if (black !== this.captureBlack) { this.captureBlack = black; this.onBlackCapture?.(black); this.onUpdate?.(); }
+    }, 2000);
+  }
+  // fps REAL de captura: quadros que o capturador entregou ao pipeline (media-source.frames do remetente), contados a cada segundo
+  // e suavizados em ~3 s. Independe do fps pedido: mostra o que o capturador (Chromium) de fato produz.
+  meterCapture() {
+    clearInterval(this._cm); this.captureFps = null; const hist = [];
+    const read = async () => {
+      const p = this.sfu?.producers.screen;
+      const rep = p ? await p.getStats() : await this.peers.values().next().value?.senders.screenvideo?.getStats();
+      let frames = null; rep?.forEach(r => { if (r.type === 'media-source' && r.kind === 'video') frames = r.frames; });
+      return frames;
+    };
+    this._cm = setInterval(async () => {
+      if (!this.screen) return clearInterval(this._cm);
+      let f; try { f = await read(); } catch { return; }
+      if (f == null) return;
+      const now = performance.now(); hist.push([now, f]); while (hist.length > 1 && now - hist[0][0] > 3500) hist.shift();
+      if (hist.length < 2) return; // um intervalo de uma troca de fonte (contador recomeça) é descartado
+      const [t0, f0] = hist[0]; if (f < f0) { hist.splice(0, hist.length - 1); return; }
+      this.captureFps = Math.round((f - f0) / ((now - t0) / 1000));
+    }, 1000);
+  }
   // se o PC ou a internet de quem transmite limitam a imagem por vários segundos, baixa um degrau (nunca sobe sozinho)
   watchScreen() {
     clearInterval(this._sw); let bad = 0, wait = 0;
@@ -579,7 +616,7 @@ export class Voice {
     const vt = this.screen.getVideoTracks()[0];
     vt.contentHint = opts.hint; vt.onended = () => this.stopLocal('screen');
     this.screenOpts = opts;
-    this.publish('screen', this.screen); playSound('selfStreamStart'); this.watchScreen();
+    this.publish('screen', this.screen); playSound('selfStreamStart'); this.watchScreen(); this.meterCapture(); this.meterBlack();
   }
   // muda resolução/fps/otimização da transmissão em andamento
   async changeScreenQuality(opts) {
@@ -607,7 +644,7 @@ export class Voice {
     const s = this[kind]; if (!s) return;
     if (this.sfu) { this.sfuStop(kind); if (kind === 'screen') this.sfuStop('screenaudio'); }
     else for (const p of this.peers.values()) for (const t of s.getTracks()) { const snd = p.senders[kind + t.kind]; if (snd) { try { p.pc.removeTrack(snd); } catch { } delete p.senders[kind + t.kind]; } }
-    if (kind === 'screen') clearInterval(this._sw);
+    if (kind === 'screen') { clearInterval(this._sw); clearInterval(this._bk); this.captureFps = null; this.captureBlack = false; }
     s.getTracks().forEach(t => t.stop()); this[kind] = null;
     playSound(kind === 'cam' ? 'camOff' : 'selfStreamStop');
     this.sendState(); this.onUpdate();
