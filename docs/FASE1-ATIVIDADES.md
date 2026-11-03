@@ -107,3 +107,15 @@ Regressão: `fase2-test.mjs` (37 verificações da Fase 2) continua passando; `u
 
 ## Próximo passo (etapa 5)
 Precisa de: `STEAM_API_KEY` (gratuita em steamcommunity.com/dev/apikey). Será configurada **só** como variável de ambiente do container no Umbrel, fora do repositório.
+
+---
+# Deploy e revisão final (2026-11-03) — autorizado pelo usuário
+- **Procedimento**: backup do banco (`~/localcord-backups/data-pre-fase1-*.tgz`) e imagem anterior marcada `localcord:rollback-pre-fase1`; deploy; repetido após o polimento visual.
+- **Produção (Umbrel), sem `STEAM_API_KEY`**: `GET /api/integrations` devolve `configured:false`; feed e login respondem; sem login → 401; plataforma desconhecida (Riot) → 404; o pedido de vínculo gera a URL oficial da Steam; um retorno OpenID forjado enviado de verdade à Steam foi **recusado** ("A Steam não confirmou o login") — prova que o Umbrel alcança a Steam e a validação funciona. A suíte da Fase 2 (`fase2-test.mjs`, 37 verificações) segue passando em produção. Logs sem erros, 0 reinícios, container ocioso ≈ 0,03 % de CPU / 73 MiB.
+- **Revisão visual** (`scripts/visual-shots.mjs`, 13 capturas com dados de teste) e correções:
+  - os botões da transmissão (agora com estrela e qualidade) **sobrepunham** os botões da chamada em palco estreito → ficam numa linha própria acima da barra (`#stage.narrow`);
+  - em tela de celular a aba "Atividade" ficava inacessível → as abas do início passam a rolar;
+  - texto "há agora há pouco" → "começou agora" / "há N min";
+  - sem chave no servidor, a conta vinculada mostra "Aguardando o servidor configurar a chave da Steam" (em vez de ficar eternamente "sincronizando");
+  - espaçamentos dos cartões da página Contas vinculadas.
+- **Ainda pendente**: teste real com a Steam (precisa da `STEAM_API_KEY`) e o fluxo OpenID completo no navegador (só a validação do lado do servidor foi exercitada contra a Steam real).
