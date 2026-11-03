@@ -21,6 +21,7 @@ import { profileCard, STATUS_TXT } from './card.js';
 import { timeoutDialog, removeTimeout, banDialog, timedOutUntil } from './mod.js';
 import { recordVoiceMessage, voiceEl } from './voicemsg.js';
 import { initPlugins, mentionUser, addMention, resolveMentions } from './plugins.js';
+import { initActivity, setActivities, onActivityUpdate, onIntegrationUpdate, activityTab, activityOf, playingLine } from './activity.js';
 import { toggleTranslation, isTranslated, translationBlock, translateOutgoing, draftMenu } from './translate.js';
 applyTheme();
 
@@ -96,6 +97,7 @@ function onEvent(t, d) {
       for (const v of d.dm_voice || []) S.voice.set(v.user_id, v);
       for (const dm of d.dms) { S.dms.set(dm.id, dm); dm.recipients.forEach(u => S.users.set(u.id, u)); }
       for (const r of d.relationships) { S.rels.set(r.user.id, r); S.users.set(r.user.id, r.user); }
+      setActivities(d.activities); // o servidor já filtrou pela privacidade (mesma regra dos eventos)
       if (!voice) { initBoard((t, d) => voice?.active && voice.send(t, d)); initCode((t, d) => voice?.active && voice.send(t, d)); }
       if (!voice) voice = new Voice({ send: gwSend, ice: S.ice, myId: S.me.id, prefs: S.prefs, onUpdate: (speakOnly) => renderVoiceUI(speakOnly) });
       voice.onAutoAdjust = (msg) => toast(msg);
@@ -139,6 +141,8 @@ function onEvent(t, d) {
       if (S.view.cid === d.id) go(d.guild_id); else renderSide();
       break;
     }
+    case 'ACTIVITY_UPDATE': onActivityUpdate(d); break;
+    case 'INTEGRATION_UPDATE': onIntegrationUpdate(d); break;
     case 'DM_CREATE': { S.dms.set(d.id, d); d.recipients.forEach(u => S.users.set(u.id, u)); renderSide(); renderRail(); break; }
     case 'MEMBER_ADD': { const g = guild(d.guild_id); if (g) { g.members.set(d.member.user_id, d.member); S.users.set(d.user.id, d.user); renderMembers(); } break; }
     case 'MEMBER_REMOVE': { const g = guild(d.guild_id); if (g) { g.members.delete(d.user_id); renderMembers(); } break; }
@@ -513,6 +517,14 @@ function voicePanel() {
       h('button', { title: 'Música (bot) — indisponível', disabled: true, style: { opacity: .4, cursor: 'not-allowed' } }, icon('music', 20))));
 }
 const voiceAct = (fn) => Promise.resolve().then(fn).catch(e => toast(e.message, true));
+// botão "Assistir" do feed: entra na sala (se preciso) e abre a transmissão da pessoa em destaque
+function watchFriend(uid, ch) {
+  const g = ch.type === 1 ? null : guild(ch.guild_id);
+  go(g ? g.id : '@me', ch.id);
+  if (voice.channelId === ch.id) { voice.openStream(uid); S.focus = 's:' + uid; renderVoiceUI(); return; }
+  S.autoWatch = { uid, exp: Date.now() + 20000 };
+  joinVoice(ch.id);
+}
 function joinVoice(cid) {
   if (voice.channelId === cid) return;
   voice.join(cid).then(() => { if (voice.error) { toast(voice.error, true); voice.error = null; } });
@@ -1302,7 +1314,7 @@ function renderActiveNow() {
       h('div.an-room', icon('voice', 16), h('span', g ? chName(ch) : 'Ligação'), v.screen && h('span.an-live', 'AO VIVO'), v.mute && icon('micoff', 14)));
   };
   const rows = ({ u }) => h('div.an-row', { onclick: () => openDM(u.id), oncontextmenu: (e) => userMenu(e, u.id) }, avatar(u, 32, { ring: 'var(--bg-sec)' }),
-    h('div.an-who', styleName(h('b', u.display_name), u.name_style), h('small', u.custom_status || STATUS_TXT[u.status])));
+    h('div.an-who', styleName(h('b', u.display_name), u.name_style), h('small', activityOf(u.id) ? playingLine(activityOf(u.id)) : (u.custom_status || STATUS_TXT[u.status]))));
   box.replaceChildren(h('h3', 'Ativo agora'),
     ...(inVoice.length ? [h('div.an-cap', 'Em chamada de voz'), ...inVoice.sort(byName).map(voiceCard)] : []),
     ...(other.length ? [h('div.an-cap', 'Online'), ...other.sort(byName).map(rows)] : []),
@@ -1311,7 +1323,7 @@ function renderActiveNow() {
 function renderHome(main) {
   if (S.view.tab === 'blocked' || S.view.tab === 'pending') S.view.tab = 'online'; // bloqueados ficam em Privacidade e segurança; pedidos pendentes aparecem em "Todos"
   const tab = S.view.tab, rels = [...S.rels.values()];
-  const tabs = [['online', 'Online'], ['all', 'Todos']];
+  const tabs = [['online', 'Online'], ['activity', 'Atividade'], ['all', 'Todos']];
   const q = h('input.fsearch', { placeholder: 'Buscar', oninput: () => draw() });
   const ORD = { online: 0, idle: 1, dnd: 2, invisible: 3, offline: 4 };
   const pane = h('div.pane');
@@ -1322,6 +1334,7 @@ function renderHome(main) {
       const send = async () => { try { await api('POST', '/relationships', { username: inp.value }); msg.style.color = 'var(--green)'; msg.textContent = `Pedido de amizade enviado para ${inp.value}.`; inp.value = ''; } catch (e) { msg.style.color = 'var(--red)'; msg.textContent = e.message; } };
       return pane.append(h('h2', { style: { margin: '0 0 4px', color: 'var(--header)', fontSize: '16px' } }, 'Adicionar amigo'), h('p', { style: { color: 'var(--text-muted)', margin: '0 0 16px' } }, 'Você pode adicionar amigos pelo nome de usuário.'), h('div.addf', inp, h('button.btn', { onclick: send }, 'Enviar pedido')), msg);
     }
+    if (tab === 'activity') return activityTab(pane);
     let list = rels.filter(r => tab === 'online' ? r.type === 1 && S.users.get(r.user.id).status !== 'offline' : tab === 'all' ? r.type === 1 || r.type === 3 || r.type === 4 : tab === 'pending' ? r.type === 3 || r.type === 4 : r.type === 2);
     list = list.filter(r => r.user.username.toLowerCase().includes(q.value.toLowerCase()) || r.user.display_name.toLowerCase().includes(q.value.toLowerCase()));
     const nm = (r) => (r.user.display_name || r.user.username).toLowerCase();
@@ -1498,7 +1511,11 @@ function autoClosed() {
   if (voice.active) for (const v of S.voice.values()) {
     if (v.channel_id !== voice.channelId || !v.screen || v.user_id === S.me.id) continue;
     const k = voice.channelId + ':' + v.user_id; now.add(k);
-    if (!seenLive.has(k)) { seenLive.add(k); voice.closeStream(v.user_id); }
+    if (!seenLive.has(k)) {
+      seenLive.add(k);
+      if (S.autoWatch?.uid === v.user_id && S.autoWatch.exp > Date.now()) { S.focus = 's:' + v.user_id; S.autoWatch = null; } // veio do botão "Assistir" do feed: abre direto
+      else voice.closeStream(v.user_id);
+    }
   }
   for (const k of [...seenLive]) if (!now.has(k)) seenLive.delete(k);
 }
@@ -1790,6 +1807,7 @@ function setupDesktop() {
 }
 
 // gancho de depuração/testes automatizados
+initActivity({ openDM, profile: (a, uid) => profile(a, uid), userMenu: (e, uid) => userMenu(e, uid), go, joinVoice, watchFriend, voice: () => voice, openSettings: (k) => openSettings(k, ctxSettings()), renderActiveNow });
 window.__lc = { S, get voice() { return voice; }, go, openSettings: (k) => openSettings(k, { voice, logout, go, gid: S.view.gid }) };
 
 // =============== Boot ===============

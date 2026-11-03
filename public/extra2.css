@@ -178,3 +178,20 @@ html, body, button, input, textarea, select { font-family: var(--font, "gg sans"
 
 /* ======== Fase 2: destaque para todos ======== */
 .tile.spotlit { box-shadow: 0 0 0 3px var(--yellow, #faa61a); border-color: var(--yellow, #faa61a); }
+
+/* ======== Fase 1: atividade social ======== */
+.act-body { padding: 4px 4px 24px; }
+.act-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin: 8px 0 16px; }
+.act-card { background: var(--bg-sec, #2b2d31); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.act-top { display: flex; align-items: center; gap: 10px; }
+.act-who { display: flex; flex-direction: column; min-width: 0; } .act-who small { color: var(--text-muted, #949ba4); }
+.act-game { display: flex; align-items: center; gap: 6px; color: var(--green, #3ba55d); font-weight: 600; }
+.act-link { font-size: 12px; color: var(--link, #00a8fc); text-decoration: none; } .act-link:hover { text-decoration: underline; }
+.act-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.btn.sm { padding: 4px 10px; font-size: 12px; min-height: 28px; display: inline-flex; align-items: center; gap: 4px; }
+.act-online { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
+.act-online .an-row { align-items: center; }
+.act-events { display: flex; flex-direction: column; gap: 4px; }
+.act-ev { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; background: var(--bg-sec, #2b2d31); font-size: 13px; }
+.act-ev small { margin-left: auto; color: var(--text-muted, #949ba4); }
+.conn-av { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; } .conn-av.ph { display: flex; align-items: center; justify-content: center; background: var(--bg-ter, #1e1f22); color: var(--text-muted, #949ba4); }

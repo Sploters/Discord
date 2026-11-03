@@ -912,7 +912,7 @@ app.put('/api/activity/games/:platform/:gameId', auth, wrap((req, res) => { // e
   if (hidden) activity.onGameHidden(req.uid, platform, gid);
   res.json({ hidden: !!hidden });
 }));
-app.get('/api/activity/hidden', auth, wrap((req, res) => res.json(all('SELECT platform, game_id FROM game_prefs WHERE user_id=? AND hidden=1', req.uid))));
+app.get('/api/activity/hidden', auth, wrap((req, res) => res.json(all('SELECT gp.platform, gp.game_id, (SELECT a.title FROM activities a WHERE a.user_id=gp.user_id AND a.platform=gp.platform AND a.game_id=gp.game_id ORDER BY a.created_at DESC LIMIT 1) title FROM game_prefs gp WHERE gp.user_id=? AND gp.hidden=1', req.uid))));
 app.get('/api/server-info', (req, res) => res.json({ name: 'LocalCord', registration: OPEN_REGISTRATION, default_avatars: DEFAULT_AVATARS }));
 app.use(express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
 app.get(/^\/(?!api|files|gateway).*/, (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
