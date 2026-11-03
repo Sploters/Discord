@@ -15,6 +15,7 @@ import { initCode, codeSet, codeReset, codeTile, keepEditorFocus } from './code.
 import { startBuffer, stopAllBuffers, pruneBuffers, clipping, saveClip, clipLengths, clipKeys } from './clips.js';
 import { syncThrottle } from './lite.js';
 import { initRemote, onRemoteEvent, tileButton as remoteTileButton, controlling as remoteControlling } from './remote.js';
+import { pollModal, pollCard } from './polls.js';
 import { initClipsGallery, renderClips, onClipEvent } from './clipsgallery.js';
 import { initCallInvite, callCard, onCallInvite, onCallInviteUpdate, canCallInvite, sendCallInvite } from './callinvite.js';
 import { seg, toggle as uiToggle, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
@@ -912,12 +913,14 @@ function msgEl(m, prev) {
     const body = h('div.body'), shared = THEME_CODE_RE.test(m.content) && decodeTheme(m.content), invites = inviteCodes(m.content), calls = callCodes(m.content);
     let shown = shared ? stripThemeCodes(m.content) : m.content; // o código do tema não aparece, só o bloco
     if (invites.length || calls.length) shown = stripInvites(shown); // o link do convite também vira só o cartão
+    if (m.poll) shown = ''; // enquete: o cartão mostra a pergunta
     if (shown) body.innerHTML = md(shown, ctxFor(gid));
     if (shown && onlyEmoji(shown.replace(/<:\w+:\d+>/g, '😀'))) body.classList.add('emoji-big');
     if (m.edited_at) body.append(h('span.edited', '(editado)'));
     if (shared) body.append(themeCard(shared));
     for (const code of invites) body.append(inviteCard(code));
     for (const id of calls) body.append(callCard(id));
+    if (m.poll) body.append(pollCard(m));
     if (S.prefs.embedLinks !== false) for (const url of (shown.match(/https?:\/\/\S+/g) || []).filter(isImageUrl).slice(0, 3)) body.append(h('div.attach', h('img', { src: url, loading: 'lazy', referrerPolicy: 'no-referrer', onclick: () => lightbox(url) })));
     body.querySelectorAll('.spoiler').forEach(s => (s.onclick = () => s.classList.add('shown')));
     body.querySelectorAll('.mention[data-uid]').forEach(s => { s.onclick = () => profile(s, s.dataset.uid, gid); const u = S.users.get(s.dataset.uid); if (u) s.prepend(mentionAvatar(u)); });
@@ -930,7 +933,7 @@ function msgEl(m, prev) {
   el.append(h('div.toolbar',
     h('button', { title: 'Reagir', onclick: (e) => emojiPicker(e.currentTarget, (em) => react(m, em, true)) }, icon('smile', 18)),
     h('button', { title: 'Responder', onclick: () => setReply(m) }, icon('reply', 18)),
-    mine && h('button', { title: 'Editar', onclick: () => { S.editing = m.id; renderMessages(true); } }, icon('edit', 18)),
+    mine && !m.poll && h('button', { title: 'Editar', onclick: () => { S.editing = m.id; renderMessages(true); } }, icon('edit', 18)),
     (mine || (gid && can(gid, PERM.MANAGE_MESSAGES))) && h('button.tdel', { title: 'Excluir (Shift: sem confirmar)', onclick: (e) => deleteMenu(e, m) }, icon('trash', 18)),
     h('button', { title: 'Mais', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); msgMenu({ preventDefault() { }, clientX: r.left, clientY: r.bottom }, m); } }, icon('more', 18))));
   return el;
@@ -1006,8 +1009,9 @@ function shareThemePicker(ch) {
 }
 function plusMenu(e, ch, fileIn) {
   const r = e.currentTarget.getBoundingClientRect();
-  menu({ preventDefault() { }, clientX: r.left, clientY: r.top - 84 }, [
+  menu({ preventDefault() { }, clientX: r.left, clientY: r.top - 118 }, [
     { label: 'Enviar arquivo', fn: () => fileIn.click() },
+    { label: 'Criar enquete', fn: () => pollModal(ch) },
     { label: 'Compartilhar tema', fn: () => shareThemePicker(ch) },
   ]);
 }
@@ -1046,7 +1050,7 @@ function msgMenu(e, m) {
     !mine && { label: 'Mencionar', fn: () => mentionUser(m.author_id) },
     m.content && { label: 'Copiar texto', fn: () => navigator.clipboard?.writeText(m.content) },
     m.content && { label: isTranslated(m) ? 'Mostrar original' : 'Traduzir', fn: () => toggleTranslation(m, refreshMsg) },
-    mine && { label: 'Editar mensagem', fn: () => { S.editing = m.id; renderMessages(true); } },
+    mine && !m.poll && { label: 'Editar mensagem', fn: () => { S.editing = m.id; renderMessages(true); } },
     (mod || !gid) && { label: m.pinned ? 'Desafixar mensagem' : 'Fixar mensagem', fn: () => tryApi(m.pinned ? 'DELETE' : 'PUT', `/channels/${m.channel_id}/pins/${m.id}`) },
     S.prefs.devMode && { label: 'Copiar ID da mensagem', fn: () => navigator.clipboard?.writeText(m.id) },
     (mine || mod) && '-',

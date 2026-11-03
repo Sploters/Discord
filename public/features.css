@@ -749,3 +749,35 @@ select.gpucompat:focus { outline: 2px solid var(--brand, #5865f2); outline-offse
 .tile .label > svg { flex: none; }
 @container (max-width: 220px) { .tile .sinfo { display: none; } }
 .tile { container-type: inline-size; }
+/* enquetes */
+.pollcard { margin-top: 6px; max-width: 480px; padding: 14px 16px 10px; border-radius: 10px; background: var(--bg-sec, #2b2d31); border: 1px solid var(--divider, #3f4147); }
+.pollcard .pq { color: var(--header); font-size: 17px; font-weight: 700; line-height: 1.3; word-break: break-word; }
+.pollcard .psub { margin: 2px 0 10px; color: var(--text-muted); font-size: 13px; }
+.pollcard .popts { display: flex; flex-direction: column; gap: 6px; }
+.pollcard .popt { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 8px 12px; overflow: hidden; border: 1px solid var(--divider, #3f4147); border-radius: 8px;
+  background: var(--bg-tert, #1e1f22); color: var(--text-normal, var(--header)); text-align: left; cursor: pointer; transition: border-color .15s; }
+.pollcard .popt:hover:not(:disabled) { border-color: color-mix(in srgb, var(--brand, #5865f2) 60%, var(--divider, #3f4147)); }
+.pollcard .popt:disabled { cursor: default; }
+.pollcard .pfill { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--interactive, #b5bac1) 14%, transparent); transition: width .35s ease; }
+.pollcard .popt.mine { border-color: var(--brand, #5865f2); } .pollcard .popt.mine .pfill { background: color-mix(in srgb, var(--brand, #5865f2) 28%, transparent); }
+.pollcard .popt.win { border-color: var(--green, #23a55a); } .pollcard .popt.win .pfill { background: color-mix(in srgb, var(--green, #23a55a) 26%, transparent); }
+.pollcard .popt > *:not(.pfill) { position: relative; }
+.pollcard .pmark { flex: none; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--interactive, #b5bac1); display: flex; align-items: center; justify-content: center; }
+.pollcard .pmark.sq { border-radius: 4px; }
+.pollcard .popt.mine .pmark { background: var(--brand, #5865f2); border-color: var(--brand, #5865f2); color: #fff; }
+.pollcard.closed .pmark { display: none; }
+.pollcard .ptext { flex: 1; min-width: 0; font-weight: 600; word-break: break-word; } .pollcard .pwin { margin-left: 6px; }
+.pollcard .pvoters { display: flex; flex: none; } .pollcard .pvoters .avatar { margin-left: -5px; box-shadow: 0 0 0 2px var(--bg-tert, #1e1f22); border-radius: 50%; }
+.pollcard .pnum { flex: none; min-width: 52px; text-align: right; font-weight: 700; color: var(--header); } .pollcard .pnum small { font-weight: 500; color: var(--text-muted); }
+.pollcard .pfoot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 10px; color: var(--text-muted); font-size: 13px; }
+.pollcard .pacts { display: flex; gap: 6px; } .pollcard .pacts .btn { min-height: 28px; padding: 2px 12px; font-size: 13px; }
+.pollmodal .pmlab { margin: 12px 0 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); }
+.pollmodal .pmopts { display: flex; flex-direction: column; gap: 6px; }
+.pollmodal .pmrow { display: flex; align-items: center; gap: 8px; }
+.pollmodal .pmrow .pmn { width: 20px; text-align: center; color: var(--text-muted); font-weight: 700; }
+.pollmodal .pmrow input { flex: 1; padding: 9px 10px; border: 0; border-radius: 4px; background: var(--bg-tert, #1e1f22); color: var(--header); }
+.pollmodal .pmrow .pmx:disabled { opacity: .3; }
+.pollmodal .pmadd { display: flex; align-items: center; gap: 6px; margin: 8px 0 4px 28px; min-height: 32px; }
+.pollmodal .pmset { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0 0; margin-top: 10px; border-top: 1px solid var(--divider, #3f4147); }
+.pollmodal .pmset b { display: block; color: var(--header); } .pollmodal .pmset small { color: var(--text-muted); font-size: 12px; }
+.pollmodal .pmdur { height: 34px; padding: 0 8px; border: 1px solid var(--divider, #3f4147); border-radius: 6px; background: var(--bg-tert, #1e1f22); color: var(--header); }

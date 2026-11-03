@@ -123,3 +123,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS clips(
 CREATE INDEX IF NOT EXISTS idx_clips_guild ON clips(guild_id, id);
 CREATE INDEX IF NOT EXISTS idx_clips_message ON clips(message_id);
 CREATE TABLE IF NOT EXISTS clip_favs(user_id TEXT NOT NULL, clip_id TEXT NOT NULL REFERENCES clips(id) ON DELETE CASCADE, PRIMARY KEY(user_id, clip_id));`);
+
+// Enquetes: uma mensagem do chat com pergunta, opções e votos (visíveis: cada opção mostra quem votou)
+db.exec(`CREATE TABLE IF NOT EXISTS polls(
+  id TEXT PRIMARY KEY, message_id TEXT NOT NULL UNIQUE REFERENCES messages(id) ON DELETE CASCADE, channel_id TEXT NOT NULL,
+  author_id TEXT NOT NULL, question TEXT NOT NULL, options TEXT NOT NULL, multi INTEGER DEFAULT 0, ends_at INTEGER, closed_at INTEGER, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS poll_votes(poll_id TEXT NOT NULL REFERENCES polls(id) ON DELETE CASCADE, user_id TEXT NOT NULL, option_id TEXT NOT NULL, voted_at INTEGER, PRIMARY KEY(poll_id, user_id, option_id));`);
