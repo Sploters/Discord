@@ -171,6 +171,8 @@ export function openStatusPanel(anchor, { openSettings, openFullProfile, logout 
           item(icon('edit', 16), 'Editar perfil', () => { closeFloating(); openSettings?.('profile'); }),
           item(h('i.sdot.' + cur[2]), h('span', 'Status: ' + cur[1], me.status === 'invisible' && h('span', { title: 'Seu status e sua atividade ficam ocultos quando você está invisível', style: { marginLeft: '6px' } }, '⚠')), () => openFly(body.querySelector('.meitem:nth-child(2)')), h('span.mearrow', '›'), true),
         ),
+        S.prefs.lightMode && h('div.megroup',
+          item(icon('leaf', 16), h('span', 'Modo leve ativo', h('small.melite', 'neste computador')), () => { closeFloating(); openSettings?.('lite'); })),
         h('div.megroup',
           item(icon('phoneoff', 16), 'Trocar de conta', () => { closeFloating(); logout?.(); }),
           item(icon('copy', 16), 'Copiar ID do usuário', () => { navigator.clipboard?.writeText(me.id); toast('ID copiado'); closeFloating(); }))));

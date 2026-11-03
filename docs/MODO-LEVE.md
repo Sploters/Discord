@@ -40,7 +40,11 @@ Build: `cd desktop && npm ci && npm run dist` gera `dist/LocalCord-Setup-1.0.14.
 ## Testes
 `node scripts/lite-test.mjs` (Edge headless, servidor próprio na porta 3224): aplicar e desfazer, alteração manual preservada (inclusive após recarregar), conta guardando valores normais, persistência ao recarregar, economia do desktop (ponte `lcDesktop` simulada) ligada fora de chamada, suspensa em chamada, religada ao sair e na inicialização, microfone da chamada com redução leve e sem erro, e clipes desligados sem encerrar a faixa da transmissão.
 
-Falhas preexistentes, iguais com e sem o modo leve (não corrigidas nesta tarefa): `ui-test.mjs` 4 falhas (vídeo da tela no bob, resolução da transmissão, soundboard para a outra pessoa e exceção `reading 'click'` no fim) e `extras-test.mjs` 2 falhas (volume por pessoa no menu de saída; botões do topo da sala de voz). `features-test.mjs` passa (precisa de servidor em `BASE`, padrão porta 3000).
+Também cobre o aviso discreto: selo "Ativo" que aparece/some na hora, continua após recarregar, linha no cartão do usuário e clique que abre a página.
 
-## Futuro (não feito)
-Uma indicação discreta de que o modo leve está ativo (em Configurações ou no menu do app), sem notificações constantes nem painel de métricas.
+As falhas antigas de `ui-test.mjs` e `extras-test.mjs` eram testes desatualizados em relação à interface e foram corrigidas; todos passam.
+
+## Aviso discreto de que está ligado
+Sem notificações nem painel de métricas, só dois sinais visíveis enquanto o modo leve estiver ligado neste computador:
+- **Configurações:** selo verde "Ativo" ao lado de "Modo leve" no menu lateral (atualiza na hora ao ligar/desligar, pelo evento `lite-changed`).
+- **Cartão do usuário** (clique no seu nome na barra de baixo): linha com uma folha, "Modo leve ativo — neste computador"; clicar abre a página Modo leve.

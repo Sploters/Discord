@@ -624,3 +624,7 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 .btools .btool.on { background: var(--brand, #5865f2); color: #fff; border-radius: 6px; }
 .btools .bsep { width: 1px; height: 18px; background: rgba(255,255,255,.2); margin: 0 2px; flex: none; }
 .btools .bzoom { min-width: 44px; height: 24px; border: 0; border-radius: 6px; background: rgba(255,255,255,.1); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; } .btools .bzoom:hover { background: rgba(255,255,255,.2); }
+/* modo leve: aviso discreto (selo nas Configurações e linha no cartão do usuário) */
+#settings .ni .nlite { float: right; margin-top: 1px; padding: 1px 6px; border-radius: 8px; font-size: 11px; font-weight: 600; line-height: 16px; color: var(--green); background: color-mix(in srgb, var(--green) 16%, transparent); }
+.mepop .melite { display: block; font-size: 11px; font-weight: 400; color: var(--text-muted); }
+.mepop .meitem:has(.melite) .mei { color: var(--green); }

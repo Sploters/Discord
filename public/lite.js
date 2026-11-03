@@ -44,6 +44,7 @@ export function setLite(on, voice) {
   if (P.clipsOn === false) stopAllBuffers();
   if (voice?.active && P.noiseMode !== prevNoise) voice.rebuildMic();
   syncThrottle(!!voice?.active);
+  document.dispatchEvent(new Event('lite-changed')); // avisos discretos (Configurações, cartão do usuário) se atualizam
   toast(on ? 'Modo leve ativado' : 'Modo leve desativado: configurações anteriores de volta');
 }
 

@@ -15,7 +15,7 @@ import { PREVIEW_TRIGGERS } from './chpreview.js';
 import { MAX_VOL } from './quick.js';
 import { refreshFreeze } from './freeze.js';
 import { connectionsPage } from './activity.js';
-import { litePage } from './lite.js';
+import { litePage, liteOn } from './lite.js';
 
 const SWATCHES = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55d', '#faa61a', '#9b59b6', '#1abc9c', '#e67e22', '#3498db', '#95a5a6', '#2c2f33', '#ffffff'];
 const save = () => savePrefs();
@@ -101,7 +101,7 @@ export function openSettings(kind, ctx) {
     const q = search.value.trim().toLowerCase();
     nav.replaceChildren(h('div.ninner', search, ...groups.flatMap(([title, items]) => {
       const list = items.filter(([k, l, kw]) => !q || (l + ' ' + kw).toLowerCase().includes(q));
-      return list.length ? [h('h6', title), ...list.map(([k, l]) => h('div.ni' + (k === current ? '.active' : ''), { 'data-k': k, onclick: () => show(k) }, l))] : [];
+      return list.length ? [h('h6', title), ...list.map(([k, l]) => h('div.ni' + (k === current ? '.active' : ''), { 'data-k': k, onclick: () => show(k) }, l, k === 'lite' && liteOn() && h('span.nlite', { title: 'O modo leve está ligado neste computador' }, 'Ativo')))] : [];
     }), !isServer && h('div', { style: { height: '1px', background: 'var(--divider)', margin: '10px 8px' } }),
     !isServer && h('div.ni.danger', { onclick: async () => { if (await confirmBox('Sair', 'Deseja sair da sua conta?', 'Sair')) ctx.logout(); } }, 'Sair'),
     h('div.nfoot', 'LocalCord' + (desktop ? ' Desktop' : ' Web'))));
@@ -110,6 +110,8 @@ export function openSettings(kind, ctx) {
   document.getElementById('layer').append(root); document.addEventListener('keydown', esc);
   const first = isServer ? 'overview' : (['account', 'profile', 'privacy', 'connections', 'appearance', 'accessibility', 'voice', 'stream', 'sounds', 'soundboard', 'notifications', 'keys', 'extras', 'advanced', 'app', 'lite'].includes(kind) ? kind : 'account');
   current = first; drawNav(); show(first);
+  const onLite = () => (document.body.contains(root) ? drawNav() : document.removeEventListener('lite-changed', onLite));
+  document.addEventListener('lite-changed', onLite);
 }
 
 // ============================ Conta ============================

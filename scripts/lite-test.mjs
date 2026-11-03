@@ -23,12 +23,23 @@ try {
   await page.evaluate(() => [...document.querySelectorAll('.me + * button, button')].find(b => b.title === 'Configurações do usuário').click());
   await page.waitForSelector('#settings .ni[data-k="lite"]'); await page.click('#settings .ni[data-k="lite"]'); await sleep(200);
   ok(await page.$('#settings .litehero'), 'página Modo leve aparece nas configurações');
+  const badge = () => page.evaluate(() => document.querySelector('#settings .ni[data-k="lite"] .nlite')?.textContent || null);
+  ok(await badge() === null, 'desligado: sem selo "Ativo" no menu das configurações');
   await page.screenshot({ path: `${SHOTS}/lite-off.png` });
   await page.click('#settings .litehero .switch'); await sleep(300);
   const on = await P();
   ok(on.lightMode === true && on.animations === false && on.animMode === 'never' && on.noiseMode === 'standard' && on.clipsOn === false && on.screen.res === 720 && on.screen.fps === 30, 'modo leve aplica os ajustes: ' + JSON.stringify(on));
   ok(await page.evaluate(() => !document.documentElement.classList.contains('anim')), 'animações desligadas na interface');
   await page.screenshot({ path: `${SHOTS}/lite-on.png` });
+  ok(await badge() === 'Ativo', 'ligado: selo "Ativo" aparece na hora ao lado de "Modo leve"');
+  // cartão do usuário: linha discreta que leva à página
+  await page.keyboard.press('Escape'); await sleep(200);
+  await page.evaluate(() => document.querySelector('#userbar .me').click()); await sleep(400);
+  ok(await page.evaluate(() => [...document.querySelectorAll('.mepop .meitem')].some(i => i.textContent.includes('Modo leve ativo'))), 'ligado: cartão do usuário mostra "Modo leve ativo"');
+  await page.screenshot({ path: `${SHOTS}/lite-card.png` });
+  await page.evaluate(() => [...document.querySelectorAll('.mepop .meitem')].find(i => i.textContent.includes('Modo leve ativo')).click()); await sleep(400);
+  ok(await page.$('#settings .ni.active[data-k="lite"]') && await page.$('#settings .litehero.on'), 'clicar no aviso abre a página Modo leve');
+  await page.keyboard.press('Escape'); await sleep(200);
   await sleep(1800); // sincronização com a conta (1,2 s)
   const remote = await page.evaluate(() => fetch('/api/me/settings', { headers: { authorization: 'Bearer ' + localStorage.lc_token } }).then(r => r.json()));
   const rs = remote.settings || {};
@@ -39,10 +50,17 @@ try {
   ok(re.lightMode === true && re.noiseMode === 'standard' && re.animations === false, 'após recarregar, modo leve continua aplicado');
   await page.evaluate(() => [...document.querySelectorAll('button')].find(b => b.title === 'Configurações do usuário').click());
   await page.waitForSelector('#settings .ni[data-k="lite"]'); await page.click('#settings .ni[data-k="lite"]'); await sleep(200);
+  ok(await badge() === 'Ativo', 'após recarregar, o selo "Ativo" continua');
   await page.click('#settings .litehero .switch'); await sleep(300);
   const off = await P();
   ok(off.lightMode === false && JSON.stringify({ ...off, lightMode: undefined }) === JSON.stringify({ ...before, lightMode: undefined }), 'desativar volta exatamente ao anterior: ' + JSON.stringify(off));
   ok(await page.evaluate(() => !('lightPrev' in window.__lc.S.prefs)), 'desativar apaga a memória do modo leve');
+  ok(await badge() === null, 'desligado de novo: selo some na hora');
+  await page.keyboard.press('Escape'); await sleep(200);
+  await page.evaluate(() => document.querySelector('#userbar .me').click()); await sleep(400);
+  ok(await page.evaluate(() => !!document.querySelector('.mepop') && ![...document.querySelectorAll('.mepop .meitem')].some(i => i.textContent.includes('Modo leve'))), 'desligado: cartão do usuário sem o aviso');
+  await page.keyboard.press('Escape'); await sleep(200);
+  await page.evaluate(() => window.__lc.openSettings('lite')); await page.waitForSelector('#settings .litehero');
 
   // alteração manual durante o modo leve é preservada ao desativar
   await page.click('#settings .litehero .switch'); await sleep(200);
