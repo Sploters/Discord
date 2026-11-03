@@ -28,7 +28,8 @@ export function onIntegrationUpdate(d) {
 export const refreshFeedView = () => { if (document.getElementById('actfeed')) S.redrawFeed?.(); };
 export function clearActivities() { S.activities.clear(); S.integrations = null; feed = null; }
 
-const dur = (ms) => { const m = Math.max(0, Math.round(ms / 60000)); if (m < 1) return 'agora há pouco'; if (m < 60) return m + ' min'; const hh = Math.floor(m / 60), mm = m % 60; return hh + 'h' + (mm ? ' ' + mm + 'min' : ''); };
+const dur = (ms) => { const m = Math.max(0, Math.round(ms / 60000)); if (m < 1) return 'menos de 1 min'; if (m < 60) return m + ' min'; const hh = Math.floor(m / 60), mm = m % 60; return hh + 'h' + (mm ? ' ' + mm + 'min' : ''); };
+const since = (t) => (Date.now() - t < 60000 ? 'começou agora' : 'há ' + dur(Date.now() - t));
 const ago = (t) => { const s = (Date.now() - t) / 1000; return s < 60 ? 'agora' : s < 3600 ? Math.round(s / 60) + ' min atrás' : s < 86400 ? Math.round(s / 3600) + ' h atrás' : Math.round(s / 86400) + ' d atrás'; };
 const secsTxt = (s) => (s == null ? '' : dur(s * 1000));
 export const playingLine = (a) => `Jogando ${a.game.title}`;
@@ -63,7 +64,7 @@ function card(uid, a) {
     ...(!me ? voiceActions(uid) : []),
     me && h('button.btn.grey.sm', { title: 'Este jogo nunca aparece como atividade', onclick: async (e) => { e.stopPropagation(); if (await tryApi('PUT', `/activity/games/${a.platform}/${a.game.id}`, { hidden: true }) && 1) { toast('Jogo escondido. Você pode reexibi-lo em Contas vinculadas.'); } } }, 'Esconder jogo')];
   return h('div.act-card', { oncontextmenu: (e) => ctx.userMenu(e, uid) },
-    h('div.act-top', avatar(u, 44, { ring: 'var(--bg-sec)' }), h('div.act-who', h('b', me ? 'Você' : u.display_name), h('small', `${platformName(a.platform)} · há ${dur(Date.now() - a.since)}`))),
+    h('div.act-top', avatar(u, 44, { ring: 'var(--bg-sec)' }), h('div.act-who', h('b', me ? 'Você' : u.display_name), h('small', `${platformName(a.platform)} · ${since(a.since)}`))),
     h('div.act-game', icon('play', 16), h('span', a.game.title)),
     lk && lk.profile_url && h('a.act-link', { href: lk.profile_url, target: '_blank', rel: 'noopener noreferrer' }, `Perfil ${platformName(a.platform)}${lk.name ? ' de ' + lk.name : ''}`),
     h('div.act-btns', btns));
@@ -115,7 +116,7 @@ export function connectionsPage(reg) {
     catch (e) { return box.replaceChildren(h('p', { style: { color: 'var(--red)' } }, 'Não foi possível carregar: ' + e.message)); }
     box.replaceChildren(...ints.flatMap(i => {
       const a = i.account;
-      const head = h('div.accrow', a?.avatar ? h('img.conn-av', { src: a.avatar, alt: '' }) : h('div.conn-av.ph', icon('play', 28)), h('div', h('div.big', i.name), h('div.mut', a ? (a.display_name || 'Conta vinculada') + ' · ' + (SYNC[a.sync_state] || '') : 'Não vinculada')));
+      const head = h('div.accrow', a?.avatar ? h('img.conn-av', { src: a.avatar, alt: '' }) : h('div.conn-av.ph', icon('play', 28)), h('div', h('div.big', i.name), h('div.mut', a ? (a.display_name || 'Conta vinculada') + ' · ' + (!i.configured ? 'Aguardando o servidor configurar a chave da ' + i.name : (SYNC[a.sync_state] || '')) : 'Não vinculada')));
       if (!a) return [section(i.name), h('div.card2', head,
         h('p.hintline', 'Usamos o login oficial da ' + i.name + ' (nunca pedimos sua senha). Seu perfil e os "Detalhes do jogo" precisam estar públicos para o jogo atual aparecer.'),
         !i.configured && h('p.hintline', { style: { color: 'var(--yellow, #faa61a)' } }, 'Este servidor ainda não tem a chave da ' + i.name + ': dá para vincular, mas o jogo atual só aparece depois que o administrador configurar.'),

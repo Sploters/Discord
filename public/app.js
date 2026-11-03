@@ -1497,7 +1497,9 @@ function applyVisibility() {
 document.addEventListener('visibilitychange', applyVisibility);
 document.addEventListener('fullscreenchange', applyVisibility);
 let lastTw = null; // tamanho calculado na última vez: a grade redesenhada já nasce com ele (sem piscar)
-const stageObs = new ResizeObserver(() => fitStage());
+// palco estreito (painel de chat aberto, janela pequena): os botões da transmissão sobem para uma linha própria acima da barra, sem sobrepor os botões da chamada
+function markNarrow() { const st = document.getElementById('stage'); if (st) st.classList.toggle('narrow', st.clientWidth < 1000); }
+const stageObs = new ResizeObserver(() => { markNarrow(); fitStage(); });
 let observedStage = null;
 function watchStage() {
   const st = document.getElementById('stage');
@@ -1606,7 +1608,7 @@ function renderVoiceUI(speakOnly) {
     !empty ? (focusTile ? (layout === 'cinema' ? [h('div.spot', focusTile)] : layout === 'sidebar' ? [h('div.splitwrap', h('div.spot', focusTile), h('div.strip', rest))] : [h('div.spot', focusTile), h('div.strip', rest)]) : layout === 'side' && tiles.length > 1 ? h('div.grid.sidebyside', tiles) : (() => { const gr = h('div.grid.fit', tiles); if (lastTw) gr.style.setProperty('--tw', lastTw); return gr; })()) : h('div.grid', h('div.empty', { style: { color: '#fff' } }, h('h2', dm ? 'Chamada' : chName(ch)), h('p', dm ? 'Ninguém está na chamada.' : 'Ninguém está nesta sala de voz ainda.'), !inRoom && bar)),
     voice.error && inRoom && h('div.verr', voice.error),
     !(empty && !inRoom) && bar].flat().filter(Boolean)));
-  watchStage(); observeTiles();
+  watchStage(); observeTiles(); markNarrow();
 }
 // atalho de clipe: salva os últimos segundos da transmissão em destaque (ou da primeira que está sendo gravada)
 const hasScreenOf = (key) => !!S.voice.get(key.slice(2))?.screen;

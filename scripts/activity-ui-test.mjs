@@ -61,7 +61,7 @@ try {
   await goTab(pb, 'Atividade');
   ok(await waitFor(async () => (await cards(pb)).some(t => /Counter-Strike 2/.test(t))), 'bob vê o cartão da alice jogando Counter-Strike 2');
   const c0 = (await cards(pb))[0] || '';
-  ok(/Steam/.test(c0) && /há /.test(c0), 'cartão mostra a plataforma e há quanto tempo está jogando', c0);
+  ok(/Steam/.test(c0) && /(há |começou agora)/.test(c0), 'cartão mostra a plataforma e há quanto tempo está jogando', c0);
   ok(await pb.evaluate(() => !!document.querySelector('#actfeed .act-card a.act-link')), 'cartão tem link para o perfil da Steam (vínculo visível aos amigos)');
   ok(!/Entrar|Assistir|Convidar/.test(c0), 'sem chamada: o cartão NÃO mostra Entrar/Assistir/Convidar', c0);
   ok(/Perfil/.test(c0) && /Mensagem/.test(c0), 'cartão tem Perfil e Mensagem');
