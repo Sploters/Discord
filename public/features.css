@@ -738,3 +738,14 @@ select.gpucompat:focus { outline: 2px solid var(--brand, #5865f2); outline-offse
 .clipplayer .pmeta { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
 .clipplayer .pbar .btn { display: flex; align-items: center; gap: 6px; flex: none; }
 @media (max-width: 640px) { #clipsview .cbody { padding: 12px; } #clipsview .cgrid { grid-template-columns: 1fr; } }
+/* palco estreito: os botões da transmissão viram uma linha própria dentro da barra, acima dos botões redondos
+   (antes ficavam soltos 44 px acima da barra, por cima dos quadros); os quadros encolhem para dar o espaço */
+#stage.narrow .bar { row-gap: 8px; padding-top: 12px; }
+#stage.narrow .bar > .bar-ctl { position: static; order: -1; flex: 0 0 100%; justify-content: center; transform: none; top: auto; right: auto; }
+#stage.narrow .bar > .bar-ctl:empty { display: none; }
+#stage.narrow .bar > .bar-ctl .tctl { flex-wrap: wrap; justify-content: center; }
+/* etiqueta do quadro numa linha só (em quadros pequenos ela quebrava em 3 linhas e cobria a imagem) */
+.tile .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 16px); box-sizing: border-box; }
+.tile .label > svg { flex: none; }
+@container (max-width: 220px) { .tile .sinfo { display: none; } }
+.tile { container-type: inline-size; }
