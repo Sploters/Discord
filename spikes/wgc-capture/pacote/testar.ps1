@@ -24,7 +24,11 @@ Write-Host "  O resultado sera salvo em: $out"
 Write-Host ''
 Read-Host '  Feche jogos e videos e aperte Enter para comecar'
 
-$url = 'file:///' + ((Join-Path $dir 'animacao.html') -replace '\\', '/')
+# esta janela sai da frente: a captura tem que ver a animacao, nao o console
+Add-Type -Name Win -Namespace LC -MemberDefinition '[DllImport("kernel32.dll")] public static extern System.IntPtr GetConsoleWindow(); [DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr h, int c);' -ErrorAction SilentlyContinue
+function Janela($modo) { try { [LC.Win]::ShowWindow([LC.Win]::GetConsoleWindow(), $modo) | Out-Null } catch { } }
+Janela 6  # minimizar
+$url = ([System.Uri](Join-Path $dir 'animacao.html')).AbsoluteUri  # codifica espacos e acentos do caminho
 Start-Process $edge -ArgumentList @('--kiosk', $url, '--edge-kiosk-type=fullscreen', '--no-first-run', "--user-data-dir=$prof", '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows')
 Start-Sleep 6
 
@@ -50,8 +54,16 @@ foreach ($t in $testes) {
 }
 # fecha so a janela da animacao (perfil proprio); erro aqui nunca impede o resultado
 try { Get-CimInstance Win32_Process -Filter "name='msedge.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*localcord-teste-fps*' } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null } } catch { }
+Janela 9  # restaurar
+# a animacao muda todo quadro: se a captura viu quase so quadros repetidos, ela nao estava visivel na tela
+$baixo = $linhas | Where-Object { $_ -match '^WGC.*unicos\s+([\d,\.]+) fps' -and [double]($Matches[1] -replace ',', '.') -lt 20 }
+if ($baixo) {
+  $linhas += ''
+  $linhas += 'AVISO: quase todos os quadros capturados eram iguais - a animacao provavelmente nao estava visivel durante o teste.'
+}
 Salvar
 Write-Host ''
+if ($baixo) { Write-Host '  ATENCAO: a animacao nao parecia estar na tela durante o teste.' -ForegroundColor Yellow; Write-Host '  Ela apareceu em tela cheia? Conte isso ao Claude junto com o resultado.' -ForegroundColor Yellow; Write-Host '' }
 $linhas | Where-Object { $_ -notlike '  bruto:*' } | ForEach-Object { Write-Host "  $_" }
 Write-Host ''
 Write-Host "  Pronto! Resultado salvo em: $out" -ForegroundColor Green

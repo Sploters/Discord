@@ -59,9 +59,9 @@ fn main() -> windows::core::Result<()> {
     let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(&d3d, DirectXPixelFormat::B8G8R8A8UIntNormalized, buffers, size)?;
     let session = pool.CreateCaptureSession(&item)?;
     let _ = session.SetIsCursorCaptureEnabled(cursor);
-    let mut border_note = "padrão".to_string();
-    if !border { border_note = match session.SetIsBorderRequired(false) { Ok(_) => "removida".into(), Err(e) => format!("não removível ({})", e.message()) }; }
-    let mut iv_note = "padrão do sistema".to_string();
+    let mut border_note = "padrao".to_string();
+    if !border { border_note = match session.SetIsBorderRequired(false) { Ok(_) => "removida".into(), Err(e) => format!("nao removivel ({})", e.message()) }; }
+    let mut iv_note = "padrao do sistema".to_string();
     if min_iv != "default" {
         let ms: f64 = min_iv.parse().unwrap_or(0.0);
         let t = TimeSpan { Duration: (ms * 10_000.0) as i64 }; // unidades de 100 ns
@@ -71,8 +71,15 @@ fn main() -> windows::core::Result<()> {
     // cada quadro: instante local e carimbo do sistema (SystemRelativeTime, 100 ns)
     let verify = arg("--verify", "0") == "1";
     // leitura do número do quadro gravado pela animação (32 células de 8x8 px no canto superior esquerdo)
+    // a animação desenha num canvas 1920x1080 esticado para a tela: escala as células para o tamanho capturado
+    let sx = size.Width as f64 / 1920.0;
+    let sy = size.Height as f64 / 1080.0;
+    let rw = ((256.0 * sx).ceil() as u32).max(1).min(size.Width as u32);
+    let rh = ((8.0 * sy).ceil() as u32).max(1).min(size.Height as u32);
+    let row_y = ((4.0 * sy) as usize).min(rh as usize - 1);
+    let cell_x: Vec<usize> = (0..32usize).map(|b| (((b * 8 + 4) as f64 * sx) as usize).min(rw as usize - 1)).collect();
     let staging: Option<ID3D11Texture2D> = if verify {
-        let desc = D3D11_TEXTURE2D_DESC { Width: 256, Height: 8, MipLevels: 1, ArraySize: 1, Format: DXGI_FORMAT_B8G8R8A8_UNORM, SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 }, Usage: D3D11_USAGE_STAGING, BindFlags: 0, CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32, MiscFlags: 0 };
+        let desc = D3D11_TEXTURE2D_DESC { Width: rw, Height: rh, MipLevels: 1, ArraySize: 1, Format: DXGI_FORMAT_B8G8R8A8_UNORM, SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 }, Usage: D3D11_USAGE_STAGING, BindFlags: 0, CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32, MiscFlags: 0 };
         let mut t: Option<ID3D11Texture2D> = None;
         unsafe { device.CreateTexture2D(&desc, None, Some(&mut t))?; }
         t
@@ -91,15 +98,15 @@ fn main() -> windows::core::Result<()> {
                         if let Ok(acc) = surf.cast::<IDirect3DDxgiInterfaceAccess>() {
                             if let Ok(tex) = unsafe { acc.GetInterface::<ID3D11Texture2D>() } {
                                 let c = ctx.lock().unwrap();
-                                let bx = D3D11_BOX { left: 0, top: 0, front: 0, right: 256, bottom: 8, back: 1 };
+                                let bx = D3D11_BOX { left: 0, top: 0, front: 0, right: rw, bottom: rh, back: 1 };
                                 unsafe { c.CopySubresourceRegion(stg, 0, 0, 0, 0, &tex, 0, Some(&bx)); }
                                 let mut m = D3D11_MAPPED_SUBRESOURCE::default();
                                 let mr = unsafe { c.Map(stg, 0, D3D11_MAP_READ, 0, Some(&mut m)) };
                                 if let Err(e) = &mr { if std::env::var("SPIKE_DEBUG").is_ok() { eprintln!("Map falhou: {e}"); } }
                                 if mr.is_ok() {
-                                    let row = unsafe { std::slice::from_raw_parts((m.pData as *const u8).add(4 * m.RowPitch as usize), 256 * 4) };
-                                    for b in 0..32usize { if row[(b * 8 + 4) * 4 + 1] > 128 { id |= 1 << b; } }
-                                    if std::env::var("SPIKE_DEBUG").is_ok() { static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0); if N.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 3 { let g: Vec<u8> = (0..32usize).map(|b| row[(b * 8 + 4) * 4 + 1]).collect(); eprintln!("pitch={} G por celula={:?} primeiros px={:?}", m.RowPitch, g, &row[0..16]); } }
+                                    let row = unsafe { std::slice::from_raw_parts((m.pData as *const u8).add(row_y * m.RowPitch as usize), rw as usize * 4) };
+                                    for b in 0..32usize { if row[cell_x[b] * 4 + 1] > 128 { id |= 1 << b; } }
+                                    if std::env::var("SPIKE_DEBUG").is_ok() { static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0); if N.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 3 { let g: Vec<u8> = (0..32usize).map(|b| row[cell_x[b] * 4 + 1]).collect(); eprintln!("pitch={} G por celula={:?} primeiros px={:?}", m.RowPitch, g, &row[0..16]); } }
                                     unsafe { c.Unmap(stg, 0); }
                                 }
                             }

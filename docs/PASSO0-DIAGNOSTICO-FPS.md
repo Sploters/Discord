@@ -96,3 +96,11 @@ Um único PC (GPU, CPU e monitor compartilhados entre remetente, servidor, recep
    - Decisão de encaixe no produto (como autenticar o `PlainTransport` com segurança e como o app escolhe esse caminho) só depois dos dois spikes.
 
 A Fase 2 (Watch) **não depende** disso e pode seguir em paralelo.
+
+## Spike A — primeira execução (2026-11-03, PC secundário)
+Pacote `spikes/wgc-capture/pacote` (exe compilado no Linux para `x86_64-pc-windows-gnu`). Máquina: Intel HD Graphics 4000, monitor 1366×768 **60 Hz**, Windows 10 Pro 19045 — **não** é o PC do diagnóstico (RTX 3080, 143 Hz).
+- WGC entregou 59,6–59,8 fps estáveis (intervalo mediano 16,7 ms) = teto do monitor.
+- `SetMinUpdateInterval` e `SetIsBorderRequired` não existem no Windows 10 ("No such interface supported"); só no Windows 11.
+- **Inconclusivo quanto ao conteúdo:** "quadros únicos" ≈ 0 e DXGI com 0,4 fps indicam tela parada — a animação provavelmente não estava visível (o console do teste ficava na frente). Além disso a leitura do número do quadro só estava calibrada para 1920×1080.
+- Correções: o teste minimiza o próprio console antes de abrir a animação, codifica o caminho do arquivo na URL, avisa quando a captura só vê quadros repetidos; o spike lê as células escaladas para o tamanho real da tela; saída só em ASCII.
+- A pergunta que decide o capturador próprio (passar de ~48 fps num monitor de 143 Hz) **só pode ser respondida no PC de 143 Hz**.
