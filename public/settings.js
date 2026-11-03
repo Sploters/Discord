@@ -15,6 +15,7 @@ import { PREVIEW_TRIGGERS } from './chpreview.js';
 import { MAX_VOL } from './quick.js';
 import { refreshFreeze } from './freeze.js';
 import { connectionsPage } from './activity.js';
+import { litePage } from './lite.js';
 
 const SWATCHES = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55d', '#faa61a', '#9b59b6', '#1abc9c', '#e67e22', '#3498db', '#95a5a6', '#2c2f33', '#ffffff'];
 const save = () => savePrefs();
@@ -75,7 +76,7 @@ const hint = (t) => h('div.hintline', t);
 // ============================ shell ============================
 const USER_GROUPS = [
   ['Configurações do usuário', [['account', 'Minha conta', 'senha usuário nome excluir'], ['profile', 'Perfil', 'avatar banner bio status pronomes'], ['privacy', 'Privacidade e segurança', 'amizade sessões dispositivos links'], ['connections', 'Contas vinculadas', 'steam jogos atividade vincular conta']]],
-  ['Configurações do aplicativo', [['appearance', 'Aparência', 'tema cor fonte compacto hora'], ['accessibility', 'Acessibilidade', 'movimento contraste saturação'], ['voice', 'Voz e vídeo', 'microfone ruído eco câmera dispositivo bitrate'], ['stream', 'Transmissão', 'tela resolução fps qualidade'], ['sounds', 'Sons', 'efeitos silenciar ensurdecer entrar sair'], ['soundboard', 'Soundboard', 'sons pad meme'], ['extras', 'Recursos extras', 'plugins imagem lente zoom galeria prévia canal nomes volume amplificar'], ['notifications', 'Notificações', 'avisos menção silenciar servidor'], ['keys', 'Atalhos', 'teclas push-to-talk mutar'], ['advanced', 'Avançado', 'desenvolvedor exportar importar redefinir']]],
+  ['Configurações do aplicativo', [['lite', 'Modo leve', 'desempenho otimizar leve fps jogo cpu gpu rápido pesado'], ['appearance', 'Aparência', 'tema cor fonte compacto hora'], ['accessibility', 'Acessibilidade', 'movimento contraste saturação'], ['voice', 'Voz e vídeo', 'microfone ruído eco câmera dispositivo bitrate'], ['stream', 'Transmissão', 'tela resolução fps qualidade'], ['sounds', 'Sons', 'efeitos silenciar ensurdecer entrar sair'], ['soundboard', 'Soundboard', 'sons pad meme'], ['extras', 'Recursos extras', 'plugins imagem lente zoom galeria prévia canal nomes volume amplificar'], ['notifications', 'Notificações', 'avisos menção silenciar servidor'], ['keys', 'Atalhos', 'teclas push-to-talk mutar'], ['advanced', 'Avançado', 'desenvolvedor exportar importar redefinir']]],
 ];
 const SERVER_PAGES = [['overview', 'Visão geral', 'nome ícone banner dono'], ['channels', 'Canais', 'ordem renomear'], ['roles', 'Cargos', 'permissões'], ['emojis', 'Emojis', ''], ['sounds', 'Soundboard do servidor', 'sons áudio'], ['members', 'Membros', 'expulsar banir castigo'], ['bans', 'Banimentos', 'banir desbanir'], ['audit', 'Registro de auditoria', 'log moderação histórico'], ['invites', 'Convites', 'link']];
 
@@ -88,7 +89,7 @@ export function openSettings(kind, ctx) {
   const isServer = kind === 'server', gid = ctx?.gid;
   const R = {
     account: () => accountPage(close), profile: () => profilePage(), privacy: (r) => privacyPage(r), connections: (r) => connectionsPage(r), appearance: () => appearancePage(), accessibility: () => accessibilityPage(),
-    voice: (r) => voicePage(ctx, r), stream: () => streamPage(), sounds: () => soundsPage(), soundboard: () => soundboardPage(), notifications: () => notificationsPage(), keys: () => keysPage(), extras: () => extrasPage(ctx), advanced: () => advancedPage(ctx), app: () => appPage(),
+    voice: (r) => voicePage(ctx, r), stream: () => streamPage(), sounds: () => soundsPage(), soundboard: () => soundboardPage(), notifications: () => notificationsPage(), keys: () => keysPage(), extras: () => extrasPage(ctx), advanced: () => advancedPage(ctx), app: () => appPage(), lite: () => litePage(ctx),
     overview: () => overviewPage(gid), channels: () => channelsPage(gid), roles: () => rolesPage(gid), emojis: () => emojisPage(gid), sounds_srv: () => serverSoundsPage(gid), members: () => membersPage(gid), bans: () => bansPage(gid), audit: () => auditPage(gid), invites: () => invitesPage(gid),
   };
   const sKey = (k) => (isServer && k === 'sounds' ? 'sounds_srv' : k);
@@ -107,7 +108,7 @@ export function openSettings(kind, ctx) {
   };
   root.append(nav, content, h('button.close', { onclick: close, title: 'Fechar (Esc)' }, icon('x', 20), h('small', 'ESC')));
   document.getElementById('layer').append(root); document.addEventListener('keydown', esc);
-  const first = isServer ? 'overview' : (['account', 'profile', 'privacy', 'connections', 'appearance', 'accessibility', 'voice', 'stream', 'sounds', 'soundboard', 'notifications', 'keys', 'extras', 'advanced', 'app'].includes(kind) ? kind : 'account');
+  const first = isServer ? 'overview' : (['account', 'profile', 'privacy', 'connections', 'appearance', 'accessibility', 'voice', 'stream', 'sounds', 'soundboard', 'notifications', 'keys', 'extras', 'advanced', 'app', 'lite'].includes(kind) ? kind : 'account');
   current = first; drawNav(); show(first);
 }
 

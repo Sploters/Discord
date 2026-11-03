@@ -212,3 +212,7 @@ html, body, button, input, textarea, select { font-family: var(--font, "gg sans"
   #home #topbar .tab { white-space: nowrap; flex: none; font-size: 15px; }
   .act-grid { grid-template-columns: 1fr; }
 }
+/* modo leve */
+.litehero { display: flex; align-items: center; gap: 16px; padding: 18px; border: 2px solid var(--divider); }
+.litehero > div:first-child { flex: 1; } .litehero .rt { font-size: 17px; font-weight: 700; color: var(--header); } .litehero .rd { margin-top: 4px; }
+.litehero.on { border-color: var(--green, #23a55a); background: color-mix(in srgb, var(--green, #23a55a) 10%, var(--bg-sec, transparent)); }

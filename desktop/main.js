@@ -172,6 +172,8 @@ ipcMain.handle('get-sources', async () => {
 });
 ipcMain.handle('select-source', (_e, id) => { pickedSource = id; return true; });
 ipcMain.on('set-badge', (_e, n) => setBadge(n));
+// modo leve: deixa o Chromium desacelerar a página escondida (o renderer só liga fora de chamada)
+ipcMain.on('set-throttle', (_e, on) => { if (win && !win.isDestroyed()) win.webContents.setBackgroundThrottling(!!on); });
 ipcMain.handle('get-settings', () => ({ ...cfg, version: app.getVersion() }));
 ipcMain.handle('set-settings', (_e, patch) => {
   for (const k of ['autoStart', 'startMinimized', 'closeToTray', 'globalHotkeys']) if (k in patch) cfg[k] = !!patch[k];

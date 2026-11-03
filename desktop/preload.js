@@ -16,4 +16,5 @@ contextBridge.exposeInMainWorld('lcDesktop', {
   installUpdate: () => ipcRenderer.invoke('install-update'),
   onUpdate: (cb) => ipcRenderer.on('update-available', (_e, v) => cb(v)),
   saveServer: (url) => ipcRenderer.invoke('save-server', url),
+  setThrottle: (on) => ipcRenderer.send('set-throttle', !!on),
 });

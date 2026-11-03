@@ -1,5 +1,5 @@
 import { h, icon, avatar, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyEmoji, isImageUrl, SHORT, inviteCodes, stripInvites, inviteText, parsePos, framePos, initials } from './util.js';
-import { S, api, tryApi, user, guild, channelById, member, nameOf, roleColor, can, perms, PERM, dmPeer, relType, toast, modal, confirmBox, promptBox, menu, popout, emojiPicker, lightbox, closeFloating, beep, notify, notifPolicy, channelMuted, desktop, applyTheme, emojiUrl, allEmojis, savePrefs } from './state.js';
+import { S, api, tryApi, user, guild, channelById, member, nameOf, roleColor, can, perms, PERM, dmPeer, relType, toast, modal, confirmBox, promptBox, menu, popout, emojiPicker, lightbox, closeFloating, beep, notify, notifPolicy, channelMuted, desktop, applyTheme, emojiUrl, allEmojis, savePrefs, relite } from './state.js';
 import { Voice, SCREEN_PRESETS, VOICE_BITRATES } from './voice.js';
 import { playSound } from './sounds.js';
 import { initMusic, onState as musicOnState, onRes as musicOnRes, openMusic } from './music.js';
@@ -13,6 +13,7 @@ import { refreshFreeze } from './freeze.js';
 import { initBoard, boardState, onDraw, boardCanvas, boardTools, clearBoard } from './board.js';
 import { initCode, codeSet, codeReset, codeTile, keepEditorFocus } from './code.js';
 import { startBuffer, stopAllBuffers, pruneBuffers, clipping, saveClip, clipLengths, clipKeys } from './clips.js';
+import { syncThrottle } from './lite.js';
 import { seg, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
 import { openSettings, openFullProfile } from './settings.js';
 import { saveCustomTheme } from './themeeditor.js';
@@ -105,10 +106,10 @@ function onEvent(t, d) {
       voice.ice = S.ice;
       if (!ready) buildShell(); ready = true;
       $('#auth').classList.add('hidden'); $('#app').classList.remove('hidden');
-      applyTheme(); setupDesktop();
+      applyTheme(); setupDesktop(); syncThrottle(!!voice?.active);
       if (!S.synced) api('GET', '/me/settings').then(r => { // sincroniza preferências entre dispositivos
         const keep = { inputId: S.prefs.inputId, outputId: S.prefs.outputId, videoId: S.prefs.videoId };
-        Object.assign(S.prefs, r.settings || {}, keep); S.friendPolicy = r.friend_policy; S.synced = true;
+        const local = { ...S.prefs }; Object.assign(S.prefs, r.settings || {}, keep); relite(r.settings || {}, local); S.friendPolicy = r.friend_policy; S.synced = true;
         localStorage.setItem('lc_prefs', JSON.stringify(S.prefs)); applyTheme(); if (!Object.keys(r.settings || {}).length) savePrefs(); renderSide();
       }).catch(() => { S.synced = true; });
       if (pendingInvite) { const c = pendingInvite; pendingInvite = null; history.replaceState({}, '', '/'); joinInvite(c); }
@@ -1532,6 +1533,7 @@ function renderVoiceUI(speakOnly) {
   autoClosed(); // transmissão nova de outra pessoa começa fechada
   updatePip(pipCtx);
   if (!voice.active) stopAllBuffers();
+  syncThrottle(voice.active);
   const stage = $('#stage'); if (!stage) return syncWatching(null);
   const ch = channelById(S.view.cid); if (!ch || ![1, 2].includes(ch.type)) return syncWatching(null);
   const dm = ch.type === 1, gid = ch.guild_id;

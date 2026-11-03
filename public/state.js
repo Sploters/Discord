@@ -31,13 +31,24 @@ export const S = {
     JSON.parse(localStorage.getItem('lc_prefs') || '{}')),
   replyTo: null, editing: null, pending: [], membersOpen: true, viewers: new Map(), watching: new Set(),
 };
-const DEVICE_KEYS = ['inputId', 'outputId', 'videoId', 'clipsOn']; // específicos de cada máquina: não sincronizam
+const DEVICE_KEYS = ['inputId', 'outputId', 'videoId', 'clipsOn', 'lightMode', 'lightPrev']; // específicos de cada máquina: não sincronizam
 let syncTimer;
 export const savePrefs = () => {
   localStorage.setItem('lc_prefs', JSON.stringify(S.prefs));
   clearTimeout(syncTimer);
-  if (S.token && S.synced) syncTimer = setTimeout(() => { const p = { ...S.prefs }; DEVICE_KEYS.forEach(k => delete p[k]); api('PUT', '/me/settings', { settings: p }).catch(() => { }); }, 1200);
+  if (S.token && S.synced) syncTimer = setTimeout(() => { const p = { ...S.prefs }; DEVICE_KEYS.forEach(k => delete p[k]); unlite(p); api('PUT', '/me/settings', { settings: p }).catch(() => { }); }, 1200);
 };
+// modo leve é só desta máquina: a conta guarda os valores de antes, e o que vem da conta vira o novo "antes"
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function unlite(p) { const lp = S.prefs.lightPrev; if (lp) for (const k in lp.applied) if (same(p[k], lp.applied[k])) { if (lp.prev[k] === null) delete p[k]; else p[k] = lp.prev[k]; } }
+// `local`: valores desta máquina antes de puxar a conta. Item mudado à mão aqui deixa de ser do modo leve (vale o que a pessoa escolheu)
+export function relite(remote, local) {
+  const lp = S.prefs.lightPrev; if (!lp) return;
+  for (const k in lp.applied) {
+    if (!(k in remote)) continue;
+    if (same(local[k], lp.applied[k])) { lp.prev[k] = remote[k]; S.prefs[k] = lp.applied[k]; } else { delete lp.prev[k]; delete lp.applied[k]; }
+  }
+}
 export const desktop = window.lcDesktop || null; // ponte do app Electron (preload)
 export function applyTheme() {
   const r = document.documentElement;

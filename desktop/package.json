@@ -1,6 +1,6 @@
 {
   "name": "localcord-desktop",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "description": "LocalCord Desktop — cliente do seu servidor LocalCord",
   "main": "main.js",
   "author": "LocalCord",
