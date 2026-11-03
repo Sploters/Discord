@@ -90,6 +90,13 @@ try {
   await A.keyboard.press('ArrowRight'); await sleep(300);
   ok(/clipado por alice/.test(await A.evaluate(() => document.querySelector('.clipplayer .pmeta').textContent)), 'próximo de novo: clipe da alice (de bruno)');
   if (process.env.SHOTS) { await sleep(600); await A.screenshot({ path: `${OUT}/02-player.png` }); }
+  // tela cheia: é a caixa em volta do vídeo que entra em tela cheia (a do próprio <video> deixava a imagem escura em alguns PCs)
+  ok(await A.evaluate(() => document.querySelector('.clipplayer video').getAttribute('controlslist')?.includes('nofullscreen')), 'botão nativo de tela cheia do vídeo escondido');
+  await A.evaluate(() => document.querySelector('.clipplayer .fsvbtn').click()); await sleep(600);
+  const fs1 = await A.evaluate(() => { const e = document.fullscreenElement, v = e?.querySelector('video'); return { box: e?.classList.contains('fsvid'), w: v && Math.round(v.getBoundingClientRect().width), W: innerWidth }; });
+  ok(fs1.box && fs1.w === fs1.W, 'tela cheia é da caixa e o vídeo ocupa a tela toda', fs1);
+  if (process.env.SHOTS) await A.screenshot({ path: `${OUT}/02b-tela-cheia.png` });
+  await A.evaluate(() => document.exitFullscreen()); await sleep(400);
   await A.evaluate(() => [...document.querySelectorAll('.modal .btn')].find(x => x.textContent === 'Fechar').click()); await sleep(300);
   // favoritar e aba Favoritos
   await A.evaluate(() => document.querySelectorAll('#clipsview .clipcard .cbtns button')[0].click()); await sleep(500);

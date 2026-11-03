@@ -860,3 +860,14 @@ select.gpucompat:focus { outline: 2px solid var(--brand, #5865f2); outline-offse
 .msg.cont:hover::before { opacity: 0; } /* no hover a hora aparece no lugar da linha */
 .msg.cont .time-s { width: 58px; left: 4px; text-align: center; }
 .msg.mentioned.cont::before, .msg.hl.cont::before { background: color-mix(in srgb, var(--yellow) 45%, transparent); }
+
+/* ---------- vídeo com tela cheia da caixa (fsVideo): o botão nativo de tela cheia some e entra o nosso ---------- */
+.fsvid { position: relative; display: inline-block; max-width: 100%; line-height: 0; }
+.attach .fsvid video { margin-top: 0; cursor: default; }
+.attach .fsvid { margin-top: 6px; }
+.clipplayer .fsvid { display: block; width: 100%; }
+.fsvbtn { position: absolute; top: 8px; right: 8px; z-index: 3; width: 34px; height: 34px; border: 0; border-radius: 8px; background: rgba(0,0,0,.55); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .15s; }
+.fsvid:hover .fsvbtn, .fsvbtn:focus-visible { opacity: 1; } .fsvbtn:hover { background: rgba(0,0,0,.8); }
+.fsvid:fullscreen { display: flex; align-items: center; justify-content: center; width: 100vw; height: 100vh; background: #000; }
+.fsvid:fullscreen video { width: 100%; height: 100%; max-width: none; max-height: none; object-fit: contain; border-radius: 0; margin: 0; }
+.fsvid:fullscreen .fsvbtn { opacity: .0; } .fsvid:fullscreen:hover .fsvbtn { opacity: 1; }

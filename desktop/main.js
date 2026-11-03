@@ -14,8 +14,12 @@ let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; } catch { /* primeira execução */ }
 const saveCfg = () => { try { fs.mkdirSync(path.dirname(cfgPath()), { recursive: true }); fs.writeFileSync(cfgPath(), JSON.stringify(cfg, null, 2)); } catch (e) { console.error(e); } };
 
-// bug do Chromium no Windows: a janela deixa de repintar até trocar de programa
-app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,DirectCompositionVideoOverlays,DirectCompositionVideoOverlaySupport');
+// Vídeo em tela cheia escuro/com cores estouradas em alguns PCs: o Windows passa o vídeo direto para a placa
+// (sobreposição de hardware) e o driver aplica realce/HDR automático (RTX Video, Intel VSR). Tudo desligado:
+// o vídeo é desenhado junto com a página, igual fora da tela cheia.
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,DirectCompositionVideoOverlays,DirectCompositionVideoOverlaySupport,DirectCompositionVideoSwapChainForFullscreen,NvidiaVpSuperResolution,NvidiaVpTrueHDR,IntelVpSuperResolution,DirectCompositionLetterboxVideoOptimization');
+app.commandLine.appendSwitch('disable-direct-composition-video-overlays');
+// bug do Chromium no Windows: a janela deixa de repintar até trocar de programa (CalculateNativeWinOcclusion, acima)
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 if (cfg.hardwareAcceleration === false) app.disableHardwareAcceleration();
 // letras borradas por alguns segundos: o Chromium pinta primeiro uma versão em baixa resolução e só depois a nítida
@@ -27,6 +31,8 @@ if (gpuCompat && cfg.hardwareAcceleration !== false) {
   app.commandLine.appendSwitch('disable-gpu-rasterization');
   app.commandLine.appendSwitch('disable-zero-copy');
   app.commandLine.appendSwitch('disable-gpu-memory-buffer-video-frames');
+  app.commandLine.appendSwitch('disable-accelerated-video-decode'); // clipes e transmissões decodificados pela CPU
+  app.commandLine.appendSwitch('force-color-profile', 'srgb'); // sem conversão de cor do monitor/HDR
 }
 const log = (...a) => { try { fs.appendFileSync(path.join(app.getPath('userData'), 'main.log'), `${new Date().toISOString()} ${a.join(' ')}\n`); } catch { /* sem log */ } };
 let win, tray, quitting = false, pickedSource = null, badge = 0;

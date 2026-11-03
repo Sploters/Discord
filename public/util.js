@@ -177,3 +177,20 @@ for (const fn of ['append', 'prepend', 'replaceChildren']) for (const P of [Elem
   const orig = P[fn]; if (!orig) continue;
   P[fn] = function (...a) { return orig.apply(this, a.filter(x => x != null && x !== false)); };
 }
+
+// Vídeo com controles nativos, mas a tela cheia é da caixa em volta e não do <video>.
+// A tela cheia do próprio <video> leva o Chromium/Windows a mandar o vídeo direto para a placa
+// (sobreposição de hardware, realce de vídeo do driver); em alguns PCs isso deixa a imagem escura e
+// com cores estouradas. Assim o vídeo continua sendo desenhado pela página, igual fora da tela cheia.
+export function fsVideo(attrs = {}, cls = '') {
+  const v = h('video', { controls: true, playsInline: true, disablePictureInPicture: true, ...attrs });
+  v.setAttribute('controlslist', 'nofullscreen noremoteplayback');
+  const box = h('div.fsvid' + cls, v);
+  const toggle = () => { if (document.fullscreenElement === box) document.exitFullscreen?.().catch(() => { }); else box.requestFullscreen?.().catch(() => { }); };
+  const btn = h('button.fsvbtn', { type: 'button', title: 'Tela cheia (F)', onclick: (e) => { e.stopPropagation(); toggle(); } }, icon('expand', 18));
+  box.append(btn);
+  v.addEventListener('dblclick', (e) => { e.preventDefault(); toggle(); });
+  v.addEventListener('keydown', (e) => { if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggle(); } });
+  box.video = v;
+  return box;
+}

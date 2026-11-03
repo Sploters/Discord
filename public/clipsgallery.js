@@ -1,7 +1,7 @@
 // Galeria de clipes do servidor: todos os clipes salvos nas salas de voz, num só lugar.
 // Abas Todos / Meus / Favoritos, busca, prévia que só carrega quando aparece na tela, player com anterior/próximo,
 // renomear, favoritar, baixar, ir para a mensagem e apagar. Atualiza em tempo real (CLIP_CREATE/UPDATE/DELETE).
-import { h, icon } from './util.js';
+import { h, icon, fsVideo } from './util.js';
 import { S, tryApi, toast, menu, modal, confirmBox, promptBox, can, PERM, guild, nameOf } from './state.js';
 
 let ctx = {}; // injetado por app.js: go(gid, cid), jumpTo(mid)
@@ -72,10 +72,10 @@ function upsert(c) { const i = st.clips.findIndex(x => x.id === c.id); if (i >= 
 function player(i) {
   if (i < 0 || !st.clips[i]) return;
   let cur = i;
-  const v = h('video', { controls: true, autoplay: true, playsInline: true });
+  const vbox = fsVideo({ autoplay: true }, '.pvid'), v = vbox.video;
   const title = h('b.pttl'), meta = h('div.pmeta'), prev = h('button.pnav.prev', { title: 'Anterior (←)', onclick: () => show(cur - 1) }, icon('chevl', 28)), next = h('button.pnav.next', { title: 'Próximo (→)', onclick: () => show(cur + 1) }, icon('chevr', 28));
   const dl = h('a.btn.grey', { download: '' }, icon('dl', 16), 'Baixar');
-  const box = h('div.clipplayer', h('div.pstage', prev, v, next), h('div.pbar', h('div.ptxt', title, meta), dl));
+  const box = h('div.clipplayer', h('div.pstage', prev, vbox, next), h('div.pbar', h('div.ptxt', title, meta), dl));
   const show = (k) => {
     if (k < 0 || k >= st.clips.length) return; cur = k; const c = st.clips[k];
     v.src = c.url; v.play().catch(() => { });

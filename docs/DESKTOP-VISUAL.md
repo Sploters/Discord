@@ -12,3 +12,21 @@ Data: 2026-11-03. Relatado em um PC específico (não reproduzido em outros); as
 Diagnóstico: o `main.log` (pasta de dados do app) registra a placa detectada, o driver e se a compatibilidade está ativa (`gpu … antiga … compat ativa …`).
 
 Se o ícone continuar em branco depois de atualizar, pode ser o cache de ícones do Windows: desafixe o LocalCord da barra de tarefas, feche o app e abra pelo menu Iniciar (ou reinicie o Windows).
+
+## Clipe/vídeo em tela cheia escuro, com cores estouradas (desktop 1.0.16)
+
+Sintoma: fora da tela cheia o clipe aparece normal; em tela cheia fica quase preto, só com vermelhos e azuis fortes.
+
+Causa provável: quando o próprio `<video>` vai para tela cheia, o Chromium no Windows entrega o vídeo direto para a placa
+(sobreposição de hardware / swap chain de tela cheia) e o driver pode aplicar realce automático (RTX Video Super
+Resolution/HDR da NVIDIA, Intel VSR) ou converter a cor errado.
+
+Correções:
+- **Página:** clipes do chat e da galeria usam `fsVideo()` (util.js): o botão nativo de tela cheia some
+  (`controlslist="nofullscreen"`) e quem entra em tela cheia é a caixa em volta do vídeo (botão no canto, duplo clique
+  ou tecla F). O vídeo continua sendo desenhado junto com a página. Vale também no navegador.
+- **App desktop:** recursos desligados: `DirectCompositionVideoSwapChainForFullscreen`, `NvidiaVpSuperResolution`,
+  `NvidiaVpTrueHDR`, `IntelVpSuperResolution`, `DirectCompositionLetterboxVideoOptimization` e a chave
+  `--disable-direct-composition-video-overlays`.
+- **Compatibilidade de vídeo = Ligada** agora também decodifica vídeo pela CPU (`--disable-accelerated-video-decode`) e
+  força o perfil de cor sRGB (`--force-color-profile=srgb`). Se ainda acontecer, é o próximo passo.
