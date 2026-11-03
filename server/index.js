@@ -10,6 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 import { all, get, run, newId, UPLOAD_DIR, DATA_DIR } from './db.js';
 import { startSfu, sfuEnabled, sfuJoin, sfuLeave, sfuRequest, sfuAttachRtp, sfuLoad } from './sfu.js';
+import { getAdapter, listAdapters } from './integrations/index.js';
 import { translate, translateEnabled, engineName } from './translate.js';
 import { initMusic, handle as musicHandle, onVoiceJoin as musicOnJoin, onVoiceLeave as musicOnLeave } from './music.js';
 
@@ -845,6 +846,51 @@ app.get('/api/sfu/load', auth, (req, res) => { // só donos de servidor: carga d
   if (!get('SELECT 1 AS x FROM guilds WHERE owner_id=?', req.uid)) return bad(res, 'Sem permissão', 403);
   sfuLoad().then(d => res.json(d), e => bad(res, e.message, 500));
 });
+// ---- integrações com plataformas de jogos (Fase 1): vincular/desvincular/privacidade. A API da plataforma fica isolada em server/integrations/* ----
+const linkStates = new Map(); // state -> { uid, platform, returnTo, exp } (uso único, 10 min)
+const publicBase = (req) => (process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+const accountPub = (a) => !a ? null : ({ platform: a.platform, external_id: a.external_id, display_name: a.display_name, avatar: a.avatar, profile_url: a.profile_url, visibility: a.visibility, linked_at: a.linked_at, last_sync: a.last_sync, sync_state: a.sync_state });
+const accountOf = (uid, platform) => get('SELECT * FROM linked_accounts WHERE user_id=? AND platform=?', uid, platform);
+app.get('/api/integrations', auth, wrap((req, res) => {
+  res.json(listAdapters().map(ad => ({ id: ad.id, name: ad.name, capabilities: ad.capabilities, configured: ad.configured(), account: accountPub(accountOf(req.uid, ad.id)) })));
+}));
+app.post('/api/integrations/:platform/link', auth, wrap((req, res) => {
+  const ad = getAdapter(req.params.platform); if (!ad) return bad(res, 'Plataforma desconhecida', 404);
+  const now = Date.now(); for (const [k, v] of linkStates) if (v.exp < now || (v.uid === req.uid && v.platform === ad.id)) linkStates.delete(k); // só um pedido pendente por conta
+  const state = crypto.randomBytes(24).toString('hex'), base = publicBase(req);
+  const returnTo = `${base}/api/integrations/${ad.id}/callback?state=${state}`;
+  linkStates.set(state, { uid: req.uid, platform: ad.id, returnTo, exp: now + 10 * 60 * 1000 });
+  res.json({ url: ad.startLink({ returnTo, realm: base }) });
+}));
+app.get('/api/integrations/:platform/callback', (req, res) => { // aberto: quem chama é o navegador voltando da plataforma; o 'state' liga ao usuário
+  const page = (ok, msg) => res.status(ok ? 200 : 400).type('html').send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LocalCord</title><body style="font-family:system-ui;background:#1e1f22;color:#fff;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0"><div style="text-align:center;max-width:420px;padding:24px"><h2>${ok ? '✅' : '⚠️'} ${String(msg).replace(/[<>&]/g, '')}</h2><p style="opacity:.7">${ok ? 'Pode fechar esta janela e voltar ao LocalCord.' : 'Feche esta janela e tente vincular de novo pelo LocalCord.'}</p></div></body>`);
+  const ad = getAdapter(req.params.platform), state = String(req.query.state || ''), st = linkStates.get(state);
+  if (!ad || !st || st.platform !== ad.id) return page(false, 'Pedido expirado ou inválido');
+  linkStates.delete(state); // uso único
+  if (st.exp < Date.now()) return page(false, 'Pedido expirado');
+  ad.finishLink(req.query, { returnTo: st.returnTo }).then(({ external_id }) => {
+    const other = get('SELECT user_id FROM linked_accounts WHERE platform=? AND external_id=?', ad.id, external_id);
+    if (other && other.user_id !== st.uid) return page(false, 'Esta conta já está vinculada a outro usuário');
+    run('DELETE FROM linked_accounts WHERE user_id=? AND platform=?', st.uid, ad.id);
+    run('INSERT INTO linked_accounts(user_id,platform,external_id,visibility,linked_at,sync_state) VALUES(?,?,?,?,?,?)', st.uid, ad.id, external_id, 'friends', Date.now(), 'pending');
+    dispatch([st.uid], 'INTEGRATION_UPDATE', { platform: ad.id, account: accountPub(accountOf(st.uid, ad.id)) });
+    page(true, 'Conta ' + ad.name + ' vinculada!');
+  }).catch(e => page(false, e.message || 'Falha ao vincular'));
+});
+app.patch('/api/integrations/:platform', auth, wrap((req, res) => {
+  const a = accountOf(req.uid, req.params.platform); if (!a) return bad(res, 'Conta não vinculada', 404);
+  if (!['friends', 'off'].includes(req.body.visibility)) return bad(res, 'Visibilidade inválida');
+  run('UPDATE linked_accounts SET visibility=? WHERE user_id=? AND platform=?', req.body.visibility, req.uid, a.platform);
+  dispatch([req.uid], 'INTEGRATION_UPDATE', { platform: a.platform, account: accountPub(accountOf(req.uid, a.platform)) });
+  res.json(accountPub(accountOf(req.uid, a.platform)));
+}));
+app.delete('/api/integrations/:platform', auth, wrap((req, res) => {
+  const p = req.params.platform; if (!getAdapter(p)) return bad(res, 'Plataforma desconhecida', 404);
+  run('DELETE FROM linked_accounts WHERE user_id=? AND platform=?', req.uid, p);
+  run('DELETE FROM activities WHERE user_id=? AND platform=?', req.uid, p); run('DELETE FROM game_prefs WHERE user_id=? AND platform=?', req.uid, p);
+  dispatch([req.uid], 'INTEGRATION_UPDATE', { platform: p, account: null });
+  res.json({});
+}));
 app.get('/api/server-info', (req, res) => res.json({ name: 'LocalCord', registration: OPEN_REGISTRATION, default_avatars: DEFAULT_AVATARS }));
 app.use(express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
 app.get(/^\/(?!api|files|gateway).*/, (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));

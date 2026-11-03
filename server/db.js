@@ -99,3 +99,16 @@ once('avatars-rename-1', () => db.exec(`UPDATE users SET avatar = CASE avatar
   WHEN '/avatars/1.webp' THEN '/avatars/10.webp' ELSE avatar END
   WHERE avatar IN ('/avatars/6.png','/avatars/9.png','/avatars/4.png','/avatars/10.png','/avatars/1.webp')`));
 db.exec(`CREATE TABLE IF NOT EXISTS sounds(id TEXT PRIMARY KEY, guild_id TEXT NOT NULL REFERENCES guilds(id) ON DELETE CASCADE, name TEXT NOT NULL, emoji TEXT, url TEXT NOT NULL, volume INTEGER DEFAULT 100, creator_id TEXT, created_at INTEGER);`);
+// ---- Fase 1: contas vinculadas e atividade (sem tokens: a Steam usa OpenID, que não gera segredo por usuário) ----
+db.exec(`CREATE TABLE IF NOT EXISTS linked_accounts(
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, platform TEXT NOT NULL, external_id TEXT NOT NULL,
+  display_name TEXT, avatar TEXT, profile_url TEXT, visibility TEXT NOT NULL DEFAULT 'friends',
+  linked_at INTEGER, last_sync INTEGER, sync_state TEXT,
+  PRIMARY KEY(user_id, platform), UNIQUE(platform, external_id));
+CREATE TABLE IF NOT EXISTS activities(
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, platform TEXT NOT NULL,
+  kind TEXT NOT NULL, game_id TEXT, title TEXT, data TEXT, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS activities_user ON activities(user_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS game_prefs(
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, platform TEXT NOT NULL, game_id TEXT NOT NULL,
+  hidden INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, platform, game_id));`);
