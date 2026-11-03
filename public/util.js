@@ -7,7 +7,7 @@ export function h(tag, props, ...kids) {
   for (const [k, v] of Object.entries(props || {})) {
     if (v == null || v === false) continue;
     if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-    else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
+    else if (k === 'style' && typeof v === 'object') { for (const [sk, sv] of Object.entries(v)) { if (sk.startsWith('--')) el.style.setProperty(sk, sv); else el.style[sk] = sv; } } // variáveis CSS (--x) só entram por setProperty
     else if (k === 'class') el.className += ' ' + v;
     else if (k in el && k !== 'list') el[k] = v;
     else el.setAttribute(k, v === true ? '' : v);
@@ -18,6 +18,7 @@ export function h(tag, props, ...kids) {
 }
 
 const I = {
+  gamepad: 'M7.5 7h9A5.5 5.5 0 0 1 22 12.5v2.8a2.7 2.7 0 0 1-4.9 1.6l-1.5-2H8.4l-1.5 2A2.7 2.7 0 0 1 2 15.3v-2.8A5.5 5.5 0 0 1 7.5 7Zm-.5 3v1.5H5.5v1.5H7v1.5h1.5V13H10v-1.5H8.5V10H7Zm9.5.5a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm-2 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z',
   layout: 'M3 5a2 2 0 0 1 2-2h6v10H3V5Zm10-2h6a2 2 0 0 1 2 2v4h-8V3Zm0 8h8v8a2 2 0 0 1-2 2h-6V11ZM3 15h8v6H5a2 2 0 0 1-2-2v-4Z',
   pointer: 'M5.5 2.8a.6.6 0 0 1 .9-.5l13 7.7a.6.6 0 0 1-.1 1.1l-5.5 1.6 3.1 5.6a.6.6 0 0 1-.2.8l-2 1.1a.6.6 0 0 1-.8-.2l-3.1-5.6-4.2 3.9a.6.6 0 0 1-1-.4Z',
   leaf: 'M20.5 3.5C11 3.5 5 7.5 5 14c0 1.6.4 3 1.1 4.1L3.3 21l1.4 1.4 2.8-2.8c1.2.8 2.7 1.2 4.3 1.2 6.6 0 9.9-6 9.9-16.3a1 1 0 0 0-1.2-1Z',

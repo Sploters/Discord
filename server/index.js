@@ -14,6 +14,7 @@ import { getAdapter, listAdapters } from './integrations/index.js';
 import { createActivityService } from './activity.js';
 import { createCallInvites } from './callinvites.js';
 import { createRemote } from './remote.js';
+import { mountLfg } from './lfg.js';
 import { translate, translateEnabled, engineName } from './translate.js';
 import { initMusic, handle as musicHandle, onVoiceJoin as musicOnJoin, onVoiceLeave as musicOnLeave, stopAll as musicStopAll } from './music.js';
 
@@ -754,6 +755,21 @@ app.delete('/api/channels/:id/messages/:mid/attachments/:idx', auth, wrap((req, 
   unlinkIfUnused(gone.url);
   res.json({});
 }));
+// ---------- Procurar jogadores (server/lfg.js) ----------
+// quem vê os anúncios de alguém: quem divide algum servidor com a pessoa ou é amigo dela, menos bloqueios (nos dois sentidos)
+function lfgAudience(uid) {
+  const ids = new Set([uid]);
+  for (const r of all('SELECT m2.user_id FROM members m1 JOIN members m2 ON m1.guild_id=m2.guild_id WHERE m1.user_id=?', uid)) ids.add(r.user_id);
+  for (const r of all('SELECT other_id FROM relationships WHERE user_id=? AND type=1', uid)) ids.add(r.other_id);
+  for (const r of all('SELECT other_id id FROM relationships WHERE user_id=? AND type=2 UNION SELECT user_id id FROM relationships WHERE other_id=? AND type=2', uid, uid)) ids.delete(r.id);
+  return [...ids];
+}
+mountLfg(app, {
+  auth, wrap, bad, get, all, run, newId, dispatch, userPub, clean,
+  audienceOf: lfgAudience, canSeeChannel: canAccessChannel,
+  voiceCount: (cid) => voice.get(cid)?.size || 0, voiceChannelOf: (uid) => currentVoice(uid),
+  callInvite: (from, to) => callInv.create(from, to), postDm: (a, b, c) => postDm(a, b, c),
+});
 // ---------- Enquetes ----------
 const POLL_DURATIONS = new Set([0, 1, 4, 8, 24, 72, 168]); // horas (0 = sem prazo)
 const pollTimers = new Map();

@@ -16,6 +16,7 @@ import { startBuffer, stopAllBuffers, pruneBuffers, clipping, saveClip, clipLeng
 import { syncThrottle } from './lite.js';
 import { initRemote, onRemoteEvent, tileButton as remoteTileButton, controlling as remoteControlling } from './remote.js';
 import { pollModal, pollCard } from './polls.js';
+import { initLfg, renderLfg, onLfgEvent } from './lfg.js';
 import { initClipsGallery, renderClips, onClipEvent } from './clipsgallery.js';
 import { initCallInvite, callCard, onCallInvite, onCallInviteUpdate, canCallInvite, sendCallInvite } from './callinvite.js';
 import { seg, toggle as uiToggle, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
@@ -186,6 +187,7 @@ function onEvent(t, d) {
     case 'STREAM_VIEWERS': if (d.viewers.length) S.viewers.set(d.streamer_id, d.viewers); else S.viewers.delete(d.streamer_id); renderVoiceUI(); break;
     case 'SOUNDBOARD': sbIncoming(d, voice); break;
     case 'CALL_INVITE': onCallInvite(d); break;
+    case 'LFG_POST': case 'LFG_REQUEST': case 'LFG_ANSWER': onLfgEvent(t, d); break;
     case 'CLIP_CREATE': case 'CLIP_UPDATE': case 'CLIP_DELETE': onClipEvent(t, d); break;
     case 'REMOTE_REQUEST': case 'REMOTE_STATE': case 'REMOTE_INPUT': case 'REMOTE_ERROR': onRemoteEvent(t, d); break;
     case 'CALL_INVITE_UPDATE': onCallInviteUpdate(d); break;
@@ -279,6 +281,7 @@ function applyRoute(first) {
   if (gid === '@me') {
     S.view = { kind: 'home', gid: '@me', cid: cid && S.dms.has(cid) ? cid : null, tab: S.view.tab || 'online' };
     if (S.view.cid) S.view.kind = 'dm';
+    if (cid === 'lfg') S.view = { kind: 'lfg', gid: '@me', cid: 'lfg', tab: S.view.tab }; // aba Procurar jogadores (não é uma DM)
   } else {
     const g = guild(gid);
     if (!g) { location.hash = '#/@me'; return; }
@@ -434,6 +437,7 @@ function renderSide() {
     const pending = [...S.rels.values()].filter(r => r.type === 3).length;
     list = h('div#side-list',
       h('div.ch' + (S.view.kind === 'home' ? '.active' : ''), { onclick: () => go('@me') }, icon('users'), h('span.name', 'Amigos'), pending > 0 && h('span.pill', pending)),
+      h('div.ch.lfgrow-side' + (S.view.kind === 'lfg' ? '.active' : ''), { onclick: () => go('@me', 'lfg'), title: 'Anúncios para fechar o squad' }, icon('gamepad'), h('span.name', 'Procurar jogadores')),
       ...(() => {
         const pins = pinnedDMs(), all = [...S.dms.values()].sort((a, b) => (lastActivity(b) > lastActivity(a) ? 1 : -1));
         const pinned = pins.map(id => all.find(d => dmPeer(d)?.id === id)).filter(Boolean), rest = all.filter(d => !pinned.includes(d));
@@ -788,6 +792,7 @@ function renderMain() {
   const v = S.view;
   if (v.kind === 'home') return renderHome(main);
   if (v.kind === 'clips') return renderClips(main, v.gid);
+  if (v.kind === 'lfg') return renderLfg(main);
   const ch = channelById(v.cid);
   if (!ch) return main.replaceChildren(h('div.empty', { style: { margin: 'auto' } }, h('h2', 'Sem canais'), h('p', 'Este servidor ainda não tem canais.')));
   const dm = ch.type === 1, vc = ch.type === 2, peer = dm && dmPeer(ch);
@@ -1846,6 +1851,7 @@ function setupDesktop() {
 
 // gancho de depuração/testes automatizados
 initRemote({ savePrefs, send: gwSend, name: (uid) => nameOf(uid, channelById(voice?.channelId)?.guild_id) || user(uid).display_name, rerender: () => renderVoiceUI() });
+initLfg({ go, profile: (a, uid) => profile(a, uid), inVoice: () => !!voice?.channelId, voiceChannel: () => (voice?.channelId && channelById(voice.channelId)?.type === 2 ? voice.channelId : '') });
 initClipsGallery({ go, jumpTo: (mid) => jumpTo(mid) });
 initCallInvite({ go, joinVoice, voice: () => voice, channelById, guild });
 initActivity({ openDM, profile: (a, uid) => profile(a, uid), userMenu: (e, uid) => userMenu(e, uid), go, joinVoice, watchFriend, voice: () => voice, openSettings: (k) => openSettings(k, ctxSettings()), renderActiveNow });

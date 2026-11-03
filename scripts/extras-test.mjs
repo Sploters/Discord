@@ -286,7 +286,7 @@ try {
   // fixar
   await clickText(A, '.menu .it', 'Fixar'); await sleep(600);
   await A.evaluate(() => window.__lc.go('@me')); await sleep(500);
-  const side = await A.evaluate(() => [...document.querySelectorAll('#side-list > *')].map(e => e.textContent.trim()).slice(0, 4));
+  const side = await A.evaluate(() => [...document.querySelectorAll('#side-list > *')].map(e => e.textContent.trim()).filter(t => t !== 'Procurar jogadores').slice(0, 4)); // a aba Procurar jogadores fica entre Amigos e as DMs
   ok(side[1] === 'Fixadas' && side[2].startsWith('bob') && side[3] === 'Mensagens diretas', 'Fixar põe a conversa no topo das DMs: ' + side.join(' | '));
   await A.screenshot({ path: `${SHOTS}/x10-dm-fixada.png` });
   ok(await A.evaluate(() => !document.querySelector('#home .tab') || ![...document.querySelectorAll('#home .tab')].some(t => t.textContent.includes('Bloqueados'))), 'aba "Bloqueados" saiu de Amigos');

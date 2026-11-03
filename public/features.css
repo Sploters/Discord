@@ -781,3 +781,62 @@ select.gpucompat:focus { outline: 2px solid var(--brand, #5865f2); outline-offse
 .pollmodal .pmset { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0 0; margin-top: 10px; border-top: 1px solid var(--divider, #3f4147); }
 .pollmodal .pmset b { display: block; color: var(--header); } .pollmodal .pmset small { color: var(--text-muted); font-size: 12px; }
 .pollmodal .pmdur { height: 34px; padding: 0 8px; border: 1px solid var(--divider, #3f4147); border-radius: 6px; background: var(--bg-tert, #1e1f22); color: var(--header); }
+/* procurar jogadores (LFG) */
+#lfgview { display: flex; flex-direction: column; height: 100%; min-width: 0; background: var(--bg-pri, #313338); }
+#lfgview #topbar { flex: none; gap: 8px; } #lfgview #topbar .spacer { flex: 1; }
+#lfgview #topbar .btn.sm { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 2px 12px; }
+#lfgview .lfgbody { flex: 1; overflow-y: auto; padding: 16px 20px 28px; }
+.lfgchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.lchip { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--divider, #3f4147); border-radius: 999px; background: var(--bg-sec, #2b2d31); color: var(--interactive); font-weight: 600; font-size: 13px; cursor: pointer; }
+.lchip i { width: 9px; height: 9px; border-radius: 50%; background: var(--gc, var(--interactive)); }
+.lchip:hover { color: var(--header); } .lchip.on { color: #fff; border-color: var(--gc, var(--brand, #5865f2)); background: color-mix(in srgb, var(--gc, var(--brand, #5865f2)) 30%, var(--bg-sec, #2b2d31)); }
+.lchip.has::after { content: '✓'; margin-left: 2px; color: var(--green, #23a55a); }
+.lfgbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 12px 0 16px; }
+.lfgalert { display: flex; align-items: center; gap: 10px; color: var(--text-normal, var(--header)); font-size: 14px; cursor: pointer; }
+.lfghint { color: var(--text-muted); font-size: 13px; }
+.lfglinks { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--text-muted); font-size: 13px; }
+.lfglink { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px; background: var(--bg-sec, #2b2d31); color: var(--link, #00a8fc); text-decoration: none; font-weight: 600; }
+.lfglink:hover { background: var(--bg-mod-hover, #35373c); }
+.lfggrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.lfgcard { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 10px; background: var(--bg-sec, #2b2d31); border: 1px solid var(--divider, #3f4147); border-top: 4px solid var(--gc); }
+.lfgcard.mine { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gc) 45%, transparent); }
+.lfgcard.closed { opacity: .65; }
+.lfgtop { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lfggame { color: var(--header); font-weight: 800; font-size: 15px; } .lfgmode { color: var(--interactive); font-size: 13px; font-weight: 600; }
+.lfgwhen { margin-left: auto; padding: 2px 8px; border-radius: 999px; background: var(--bg-tert, #1e1f22); color: var(--interactive); font-size: 12px; font-weight: 700; }
+.lfgwhen.now { background: color-mix(in srgb, var(--green, #23a55a) 22%, transparent); color: var(--green, #23a55a); }
+.lfgstate { padding: 2px 8px; border-radius: 999px; background: var(--bg-tert, #1e1f22); color: var(--text-muted); font-size: 12px; font-weight: 700; }
+.lfgneed { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--text-muted); font-size: 14px; }
+.lfgneed b { color: var(--header); font-size: 18px; }
+.lfgmic { display: inline-flex; align-items: center; gap: 3px; color: var(--interactive); }
+.lfgroles { display: flex; flex-wrap: wrap; gap: 6px; } .lfgroles span, .lfgroles button { padding: 3px 9px; border-radius: 6px; background: var(--bg-tert, #1e1f22); color: var(--text-normal, var(--header)); font-size: 12px; font-weight: 600; border: 1px solid transparent; }
+.lfgroles.pick button { cursor: pointer; color: var(--interactive); } .lfgroles.pick button.on { border-color: var(--brand, #5865f2); color: #fff; background: color-mix(in srgb, var(--brand, #5865f2) 30%, var(--bg-tert, #1e1f22)); }
+.lfgnote { padding: 8px 10px; border-left: 3px solid var(--divider, #3f4147); border-radius: 4px; background: var(--bg-tert, #1e1f22); color: var(--text-normal, var(--header)); font-size: 14px; font-style: italic; word-break: break-word; }
+.lfgwho { display: flex; align-items: center; gap: 10px; cursor: pointer; } .lfgwho > .lfgwinfo { flex: 1; min-width: 0; } .lfgwho > .avatar, .lfgreq > .avatar { flex: none; }
+.lfgwho b { display: block; color: var(--header); } .lfgwho small, .lfgreq small { display: block; color: var(--text-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lfgstat { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 4px; background: var(--bg-tert, #1e1f22); color: var(--link, #00a8fc); font-size: 12px; font-weight: 600; text-decoration: none; flex: none; }
+.lfgch { display: flex; align-items: center; gap: 6px; color: var(--interactive); font-size: 13px; } .lfgch small { margin-left: auto; color: var(--text-muted); }
+.lfgacc { display: flex; align-items: center; gap: 4px; } .lfgacc small { color: var(--text-muted); margin-right: 4px; }
+.lfgreqs { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 8px; background: color-mix(in srgb, var(--brand, #5865f2) 10%, var(--bg-tert, #1e1f22)); }
+.lfgreqs > small { color: var(--header); font-weight: 700; font-size: 12px; }
+.lfgreq { display: flex; align-items: center; gap: 8px; } .lfgreq > .lfgwinfo { flex: 1; min-width: 0; } .lfgreq b { color: var(--header); font-size: 14px; }
+.lfgreq .btn.sm { min-height: 28px; padding: 2px 10px; font-size: 13px; }
+.lfgbtns { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.lfgbtns .btn { display: flex; align-items: center; gap: 6px; min-height: 34px; } .lfgbtns .btn.green { background: var(--green, #23a55a); color: #fff; }
+.lfgok { color: var(--green, #23a55a); font-weight: 700; } .lfgno { color: var(--text-muted); font-weight: 600; }
+.lfgsec { margin: 26px 0 10px; color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .02em; }
+.lfgempty { margin: 50px auto; max-width: 440px; text-align: center; color: var(--text-muted); }
+.lfgempty b { display: block; margin: 12px 0 6px; color: var(--header); font-size: 17px; } .lfgempty .btn { margin-top: 12px; }
+.lfgempty .ceart { width: 80px; height: 80px; margin: 0 auto; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--bg-sec, #2b2d31); color: var(--interactive); }
+.lfgform .lfglab { margin: 12px 0 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); }
+.lfgform .lfgrow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.lfgform .lfgset { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 4px; } .lfgform .lfgset b { color: var(--header); }
+.lfgform .lfghint { margin: 12px 0 0; }
+.lfgform .lfgsave { display: flex; justify-content: flex-end; margin-top: 12px; }
+@media (max-width: 640px) { #lfgview .lfgbody { padding: 12px; } .lfggrid { grid-template-columns: 1fr; } #lfgview #topbar .topic { display: none; } .lfgform .lfgrow { grid-template-columns: 1fr; } }
+
+.lfgform .lfgrow, .lfgform > label.f { margin-top: 12px; }
+.lfgform .lfgchips.pick { margin-bottom: 4px; }
+.lfgform .lfgroles.pick { margin-bottom: 4px; } .lfgform .lfgroles.pick button { padding: 5px 11px; font-size: 13px; }
+.lfgform .lfgset { margin-top: 16px; }
+#side-list .lfgrow-side svg { color: var(--interactive); }

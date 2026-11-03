@@ -129,3 +129,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS polls(
   id TEXT PRIMARY KEY, message_id TEXT NOT NULL UNIQUE REFERENCES messages(id) ON DELETE CASCADE, channel_id TEXT NOT NULL,
   author_id TEXT NOT NULL, question TEXT NOT NULL, options TEXT NOT NULL, multi INTEGER DEFAULT 0, ends_at INTEGER, closed_at INTEGER, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS poll_votes(poll_id TEXT NOT NULL REFERENCES polls(id) ON DELETE CASCADE, user_id TEXT NOT NULL, option_id TEXT NOT NULL, voted_at INTEGER, PRIMARY KEY(poll_id, user_id, option_id));`);
+
+// Procurar jogadores (LFG): anúncios, pedidos para entrar e perfil de jogador por jogo
+db.exec(`CREATE TABLE IF NOT EXISTS lfg_posts(
+  id TEXT PRIMARY KEY, author_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, game TEXT NOT NULL, game_name TEXT NOT NULL, mode TEXT NOT NULL,
+  slots INTEGER NOT NULL, rank_min TEXT, rank_max TEXT, roles TEXT DEFAULT '[]', mic INTEGER DEFAULT 0, when_at INTEGER, note TEXT DEFAULT '',
+  channel_id TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, closed_at INTEGER);
+CREATE INDEX IF NOT EXISTS idx_lfg_open ON lfg_posts(expires_at);
+CREATE TABLE IF NOT EXISTS lfg_requests(post_id TEXT NOT NULL REFERENCES lfg_posts(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, state TEXT NOT NULL, created_at INTEGER, PRIMARY KEY(post_id, user_id));
+CREATE TABLE IF NOT EXISTS lfg_profiles(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, game TEXT NOT NULL, ign TEXT DEFAULT '', rank TEXT, roles TEXT DEFAULT '[]', updated_at INTEGER, PRIMARY KEY(user_id, game));`);
