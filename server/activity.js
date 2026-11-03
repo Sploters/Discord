@@ -8,7 +8,7 @@ import { PollError } from './integrations/errors.js';
 
 const MIN_SECS = 30, MAX_BACKOFF_MS = 15 * 60 * 1000, KEEP_DAYS = 30, KEEP_PER_USER = 200, STALE_X = 3;
 
-export function createActivityService({ all, get, run, newId, dispatch, isOnline, getAdapter, listAdapters, now = () => Date.now(), log = () => { } }) {
+export function createActivityService({ all, get, run, newId, dispatch, isOnline, getAdapter, listAdapters, notifyAccount = () => { }, now = () => Date.now(), log = () => { } }) {
   const intervalMs = () => +process.env.ACTIVITY_POLL_MS || Math.max(MIN_SECS, +process.env.STEAM_POLL_SECS || 60) * 1000; // ACTIVITY_POLL_MS: só para testes
   const current = new Map();   // `${uid}:${platform}` -> { uid, platform, game:{id,title}, since, state, at }  (só o que está PUBLICADO)
   const cache = new Map();     // `${platform}:${external_id}` -> { snap, at }  (último snapshot, evita reconsultar)
@@ -55,6 +55,8 @@ export function createActivityService({ all, get, run, newId, dispatch, isOnline
     const k = a.user_id + ':' + a.platform, prev = current.get(k);
     run('UPDATE linked_accounts SET display_name=?, avatar=?, profile_url=?, last_sync=?, sync_state=? WHERE user_id=? AND platform=?',
       snap.name ?? a.display_name, snap.avatar ?? a.avatar, snap.profileUrl ?? a.profile_url, now(), snap.visibility === 'private' ? 'private' : 'ok', a.user_id, a.platform);
+    const newState = snap.visibility === 'private' ? 'private' : 'ok';
+    if (a.sync_state !== newState || (snap.name && a.display_name !== snap.name) || (snap.avatar && a.avatar !== snap.avatar)) notifyAccount(a.user_id, a.platform); // a página Contas vinculadas atualiza sozinha
     const game = snap.game && !hiddenGame(a.user_id, a.platform, snap.game.id) ? snap.game : null;
     if (!game) return clear(a.user_id, a.platform);
     if (prev && prev.game.id === game.id) { prev.at = now(); prev.state = snap.state; if (prev.game.title !== game.title) prev.game = game; return; }
@@ -87,7 +89,7 @@ export function createActivityService({ all, get, run, newId, dispatch, isOnline
       const st = e instanceof PollError ? e.status : 0;
       if (st === 401 || st === 403) { h.disabled = 'credencial inválida ou ausente'; log(`[atividade] ${ad.id}: ${h.disabled} — consultas suspensas`); }
       else h.nextAt = now() + Math.min(intervalMs() * 2 ** h.failures, MAX_BACKOFF_MS);
-      for (const a of accounts) run("UPDATE linked_accounts SET sync_state=? WHERE user_id=? AND platform=?", h.disabled ? 'unavailable' : 'error', a.user_id, a.platform);
+      for (const a of accounts) { const st = h.disabled ? 'unavailable' : 'error'; run('UPDATE linked_accounts SET sync_state=? WHERE user_id=? AND platform=?', st, a.user_id, a.platform); if (a.sync_state !== st) notifyAccount(a.user_id, a.platform); }
       // dados ficam como estavam; entradas velhas deixam de ser exibidas pelo critério de staleness
     }
   }

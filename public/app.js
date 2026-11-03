@@ -21,7 +21,7 @@ import { profileCard, STATUS_TXT } from './card.js';
 import { timeoutDialog, removeTimeout, banDialog, timedOutUntil } from './mod.js';
 import { recordVoiceMessage, voiceEl } from './voicemsg.js';
 import { initPlugins, mentionUser, addMention, resolveMentions } from './plugins.js';
-import { initActivity, setActivities, onActivityUpdate, onIntegrationUpdate, activityTab, activityOf, playingLine } from './activity.js';
+import { initActivity, setActivities, onActivityUpdate, onIntegrationUpdate, activityTab, activityOf, playingLine, refreshFeedView } from './activity.js';
 import { toggleTranslation, isTranslated, translationBlock, translateOutgoing, draftMenu } from './translate.js';
 applyTheme();
 
@@ -159,7 +159,7 @@ function onEvent(t, d) {
     case 'VOICE_STATE': {
       const prevVs = S.voice.get(d.user_id), before = prevVs?.channel_id, mineCh = voice.channelId;
       if (d.channel_id) S.voice.set(d.user_id, d); else S.voice.delete(d.user_id);
-      if (S.view.kind === 'home') setTimeout(renderActiveNow);
+      if (S.view.kind === 'home') { setTimeout(renderActiveNow); setTimeout(refreshFeedView); }
       if (d.user_id === S.me.id && !d.channel_id) musicOnState({ active: false });
       if (d.user_id === S.me.id && !d.channel_id && voice.active && voice.channelId === d.prev_channel_id) voice.leave();
       if (d.user_id !== S.me.id) {
@@ -1526,7 +1526,7 @@ function renderVoiceUI(speakOnly) {
     document.getElementById('vp-ping') && updatePing();
     return;
   }
-  renderSide();
+  renderSide(); refreshFeedView();
   autoClosed(); // transmissão nova de outra pessoa começa fechada
   updatePip(pipCtx);
   if (!voice.active) stopAllBuffers();

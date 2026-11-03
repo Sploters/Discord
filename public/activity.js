@@ -24,6 +24,8 @@ export function onIntegrationUpdate(d) {
   if (!d.account) for (const k of [...S.activities.keys()]) if (k === S.me.id + ':' + d.platform) S.activities.delete(k);
   S.refreshConnections?.(); scheduleFeed();
 }
+// a situação real mudou (alguém entrou/saiu de uma chamada, começou a transmitir…): redesenha os cartões para só mostrar ações possíveis
+export const refreshFeedView = () => { if (document.getElementById('actfeed')) S.redrawFeed?.(); };
 export function clearActivities() { S.activities.clear(); S.integrations = null; feed = null; }
 
 const dur = (ms) => { const m = Math.max(0, Math.round(ms / 60000)); if (m < 1) return 'agora há pouco'; if (m < 60) return m + ' min'; const hh = Math.floor(m / 60), mm = m % 60; return hh + 'h' + (mm ? ' ' + mm + 'min' : ''); };
@@ -77,14 +79,14 @@ export function activityTab(pane) {
     const linked = S.integrations?.some(i => i.account);
     const online = feed.friends.filter(f => f.user_id !== S.me.id && !f.playing.length).map(f => S.users.get(f.user_id)).filter(u => u && u.status && u.status !== 'offline');
     const uname = (id) => (id === S.me.id ? 'Você' : (S.users.get(id)?.display_name || '?'));
-    body.replaceChildren(
+    body.replaceChildren(...[
       h('div.fh', `Jogando agora — ${playing.length}`),
       playing.length ? h('div.act-grid', playing.map(({ uid, a }) => card(uid, a)))
         : h('div.empty', { style: { margin: '24px 0' } }, h('div', { style: { fontSize: '40px' } }, '🎮'), h('p', 'Ninguém está jogando agora.'),
           !linked && h('div', h('p', { style: { color: 'var(--text-muted)' } }, 'Vincule sua conta Steam para seus amigos verem o que você joga.'), h('button.btn', { onclick: () => ctx.openSettings('connections') }, 'Vincular conta'))),
       online.length > 0 && [h('div.fh', `Online — ${online.length}`), h('div.act-online', online.map(u => h('div.an-row', { onclick: () => ctx.openDM(u.id), oncontextmenu: (e) => ctx.userMenu(e, u.id) }, avatar(u, 32, { ring: 'var(--bg-sec)' }), h('div.an-who', h('b', u.display_name), h('small', u.custom_status || 'Online')), ...voiceActions(u.id).slice(0, 2))))],
       feed.events.length > 0 && [h('div.fh', 'Atividade recente'), h('div.act-events', feed.events.map(ev => h('div.act-ev', icon(ev.kind === 'game_start' ? 'play' : 'stop', 14),
-        h('span', h('b', uname(ev.user_id)), ev.kind === 'game_start' ? ' começou a jogar ' : ' jogou ', h('b', ev.game.title), ev.kind === 'game_stop' && ev.seconds != null ? ` por ${secsTxt(ev.seconds)}` : ''), h('small', ago(ev.at)))))]);
+        h('span', h('b', uname(ev.user_id)), ev.kind === 'game_start' ? ' começou a jogar ' : ' jogou ', h('b', ev.game.title), ev.kind === 'game_stop' && ev.seconds != null ? ` por ${secsTxt(ev.seconds)}` : ''), h('small', ago(ev.at)))))]].flat().filter(Boolean));
   };
   S.redrawFeed = draw; draw();
   loadFeed().then(draw);
