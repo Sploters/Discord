@@ -13,6 +13,7 @@ import { startSfu, sfuEnabled, sfuJoin, sfuLeave, sfuRequest, sfuAttachRtp, sfuL
 import { getAdapter, listAdapters } from './integrations/index.js';
 import { createActivityService } from './activity.js';
 import { createCallInvites } from './callinvites.js';
+import { createRemote } from './remote.js';
 import { translate, translateEnabled, engineName } from './translate.js';
 import { initMusic, handle as musicHandle, onVoiceJoin as musicOnJoin, onVoiceLeave as musicOnLeave, stopAll as musicStopAll } from './music.js';
 
@@ -1006,6 +1007,7 @@ function dropWatching(uid, cid) { // tira uid das transmissões que assistia e e
 }
 function leaveVoice(uid, cid) {
   const m = voice.get(cid); if (!m || !m.has(uid)) return;
+  remote.onLeave(uid); // controle remoto acaba antes de qualquer outra coisa
   m.delete(uid); dropWatching(uid, cid); if (!m.size) { voice.delete(cid); roomStart.delete(cid); acts.delete(cid); }
   else { const a = acts.get(cid); if (a?.spot && (a.spot.slice(2) === uid)) { a.spot = a.spotBy = null; roomSend(cid, 'ROOM_STATE', actState(cid)); } } // quem estava em destaque saiu
   sfuLeave(cid, uid);
@@ -1024,6 +1026,12 @@ async function joinBot(cid, botId) {
   await sfuJoin(cid, botId, () => { });
 }
 initMusic({ get, run, newId, voice, send, dispatch, guildMemberIds, memberObj, userPub, joinBot, leaveBot: (cid, botId) => leaveVoice(botId, cid), attachRtp: sfuAttachRtp, sfuEnabled });
+// Controle remoto (server/remote.js). Pedido, resposta e comandos só valem da conexão que está na chamada.
+const remote = createRemote({
+  newId,
+  voiceOf: (uid) => { const c = currentVoice(uid); return c ? { cid: c, screen: !!voice.get(c).get(uid).screen } : null; },
+  sendUser: (uid, type, d) => { const c = currentVoice(uid), st = c && voice.get(c).get(uid); if (st?.ws?.readyState === 1) send(st.ws, type, d); else dispatch([uid], type, d); },
+});
 function currentVoice(uid) { for (const [cid, m] of voice) if (m.has(uid)) return cid; return null; }
 
 wss.on('connection', (ws) => {
@@ -1148,8 +1156,19 @@ wss.on('connection', (ws) => {
           if (!st.screen && acts.get(c)?.boards['s:' + uid]) { delete acts.get(c).boards['s:' + uid]; roomSend(c, 'ROOM_DRAW', { channel_id: c, board: 's:' + uid, op: 'clear', user_id: uid }); }
           { const a = acts.get(c); if (a?.spot && (!st.screen && a.spot === 's:' + uid || !st.video && a.spot === 'c:' + uid)) { a.spot = a.spotBy = null; roomSend(c, 'ROOM_STATE', actState(c)); } }
           if (!st.screen && watchers.has(c + ':' + uid)) { watchers.delete(c + ':' + uid); pushViewers(c, uid); }
+          if (!st.screen) remote.onScreenOff(uid); // parou de transmitir: controle remoto acaba
           const ch = get('SELECT * FROM channels WHERE id=?', c);
           dispatch(channelAudience(ch), 'VOICE_STATE', { ...vsObj(c, uid, st), guild_id: ch.guild_id });
+          break;
+        }
+        case 'REMOTE_REQUEST': case 'REMOTE_ANSWER': case 'REMOTE_INPUT': case 'REMOTE_STOP': {
+          const c = currentVoice(uid);
+          if (msg.t !== 'REMOTE_STOP' && (!c || voice.get(c).get(uid).ws !== ws)) { if (msg.t !== 'REMOTE_INPUT') send(ws, 'REMOTE_ERROR', { error: 'Entre na sala de voz neste aparelho' }); break; }
+          const r = msg.t === 'REMOTE_REQUEST' ? remote.request(uid, String(d.to || ''))
+            : msg.t === 'REMOTE_ANSWER' ? remote.answer(uid, d.id, { accept: d.accept === true, mouse: d.mouse === true, keyboard: d.keyboard === true, capable: d.capable !== false })
+            : msg.t === 'REMOTE_INPUT' ? remote.input(uid, d.id, d.ev)
+            : remote.stop(uid, d.id, d.reason === 'panic' ? 'panic' : 'stopped');
+          if (r.error) send(ws, 'REMOTE_ERROR', { error: r.error });
           break;
         }
         case 'VOICE_SIGNAL': { // retransmite SDP/ICE apenas entre membros da mesma sala

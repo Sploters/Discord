@@ -7,3 +7,4 @@ desktop/dist
 .testshots
 .testdata*
 spikes/*/target
+native/*/target
