@@ -5,7 +5,7 @@ Escopo desta etapa: **só Steam**. Nada de Riot/Epic. Não toca na Fase 3.
 ## 1. Auditoria do que já existe (e será reaproveitado)
 | Necessidade | Já existe | Uso |
 |---|---|---|
-| Amigos | `relationships(user_id, other_id, type)`; `type=4` = amigo | quem pode ver a atividade |
+| Amigos | `relationships(user_id, other_id, type)`; amigo = `type=1` nas duas direções (3 = pedido recebido, 4 = pedido enviado, 2 = bloqueado) | quem pode ver a atividade |
 | Entrega em tempo real | `dispatch(userIds, type, d)` + `conns` | evento novo `ACTIVITY_UPDATE` |
 | Estado inicial | `buildReady(uid)` | `READY.activities` (amigos jogando agora) |
 | Online/offline | `pubUser().status` (`conns` + `users.status`) | continua sendo a presença do **LocalCord**; a Steam é outra camada |
@@ -37,7 +37,7 @@ O resto do LocalCord só enxerga snapshots; trocar/adicionar Riot depois é escr
 ### Privacidade
 - `visibility` por conta vinculada: `friends` (padrão) · `off` (nada é coletado nem mostrado).
 - Jogos escondidos nunca viram atividade. Perfil Steam privado → `visibility: private` → só "vinculado", sem jogo.
-- A atividade só é enviada a **amigos** (`relationships.type=4`) e ao próprio usuário. Desvincular apaga a conta vinculada e o histórico dessa plataforma.
+- A atividade só é enviada a **amigos** (`relationships.type=1`, nas duas direções) e ao próprio usuário. Desvincular apaga a conta vinculada e o histórico dessa plataforma.
 - Sem scraping, sem endpoints privados, sem credenciais: só OpenID oficial + Web API oficial com a chave do servidor.
 
 ### Cache, limites e indisponibilidade

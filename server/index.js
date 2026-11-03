@@ -11,6 +11,7 @@ import { WebSocketServer } from 'ws';
 import { all, get, run, newId, UPLOAD_DIR, DATA_DIR } from './db.js';
 import { startSfu, sfuEnabled, sfuJoin, sfuLeave, sfuRequest, sfuAttachRtp, sfuLoad } from './sfu.js';
 import { getAdapter, listAdapters } from './integrations/index.js';
+import { createActivityService } from './activity.js';
 import { translate, translateEnabled, engineName } from './translate.js';
 import { initMusic, handle as musicHandle, onVoiceJoin as musicOnJoin, onVoiceLeave as musicOnLeave } from './music.js';
 
@@ -765,6 +766,7 @@ function setRel(a, b, type) {
   if (type == null) run('DELETE FROM relationships WHERE user_id=? AND other_id=?', a, b);
   else run('INSERT INTO relationships VALUES(?,?,?) ON CONFLICT(user_id,other_id) DO UPDATE SET type=excluded.type', a, b, type);
   dispatch([a], 'RELATIONSHIP', { user: userPub(b), type: type ?? 0 });
+  activity.onFriendsChanged(a, b);
 }
 app.post('/api/relationships', auth, wrap((req, res) => {
   const t = get('SELECT * FROM users WHERE username=?', clean(req.body.username, 32));
@@ -847,9 +849,10 @@ app.get('/api/sfu/load', auth, (req, res) => { // só donos de servidor: carga d
   sfuLoad().then(d => res.json(d), e => bad(res, e.message, 500));
 });
 // ---- integrações com plataformas de jogos (Fase 1): vincular/desvincular/privacidade. A API da plataforma fica isolada em server/integrations/* ----
+const activity = createActivityService({ all, get, run, newId, dispatch, isOnline: (u) => conns.has(u), getAdapter, listAdapters, log: console.log });
 const linkStates = new Map(); // state -> { uid, platform, returnTo, exp } (uso único, 10 min)
 const publicBase = (req) => (process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
-const accountPub = (a) => !a ? null : ({ platform: a.platform, external_id: a.external_id, display_name: a.display_name, avatar: a.avatar, profile_url: a.profile_url, visibility: a.visibility, linked_at: a.linked_at, last_sync: a.last_sync, sync_state: a.sync_state });
+const accountPub = (a) => !a ? null : ({ platform: a.platform, external_id: a.external_id, display_name: a.display_name, avatar: a.avatar, profile_url: a.profile_url, visibility: a.visibility, link_visibility: a.link_visibility, linked_at: a.linked_at, last_sync: a.last_sync, sync_state: a.sync_state });
 const accountOf = (uid, platform) => get('SELECT * FROM linked_accounts WHERE user_id=? AND platform=?', uid, platform);
 app.get('/api/integrations', auth, wrap((req, res) => {
   res.json(listAdapters().map(ad => ({ id: ad.id, name: ad.name, capabilities: ad.capabilities, configured: ad.configured(), account: accountPub(accountOf(req.uid, ad.id)) })));
@@ -874,23 +877,42 @@ app.get('/api/integrations/:platform/callback', (req, res) => { // aberto: quem 
     run('DELETE FROM linked_accounts WHERE user_id=? AND platform=?', st.uid, ad.id);
     run('INSERT INTO linked_accounts(user_id,platform,external_id,visibility,linked_at,sync_state) VALUES(?,?,?,?,?,?)', st.uid, ad.id, external_id, 'friends', Date.now(), 'pending');
     dispatch([st.uid], 'INTEGRATION_UPDATE', { platform: ad.id, account: accountPub(accountOf(st.uid, ad.id)) });
+    activity.onLinked();
     page(true, 'Conta ' + ad.name + ' vinculada!');
   }).catch(e => page(false, e.message || 'Falha ao vincular'));
 });
 app.patch('/api/integrations/:platform', auth, wrap((req, res) => {
   const a = accountOf(req.uid, req.params.platform); if (!a) return bad(res, 'Conta não vinculada', 404);
-  if (!['friends', 'off'].includes(req.body.visibility)) return bad(res, 'Visibilidade inválida');
-  run('UPDATE linked_accounts SET visibility=? WHERE user_id=? AND platform=?', req.body.visibility, req.uid, a.platform);
+  const { visibility, link_visibility } = req.body || {};
+  if (visibility !== undefined && !['friends', 'off'].includes(visibility)) return bad(res, 'Visibilidade inválida');
+  if (link_visibility !== undefined && !['friends', 'off'].includes(link_visibility)) return bad(res, 'Visibilidade inválida');
+  if (visibility === undefined && link_visibility === undefined) return bad(res, 'Nada para alterar');
+  if (visibility !== undefined && visibility !== a.visibility) { activity.onVisibility(req.uid, a.platform, visibility); run('UPDATE linked_accounts SET visibility=? WHERE user_id=? AND platform=?', visibility, req.uid, a.platform); }
+  if (link_visibility !== undefined) run('UPDATE linked_accounts SET link_visibility=? WHERE user_id=? AND platform=?', link_visibility, req.uid, a.platform);
   dispatch([req.uid], 'INTEGRATION_UPDATE', { platform: a.platform, account: accountPub(accountOf(req.uid, a.platform)) });
   res.json(accountPub(accountOf(req.uid, a.platform)));
 }));
 app.delete('/api/integrations/:platform', auth, wrap((req, res) => {
   const p = req.params.platform; if (!getAdapter(p)) return bad(res, 'Plataforma desconhecida', 404);
+  const cur = accountOf(req.uid, p); if (cur) activity.onUnlinking(req.uid, p, cur.external_id);
   run('DELETE FROM linked_accounts WHERE user_id=? AND platform=?', req.uid, p);
   run('DELETE FROM activities WHERE user_id=? AND platform=?', req.uid, p); run('DELETE FROM game_prefs WHERE user_id=? AND platform=?', req.uid, p);
   dispatch([req.uid], 'INTEGRATION_UPDATE', { platform: p, account: null });
   res.json({});
 }));
+app.get('/api/activity/feed', auth, wrap((req, res) => { // amigos (e você), o que estão jogando e eventos recentes — tudo filtrado por activity.canSee
+  const f = activity.feedFor(req.uid), ids = f.friends.map(x => x.user_id);
+  res.json({ ...f, users: ids.map(id => userPub(id)) });
+}));
+app.put('/api/activity/games/:platform/:gameId', auth, wrap((req, res) => { // esconder/mostrar um jogo (nunca vira atividade)
+  const platform = req.params.platform, gid = clean(req.params.gameId, 40);
+  if (!getAdapter(platform) || !accountOf(req.uid, platform)) return bad(res, 'Conta não vinculada', 404);
+  const hidden = req.body?.hidden ? 1 : 0;
+  run('INSERT INTO game_prefs(user_id,platform,game_id,hidden) VALUES(?,?,?,?) ON CONFLICT(user_id,platform,game_id) DO UPDATE SET hidden=excluded.hidden', req.uid, platform, gid, hidden);
+  if (hidden) activity.onGameHidden(req.uid, platform, gid);
+  res.json({ hidden: !!hidden });
+}));
+app.get('/api/activity/hidden', auth, wrap((req, res) => res.json(all('SELECT platform, game_id FROM game_prefs WHERE user_id=? AND hidden=1', req.uid))));
 app.get('/api/server-info', (req, res) => res.json({ name: 'LocalCord', registration: OPEN_REGISTRATION, default_avatars: DEFAULT_AVATARS }));
 app.use(express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
 app.get(/^\/(?!api|files|gateway).*/, (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
@@ -925,7 +947,7 @@ function buildReady(uid) {
     const n = get('SELECT COUNT(*) n, MAX(id) l FROM messages WHERE channel_id=? AND id>? AND author_id<>?', id, rs?.last_id || '0', uid);
     if (n.n) unread[id] = { count: n.n, last_id: n.l };
   }
-  return { user: pubUser(getUser(uid)), guilds, dms, relationships: relObj(uid), unread, dm_voice: dmVoice, ice: iceServers() };
+  return { user: pubUser(getUser(uid)), guilds, dms, relationships: relObj(uid), activities: activity.readyFor(uid), unread, dm_voice: dmVoice, ice: iceServers() };
 }
 
 // espectadores de transmissões: "canal:transmissor" -> Set de quem está assistindo
@@ -971,7 +993,7 @@ wss.on('connection', (ws) => {
   if (first) conns.set(uid, new Set());
   conns.get(uid).add(ws);
   send(ws, 'READY', buildReady(uid));
-  if (first) broadcastPresence(uid);
+  if (first) { broadcastPresence(uid); activity.poke(); }
   ws.alive = true; ws.on('pong', () => (ws.alive = true));
 
   ws.on('message', (raw) => {
@@ -1133,6 +1155,7 @@ function loadTls() {
 }
 
 await startSfu();
+activity.start();
 server.listen(PORT, HOST, () => {
   console.log(`\n  LocalCord rodando`);
   const tls = process.env.HTTPS === '0' ? null : loadTls();

@@ -112,3 +112,5 @@ CREATE INDEX IF NOT EXISTS activities_user ON activities(user_id, created_at DES
 CREATE TABLE IF NOT EXISTS game_prefs(
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, platform TEXT NOT NULL, game_id TEXT NOT NULL,
   hidden INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, platform, game_id));`);
+// visibilidade do FATO de ter a conta vinculada (independente de 'visibility', que controla só a atividade/jogo atual)
+addCol('linked_accounts', 'link_visibility', "TEXT NOT NULL DEFAULT 'friends'");
