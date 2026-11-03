@@ -8,3 +8,4 @@ desktop/dist
 .testdata*
 spikes/*/target
 native/*/target
+.testdata-chat/

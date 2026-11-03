@@ -840,3 +840,23 @@ select.gpucompat:focus { outline: 2px solid var(--brand, #5865f2); outline-offse
 .lfgform .lfgroles.pick { margin-bottom: 4px; } .lfgform .lfgroles.pick button { padding: 5px 11px; font-size: 13px; }
 .lfgform .lfgset { margin-top: 16px; }
 #side-list .lfgrow-side svg { color: var(--interactive); }
+
+/* ---------- chat: "digitando…" com espaço próprio (antes ficava por baixo do campo de mensagem) ---------- */
+#msgs { padding-bottom: 4px; }
+#typing { position: static; flex: none; height: 22px; padding: 0 20px 0 22px; margin: 0; font-size: 13px; font-weight: 500; color: var(--text-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#typing b, #typing strong { color: var(--text); font-weight: 600; }
+#typing .dots i { background: var(--text-muted); }
+
+/* ---------- mensagens em sequência do mesmo autor: avatar e nome só na primeira, as outras
+   "acompanham" por uma linha fina que desce do avatar (estilo conversa do Reddit) ---------- */
+.msg.cont { padding-top: 1px; padding-bottom: 1px; }
+.msg.first:has(+ .msg.cont)::after, .msg.cont::before {
+  content: ''; position: absolute; left: 35px; width: 2px; border-radius: 2px;
+  background: var(--divider, rgba(255,255,255,.08)); pointer-events: none;
+}
+.msg.first:has(+ .msg.cont)::after { top: 50px; bottom: -2px; }
+.msg.cont::before { top: 0; bottom: 0; }
+.msg.cont:not(:has(+ .msg.cont))::before { bottom: 50%; border-radius: 0 0 2px 2px; }
+.msg.cont:hover::before { opacity: 0; } /* no hover a hora aparece no lugar da linha */
+.msg.cont .time-s { width: 58px; left: 4px; text-align: center; }
+.msg.mentioned.cont::before, .msg.hl.cont::before { background: color-mix(in srgb, var(--yellow) 45%, transparent); }

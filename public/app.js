@@ -837,6 +837,9 @@ function stickToBottom(box) {
   box.addEventListener('scroll', () => { if (Date.now() - userAt < 1500) box.stick = box.scrollHeight - box.scrollTop - box.clientHeight < 120; });
   const fix = () => { if (box.stick) box.scrollTop = box.scrollHeight; };
   box.addEventListener('load', fix, true); box.addEventListener('loadedmetadata', fix, true);
+  // campo de mensagem crescendo (texto em várias linhas), barra de resposta, anexos: a lista encolhe e
+  // a última mensagem ficava escondida atrás do campo. Se estava no fim, continua no fim.
+  new ResizeObserver(fix).observe(box);
 }
 
 // ---------- mensagens ----------
@@ -899,12 +902,12 @@ function refreshAuthors(uid) { if ($('#msgs') && S.view.cid && S.messages.get(S.
 const ctxFor = (gid) => ({ userName: (id) => (S.users.has(id) ? nameOf(id, gid) : null), emojiUrl });
 function msgEl(m, prev) {
   const ch = channelById(m.channel_id), gid = ch?.guild_id, mine = m.author_id === S.me.id;
-  const grouped = prev && prev.author_id === m.author_id && m.created_at - prev.created_at < 420000 && !m.reply && !S.prefs.compact === true;
+  const grouped = prev && prev.author_id === m.author_id && m.created_at - prev.created_at < 600000 && !m.reply && !S.prefs.compact && prev.type !== 1;
   const a = user(m.author_id), col = roleColor(gid, m.author_id);
   const mentioned = m.mentions?.includes(S.me.id) || (m.content || '').includes(`<@${S.me.id}>`);
   if (m.type === 1) return h('div.msg.system', { 'data-mid': m.id }, h('span.arrow', '→'), h('span', h('b', { style: { color: col || 'var(--header)' } }, nameOf(m.author_id, gid)), ' ' + m.content), h('span.ts', stamp(m.created_at)),
     h('button.btn.grey.wave', { onclick: () => tryApi('POST', `/channels/${m.channel_id}/messages`, { content: `👋 Bem-vindo(a), <@${m.author_id}>!` }) }, '👋 Dar boas-vindas'));
-  const el = h('div.msg' + (grouped ? '' : '.first') + (mentioned ? '.mentioned' : '') + (S.editing === m.id ? '.editing' : ''), { 'data-mid': m.id, oncontextmenu: (e) => msgMenu(e, m) });
+  const el = h('div.msg' + (grouped ? '.cont' : '.first') + (mentioned ? '.mentioned' : '') + (S.editing === m.id ? '.editing' : ''), { 'data-mid': m.id, oncontextmenu: (e) => msgMenu(e, m) });
   if (!grouped) el.append(h('div.av', { onclick: (e) => profile(e.currentTarget, m.author_id, gid) }, avatar(a, 40, { status: false })));
   else el.append(h('div.time-s', clock(m.created_at)));
   if (m.reply) el.append(h('div.reply-ref', { onclick: () => jumpTo(m.reply.id) },
