@@ -162,7 +162,7 @@ async function sampleLoad() {
   if (!worker) return null;
   const ru = await worker.getResourceUsage(), now = Date.now();
   let cpu = null;
-  if (lastRu) { const dt = (now - lastRu.t) * 1000, du = (ru.ru_utime + ru.ru_stime) - (lastRu.cpu); cpu = dt > 0 ? +(du / dt * 100).toFixed(1) : null; } // ru_* em microssegundos
+  if (lastRu) { const dt = now - lastRu.t, du = (ru.ru_utime + ru.ru_stime) - lastRu.cpu; cpu = dt > 0 ? +(du / dt * 100).toFixed(1) : null; } // ru_utime/ru_stime em ms (mediasoup): % de um núcleo
   lastRu = { t: now, cpu: ru.ru_utime + ru.ru_stime };
   let transports = 0, producers = 0, consumers = 0;
   for (const r of rooms.values()) for (const p of r.peers.values()) { transports += p.transports.size; producers += p.producers.size; consumers += p.consumers.size; }
