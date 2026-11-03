@@ -153,9 +153,12 @@ export function md(src, ctx = {}) {
 export const SHORT = { smile: '😄', grin: '😁', joy: '😂', rofl: '🤣', wink: '😉', heart_eyes: '😍', kiss: '😘', thinking: '🤔', sunglasses: '😎', cry: '😢', sob: '😭', angry: '😠', rage: '😡', scream: '😱', sleepy: '😴', skull: '💀', ghost: '👻', poop: '💩', clown: '🤡', robot: '🤖', thumbsup: '👍', '+1': '👍', thumbsdown: '👎', '-1': '👎', ok_hand: '👌', wave: '👋', clap: '👏', pray: '🙏', muscle: '💪', fire: '🔥', star: '⭐', sparkles: '✨', zap: '⚡', boom: '💥', '100': '💯', heart: '❤️', broken_heart: '💔', tada: '🎉', gift: '🎁', trophy: '🏆', rocket: '🚀', eyes: '👀', check: '✅', x: '❌', warning: '⚠️', question: '❓', pizza: '🍕', beer: '🍺', coffee: '☕', cake: '🎂', dog: '🐶', cat: '🐱', sun: '☀️', moon: '🌙', rainbow: '🌈', lol: '😆', ok: '👌', shrug: '🤷', facepalm: '🤦' };
 // links de convite (/invite/CODIGO, com ou sem endereço) viram cartão no chat
 const INVITE_G = /(?:https?:\/\/[^\s/]+|(?<![\w./]))\/invite\/([A-Za-z0-9_-]{4,32})\b/g;
+// convite para a chamada (/call/ID, criado pelo servidor): vira cartão com Entrar/Recusar
+const CALL_G = /(?:📞\s*)?(?:https?:\/\/[^\s/]+|(?<![\w./]))\/call\/([A-Za-z0-9_-]{8,32})\b/gu;
+export const callCodes = (s) => [...new Set([...String(s || '').matchAll(CALL_G)].map(m => m[1]))].slice(0, 3);
 export const inviteCodes = (s) => [...new Set([...String(s || '').matchAll(INVITE_G)].map(m => m[1]))].slice(0, 3);
-export const stripInvites = (s) => String(s || '').replace(INVITE_G, '').replace(/[ \t]+$/gm, '').trim();
-export const inviteText = (s) => String(s || '').replace(INVITE_G, '📨 Convite de servidor');
+export const stripInvites = (s) => String(s || '').replace(INVITE_G, '').replace(CALL_G, '').replace(/[ \t]+$/gm, '').trim();
+export const inviteText = (s) => String(s || '').replace(INVITE_G, '📨 Convite de servidor').replace(CALL_G, '📞 Convite para a chamada');
 export const isImageUrl = (u) => /^https?:\/\/\S+\.(png|jpe?g|gif|webp|avif)(\?\S*)?$/i.test(u);
 export const onlyEmoji = (s) => /^(\s*(\p{Extended_Pictographic}|\p{Emoji_Presentation})(️|‍|\p{Emoji_Modifier})*\s*){1,27}$/u.test(s.trim()) && s.trim().length > 0;
 

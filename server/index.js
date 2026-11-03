@@ -12,6 +12,7 @@ import { db, all, get, run, newId, UPLOAD_DIR, DATA_DIR } from './db.js';
 import { startSfu, sfuEnabled, sfuJoin, sfuLeave, sfuRequest, sfuAttachRtp, sfuLoad } from './sfu.js';
 import { getAdapter, listAdapters } from './integrations/index.js';
 import { createActivityService } from './activity.js';
+import { createCallInvites } from './callinvites.js';
 import { translate, translateEnabled, engineName } from './translate.js';
 import { initMusic, handle as musicHandle, onVoiceJoin as musicOnJoin, onVoiceLeave as musicOnLeave, stopAll as musicStopAll } from './music.js';
 
@@ -482,20 +483,24 @@ app.post('/api/invites/:code', auth, wrap((req, res) => {
   if (!i) return bad(res, 'Convite inválido ou expirado', 404);
   if (get('SELECT 1 x FROM bans WHERE guild_id=? AND user_id=?', i.guild_id, req.uid)) return bad(res, 'Você foi banido deste servidor', 403);
   if (!get('SELECT 1 x FROM members WHERE guild_id=? AND user_id=?', i.guild_id, req.uid)) {
-    run('INSERT INTO members(guild_id,user_id,joined_at) VALUES(?,?,?)', i.guild_id, req.uid, Date.now());
+    joinGuild(i.guild_id, req.uid);
     run('UPDATE invites SET uses=uses+1 WHERE code=?', i.code);
-    dispatch(guildMemberIds(i.guild_id).filter(x => x !== req.uid), 'MEMBER_ADD', { guild_id: i.guild_id, member: memberObj(i.guild_id, req.uid), user: userPub(req.uid) });
-    dispatch([req.uid], 'GUILD_CREATE', guildFull(i.guild_id));
-    const gen = get("SELECT id FROM channels WHERE guild_id=? AND type=0 ORDER BY position LIMIT 1", i.guild_id);
-    if (gen) { // mensagem de sistema de boas-vindas
-      const mid = newId();
-      run("INSERT INTO messages(id,channel_id,author_id,content,created_at,type) VALUES(?,?,?,?,?,1)", mid, gen.id, req.uid, 'entrou no servidor.', Date.now());
-      const ch = get('SELECT * FROM channels WHERE id=?', gen.id);
-      dispatch(channelAudience(ch), 'MESSAGE_CREATE', { ...messageObj(get('SELECT * FROM messages WHERE id=?', mid)), guild_id: ch.guild_id, mentions: [] });
-    }
   }
   res.json({ id: i.guild_id });
 }));
+// entra no servidor: membro novo, avisa os membros, manda o servidor para quem entrou e a mensagem de boas-vindas
+function joinGuild(gid, uid) {
+  run('INSERT INTO members(guild_id,user_id,joined_at) VALUES(?,?,?)', gid, uid, Date.now());
+  dispatch(guildMemberIds(gid).filter(x => x !== uid), 'MEMBER_ADD', { guild_id: gid, member: memberObj(gid, uid), user: userPub(uid) });
+  dispatch([uid], 'GUILD_CREATE', guildFull(gid));
+  const gen = get("SELECT id FROM channels WHERE guild_id=? AND type=0 ORDER BY position LIMIT 1", gid);
+  if (gen) { // mensagem de sistema de boas-vindas
+    const mid = newId();
+    run("INSERT INTO messages(id,channel_id,author_id,content,created_at,type) VALUES(?,?,?,?,?,1)", mid, gen.id, uid, 'entrou no servidor.', Date.now());
+    const ch = get('SELECT * FROM channels WHERE id=?', gen.id);
+    dispatch(channelAudience(ch), 'MESSAGE_CREATE', { ...messageObj(get('SELECT * FROM messages WHERE id=?', mid)), guild_id: ch.guild_id, mentions: [] });
+  }
+}
 
 app.get('/api/guilds/:id/invites', auth, wrap((req, res) => {
   if (!can(req.params.id, req.uid, P.MANAGE_GUILD)) return bad(res, 'Sem permissão', 403);
@@ -508,6 +513,29 @@ app.delete('/api/invites/:code', auth, wrap((req, res) => {
   audit(i.guild_id, req.uid, 'invite_delete', null, i.code);
   res.json({});
 }));
+// Convites para a chamada (server/callinvites.js)
+const callInv = createCallInvites({
+  get,
+  voiceChannelOf: (uid) => { for (const [cid, m] of voice) if (m.has(uid)) return cid; return null; },
+  roomSize: (cid) => voice.get(cid)?.size || 0,
+  isFriend: (a, b) => !!get('SELECT 1 x FROM relationships WHERE user_id=? AND other_id=? AND type=1', a, b),
+  isMember: (gid, uid) => !!get('SELECT 1 x FROM members WHERE guild_id=? AND user_id=?', gid, uid),
+  isBanned: (gid, uid) => !!get('SELECT 1 x FROM bans WHERE guild_id=? AND user_id=?', gid, uid),
+  isBlocked: (a, b) => !!get('SELECT 1 x FROM relationships WHERE ((user_id=? AND other_id=?) OR (user_id=? AND other_id=?)) AND type=2', a, b, b, a),
+  joinGuild: (gid, uid) => joinGuild(gid, uid), userPub, dispatch, postDm: (a, b, c) => postDm(a, b, c),
+});
+const callInvRate = new Map(); // uid -> instantes dos últimos convites (no máx. 10 por minuto)
+const callOut = (res, r) => (r.error ? bad(res, r.error, r.status) : res.json(r));
+app.post('/api/call-invites', auth, wrap((req, res) => {
+  const t = Date.now(), recent = (callInvRate.get(req.uid) || []).filter(x => t - x < 60e3);
+  if (recent.length >= 10) return bad(res, 'Muitos convites em pouco tempo; espere um pouco', 429);
+  const r = callInv.create(req.uid, String(req.body.user_id || ''));
+  if (!r.error && !r.repeated) callInvRate.set(req.uid, [...recent, t]);
+  callOut(res, r);
+}));
+app.get('/api/call-invites/:id', auth, wrap((req, res) => callOut(res, callInv.read(req.params.id, req.uid))));
+app.post('/api/call-invites/:id/:action(accept|decline|cancel)', auth, wrap((req, res) => callOut(res, callInv.respond(req.params.id, req.uid, req.params.action))));
+
 // Emojis personalizados
 app.post('/api/guilds/:id/emojis', auth, wrap((req, res) => {
   const gid = req.params.id;
@@ -748,19 +776,30 @@ app.post('/api/channels/:id/ack', auth, wrap((req, res) => {
 }));
 
 // DMs & relationships
-app.post('/api/dms', auth, wrap((req, res) => {
-  const other = String(req.body.user_id);
-  if (!getUser(other) || other === req.uid) return bad(res, 'Usuário inválido');
-  let ch = get(`SELECT c.* FROM channels c WHERE c.type=1 AND EXISTS(SELECT 1 FROM dm_participants WHERE channel_id=c.id AND user_id=?) AND EXISTS(SELECT 1 FROM dm_participants WHERE channel_id=c.id AND user_id=?)`, req.uid, other);
+// DM entre duas pessoas (cria se não existir) e avisa as duas
+function ensureDm(a, b) {
+  let ch = get(`SELECT c.* FROM channels c WHERE c.type=1 AND EXISTS(SELECT 1 FROM dm_participants WHERE channel_id=c.id AND user_id=?) AND EXISTS(SELECT 1 FROM dm_participants WHERE channel_id=c.id AND user_id=?)`, a, b);
   if (!ch) {
     const id = newId();
     run('INSERT INTO channels(id,type,name,created_at) VALUES(?,1,NULL,?)', id, Date.now());
-    run('INSERT INTO dm_participants VALUES(?,?)', id, req.uid); run('INSERT INTO dm_participants VALUES(?,?)', id, other);
+    run('INSERT INTO dm_participants VALUES(?,?)', id, a); run('INSERT INTO dm_participants VALUES(?,?)', id, b);
     ch = get('SELECT * FROM channels WHERE id=?', id);
   }
   const o = dmChannelObj(ch);
-  dispatch([req.uid, other], 'DM_CREATE', o);
-  res.json(o);
+  dispatch([a, b], 'DM_CREATE', o);
+  return o;
+}
+// mensagem simples numa DM, em nome de quem envia (usada pelo convite para a chamada)
+function postDm(from, to, content) {
+  const dm = ensureDm(from, to), ch = get('SELECT * FROM channels WHERE id=?', dm.id), id = newId();
+  run('INSERT INTO messages(id,channel_id,author_id,content,created_at) VALUES(?,?,?,?,?)', id, ch.id, from, content, Date.now());
+  run('INSERT INTO read_states VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET last_id=excluded.last_id', from, ch.id, id);
+  dispatch(channelAudience(ch), 'MESSAGE_CREATE', { ...messageObj(get('SELECT * FROM messages WHERE id=?', id)), guild_id: null, mentions: [] });
+}
+app.post('/api/dms', auth, wrap((req, res) => {
+  const other = String(req.body.user_id);
+  if (!getUser(other) || other === req.uid) return bad(res, 'Usuário inválido');
+  res.json(ensureDm(req.uid, other));
 }));
 function setRel(a, b, type) {
   if (type == null) run('DELETE FROM relationships WHERE user_id=? AND other_id=?', a, b);

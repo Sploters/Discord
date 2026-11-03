@@ -1,5 +1,6 @@
 // Atividade social (Fase 1): estado em tempo real, aba "Atividade" (cartões) e página de contas vinculadas.
 // A decisão de QUEM pode ver cada atividade é do servidor; aqui só se exibe o que ele enviou.
+import { canCallInvite, sendCallInvite } from './callinvite.js';
 import { h, icon, avatar } from './util.js';
 import { S, api, tryApi, toast, confirmBox, guild, channelById } from './state.js';
 import { toggle, row, section } from './ui.js';
@@ -41,19 +42,11 @@ function voiceActions(uid) {
   const myCh = voice?.active ? voice.channelId : null;
   if (ch && myCh !== ch.id) out.push(h('button.btn.green.sm', { title: g ? `Entrar em ${g.name}` : 'Entrar na chamada', onclick: (e) => { e.stopPropagation(); ctx.go(g ? g.id : '@me', ch.id); ctx.joinVoice(ch.id); } }, icon('voice', 14), 'Entrar'));
   if (ch && v.screen && (myCh !== ch.id || voice.closedStreams.has(uid))) out.push(h('button.btn.sm', { title: 'Entrar e assistir à transmissão', onclick: (e) => { e.stopPropagation(); ctx.watchFriend(uid, ch); } }, icon('screen', 14), 'Assistir'));
-  // convite: estou numa sala de servidor, a pessoa é membro desse servidor, está online e fora da sala
-  const mine = myCh && channelById(myCh);
-  if (mine && mine.type === 2 && mine.guild_id && uid !== S.me.id) {
-    const mg = guild(mine.guild_id), u = S.users.get(uid);
-    if (mg?.members.has(uid) && u && u.status !== 'offline' && v?.channel_id !== myCh) out.push(h('button.btn.grey.sm', { title: 'Enviar convite para a sua chamada', onclick: async (e) => { e.stopPropagation(); await invite(uid, mg, mine); } }, icon('invite', 14), 'Convidar'));
-  }
+  // convite: estou numa sala de servidor e a pessoa (amiga ou membro do servidor) está online e fora da sala.
+  // Quem não é membro recebe o convite e, ao aceitar, entra no servidor e na chamada.
+  const u = S.users.get(uid);
+  if (u && u.status !== 'offline' && canCallInvite(uid)) out.push(h('button.btn.grey.sm', { title: 'Chamar para a sua chamada (a pessoa recebe um aviso para entrar)', onclick: async (e) => { e.stopPropagation(); await sendCallInvite(uid); } }, icon('invite', 14), 'Convidar'));
   return out;
-}
-async function invite(uid, g, ch) {
-  const dm = await tryApi('POST', '/dms', { user_id: uid }); if (!dm) return;
-  S.dms.set(dm.id, dm);
-  await tryApi('POST', `/channels/${dm.id}/messages`, { content: `📞 Entre na minha chamada em **${g.name} › ${ch.name}**: ${location.origin}/#/${g.id}/${ch.id}` });
-  toast('Convite enviado');
 }
 
 // ---------------------------------------------------------------- cartão
