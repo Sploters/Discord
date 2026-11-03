@@ -696,3 +696,45 @@ html.anim .rail-wrap::before { transition: height .2s, margin-top .2s, opacity .
 @media (max-width: 640px) { #vc-layout span { display: none; } }
 select.gpucompat { flex: none; align-self: center; min-width: 140px; height: 36px; padding: 0 10px; border: 1px solid var(--divider, #3f4147); border-radius: 6px; background: var(--bg-tert, #1e1f22); color: var(--header, #f2f3f5); cursor: pointer; }
 select.gpucompat:focus { outline: 2px solid var(--brand, #5865f2); outline-offset: 1px; }
+/* galeria de clipes */
+#side-list .clipsrow { margin-bottom: 6px; }
+#side-list .clipsrow svg { color: var(--interactive); }
+#clipsview { display: flex; flex-direction: column; height: 100%; min-width: 0; background: var(--bg-pri, #313338); }
+#clipsview #topbar { flex: none; }
+#clipsview .cbody { flex: 1; overflow-y: auto; padding: 16px 20px 24px; }
+#clipsview .ctool { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+#clipsview .ctabs { display: flex; gap: 4px; padding: 3px; border-radius: 8px; background: var(--bg-sec, #2b2d31); }
+#clipsview .ctab { padding: 6px 14px; border: 0; border-radius: 6px; background: none; color: var(--interactive); font-weight: 600; cursor: pointer; }
+#clipsview .ctab:hover { color: var(--header); } #clipsview .ctab.on { background: var(--bg-mod-sel, #404249); color: var(--header); }
+#clipsview .csearch { flex: 1; min-width: 180px; max-width: 320px; height: 34px; padding: 0 10px; border: 0; border-radius: 6px; background: var(--bg-tert, #1e1f22); color: var(--header); }
+#clipsview .cgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.clipcard { display: flex; flex-direction: column; border-radius: 10px; overflow: hidden; background: var(--bg-sec, #2b2d31); border: 1px solid var(--divider, #3f4147); transition: transform .12s, box-shadow .12s; }
+.clipcard:hover { box-shadow: 0 6px 20px rgba(0,0,0,.35); border-color: color-mix(in srgb, var(--brand, #5865f2) 40%, var(--divider, #3f4147)); }
+.clipcard .cthumb { position: relative; aspect-ratio: 16 / 9; background: #000; cursor: pointer; }
+.clipcard .cthumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.clipcard .cdur, .clipcard .cmute { position: absolute; bottom: 8px; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,.72); color: #fff; font-size: 12px; font-weight: 600; display: flex; align-items: center; }
+.clipcard .cdur { right: 8px; } .clipcard .cmute { left: 8px; color: #f23f43; }
+.clipcard .cplay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; opacity: 0; transition: opacity .15s; background: rgba(0,0,0,.25); }
+.clipcard .cthumb:hover .cplay { opacity: 1; } .clipcard .cplay svg { width: 44px; height: 44px; filter: drop-shadow(0 2px 6px rgba(0,0,0,.6)); }
+.clipcard .cinfo { padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.clipcard .ctitle { color: var(--header); font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clipcard .cmeta { display: flex; flex-wrap: wrap; gap: 0 10px; color: var(--text-muted); font-size: 12px; } .clipcard .cmeta b { color: var(--interactive); font-weight: 600; }
+.clipcard .cbtns { display: flex; gap: 2px; margin-top: 2px; margin-left: -6px; }
+.clipcard .cbtns .ibtn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--interactive); }
+.clipcard .cbtns .ibtn:hover { background: var(--bg-mod-hover, #35373c); color: var(--header); }
+.clipcard .cbtns .ibtn.on { color: var(--yellow, #f0b232); }
+#clipsview .cempty { margin: 60px auto; max-width: 420px; text-align: center; color: var(--text-muted); }
+#clipsview .cempty b { display: block; margin: 12px 0 6px; color: var(--header); font-size: 17px; }
+#clipsview .ceart { width: 80px; height: 80px; margin: 0 auto; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--bg-sec, #2b2d31); color: var(--interactive); }
+#clipsview .cmore { display: block; margin: 20px auto 0; }
+.modal.clipmodal { max-width: none; }
+.clipplayer .pstage { position: relative; display: flex; align-items: center; justify-content: center; background: #000; border-radius: 8px; overflow: hidden; }
+.clipplayer video { width: 100%; max-height: 66vh; background: #000; display: block; }
+.clipplayer .pnav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 2; width: 44px; height: 64px; border: 0; border-radius: 8px; background: rgba(0,0,0,.45); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.clipplayer .pnav:hover:not(:disabled) { background: rgba(0,0,0,.7); } .clipplayer .pnav:disabled { opacity: .2; cursor: default; }
+.clipplayer .pnav.prev { left: 8px; } .clipplayer .pnav.next { right: 8px; }
+.clipplayer .pbar { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.clipplayer .ptxt { flex: 1; min-width: 0; } .clipplayer .pttl { display: block; color: var(--header); font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clipplayer .pmeta { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
+.clipplayer .pbar .btn { display: flex; align-items: center; gap: 6px; flex: none; }
+@media (max-width: 640px) { #clipsview .cbody { padding: 12px; } #clipsview .cgrid { grid-template-columns: 1fr; } }

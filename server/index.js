@@ -718,6 +718,7 @@ app.delete('/api/channels/:id/messages/:mid', auth, wrap((req, res) => {
   const m = get('SELECT * FROM messages WHERE id=? AND channel_id=?', req.params.mid, ch.id);
   if (!m || (m.author_id !== req.uid && !(ch.guild_id && can(ch.guild_id, req.uid, P.MANAGE_MESSAGES)))) return bad(res, 'Sem permissão', 403);
   run('DELETE FROM messages WHERE id=?', m.id);
+  dropClipsOfMessage(m.id);
   if (m.author_id !== req.uid) audit(ch.guild_id, req.uid, 'message_delete', m.author_id, `#${ch.name}: ${(m.content || '').slice(0, 200)}`);
   dispatch(channelAudience(ch), 'MESSAGE_DELETE', { id: m.id, channel_id: ch.id, guild_id: ch.guild_id });
   res.json({});
@@ -730,6 +731,7 @@ app.delete('/api/channels/:id/messages/:mid/attachments/:idx', auth, wrap((req, 
   const atts = JSON.parse(m.attachments || '[]'), i = +req.params.idx;
   if (!Number.isInteger(i) || !atts[i]) return bad(res, 'Anexo não encontrado', 404);
   const [gone] = atts.splice(i, 1);
+  for (const c of all('SELECT * FROM clips WHERE message_id=? AND url=?', m.id, String(gone.url))) { run('DELETE FROM clips WHERE id=?', c.id); dispatch(channelAudience(ch), 'CLIP_DELETE', { id: c.id, guild_id: c.guild_id }); }
   if (m.author_id !== req.uid) audit(ch.guild_id, req.uid, 'message_delete', m.author_id, `#${ch.name}: anexo ${gone.name}`);
   if (!atts.length && !(m.content || '').trim()) {
     run('DELETE FROM messages WHERE id=?', m.id);
@@ -738,13 +740,82 @@ app.delete('/api/channels/:id/messages/:mid/attachments/:idx', auth, wrap((req, 
     run('UPDATE messages SET attachments=? WHERE id=?', JSON.stringify(atts), m.id);
     dispatch(channelAudience(ch), 'MESSAGE_UPDATE', { ...messageObj(get('SELECT * FROM messages WHERE id=?', m.id)), guild_id: ch.guild_id });
   }
-  // apaga o arquivo do disco se nenhuma outra mensagem usa
-  const fname = path.basename(String(gone.url).split('/')[2] || '');
-  const like = '%' + fname.replace(/[%_\\]/g, '\\$&') + '%', used = (sql) => get(sql + " LIKE ? ESCAPE '\\'", like);
-  if (fname && !used('SELECT 1 x FROM messages WHERE attachments') && !used('SELECT 1 x FROM users WHERE avatar') && !used('SELECT 1 x FROM users WHERE banner') && !used('SELECT 1 x FROM users WHERE settings')
-    && !used('SELECT 1 x FROM emojis WHERE url') && !used('SELECT 1 x FROM sounds WHERE url') && !used('SELECT 1 x FROM guilds WHERE icon') && !used('SELECT 1 x FROM guilds WHERE banner')) fs.unlink(path.join(UPLOAD_DIR, fname), () => { });
+  unlinkIfUnused(gone.url);
   res.json({});
 }));
+// ---------- Galeria de clipes ----------
+const CLIP_URL = /^\/files\/[a-f0-9]{24}\.(webm|mp4)\/[^/]{1,300}$/; // devolvido pelo /api/upload
+const clipObj = (c, uid) => ({ id: c.id, guild_id: c.guild_id, channel_id: c.channel_id, message_id: c.message_id, title: c.title, url: c.url, size: c.size, secs: c.secs, has_audio: !!c.has_audio, created_at: c.created_at,
+  author: userPub(c.author_id), streamer: c.streamer_id ? userPub(c.streamer_id) : null, fav: !!get('SELECT 1 x FROM clip_favs WHERE user_id=? AND clip_id=?', uid, c.id) });
+const canEditClip = (c, uid) => c.author_id === uid || (c.guild_id && can(c.guild_id, uid, P.MANAGE_MESSAGES));
+const clipAudience = (c) => { const ch = get('SELECT * FROM channels WHERE id=?', c.channel_id); return ch ? channelAudience(ch) : []; };
+// a mensagem do clipe sumiu (apagada no chat, ou o vídeo foi removido dela): o clipe sai da galeria
+function dropClipsOfMessage(mid) {
+  for (const c of all('SELECT * FROM clips WHERE message_id=?', mid)) { const to = clipAudience(c); run('DELETE FROM clips WHERE id=?', c.id); dispatch(to, 'CLIP_DELETE', { id: c.id, guild_id: c.guild_id }); }
+}
+// salvar um clipe: posta a mensagem com o vídeo no chat da sala e registra na galeria
+app.post('/api/channels/:id/clips', auth, wrap((req, res) => {
+  const ch = channelFor(req, res); if (!ch) return;
+  const url = String(req.body.url || ''), secs = Math.max(1, Math.min(600, Math.round(+req.body.secs || 0)));
+  if (!CLIP_URL.test(url) || !fs.existsSync(path.join(UPLOAD_DIR, url.split('/')[2]))) return bad(res, 'Vídeo do clipe inválido');
+  const streamer = req.body.streamer_id && getUser(String(req.body.streamer_id)) ? String(req.body.streamer_id) : null;
+  const who = streamer ? (ch.guild_id ? (get('SELECT nickname FROM members WHERE guild_id=? AND user_id=?', ch.guild_id, streamer)?.nickname || getUser(streamer).display_name) : getUser(streamer).display_name) : 'alguém';
+  const title = clean(req.body.title, 100) || `Clipe de ${who}`, size = Math.max(0, +req.body.size || 0), audio = req.body.has_audio !== false;
+  const mid = newId(), now = Date.now(), name = clean(req.body.name, 200) || 'clipe.webm';
+  run('INSERT INTO messages(id,channel_id,author_id,content,created_at,attachments) VALUES(?,?,?,?,?,?)', mid, ch.id, req.uid, `🎬 Clipe de ${secs}s da transmissão de ${who}`, now, JSON.stringify([{ url, name, size, type: url.endsWith('.mp4') ? 'video/mp4' : 'video/webm' }]));
+  run('INSERT INTO read_states VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET last_id=excluded.last_id', req.uid, ch.id, mid);
+  const cid = newId();
+  run('INSERT INTO clips(id,guild_id,channel_id,message_id,author_id,streamer_id,title,url,size,secs,has_audio,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', cid, ch.guild_id, ch.id, mid, req.uid, streamer, title, url, size, secs, audio ? 1 : 0, now);
+  const to = channelAudience(ch), msg = { ...messageObj(get('SELECT * FROM messages WHERE id=?', mid)), guild_id: ch.guild_id, mentions: [] };
+  dispatch(to, 'MESSAGE_CREATE', msg);
+  const c = get('SELECT * FROM clips WHERE id=?', cid);
+  for (const u of to) dispatch([u], 'CLIP_CREATE', clipObj(c, u));
+  res.json({ clip: clipObj(c, req.uid), message: msg });
+}));
+// lista da galeria do servidor: todos | meus | favoritos, busca no título/nome, mais novos primeiro, 30 por página
+app.get('/api/guilds/:id/clips', auth, wrap((req, res) => {
+  const gid = req.params.id;
+  if (!get('SELECT 1 x FROM members WHERE guild_id=? AND user_id=?', gid, req.uid)) return bad(res, 'Sem permissão', 403);
+  const where = ['c.guild_id=?'], args = [gid];
+  if (req.query.filter === 'mine') { where.push('(c.author_id=? OR c.streamer_id=?)'); args.push(req.uid, req.uid); }
+  if (req.query.filter === 'fav') { where.push('EXISTS(SELECT 1 FROM clip_favs f WHERE f.clip_id=c.id AND f.user_id=?)'); args.push(req.uid); }
+  const q = clean(req.query.q, 60);
+  if (q) { const like = '%' + q.replace(/[%_\\]/g, '\\$&') + '%'; where.push("(c.title LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM users u WHERE u.id IN (c.author_id, c.streamer_id) AND (u.display_name LIKE ? ESCAPE '\\' OR u.username LIKE ? ESCAPE '\\')))"); args.push(like, like, like); }
+  if (req.query.before) { where.push('c.id < ?'); args.push(String(req.query.before)); }
+  const list = all(`SELECT c.* FROM clips c WHERE ${where.join(' AND ')} ORDER BY c.id DESC LIMIT 30`, ...args);
+  res.json({ clips: list.map(c => clipObj(c, req.uid)), total: get('SELECT COUNT(*) n FROM clips WHERE guild_id=?', gid).n });
+}));
+const clipFor = (req, res) => { const c = get('SELECT * FROM clips WHERE id=?', req.params.id); if (!c || !canAccessChannel(req.uid, get('SELECT * FROM channels WHERE id=?', c.channel_id))) { bad(res, 'Clipe não encontrado', 404); return null; } return c; };
+app.patch('/api/clips/:id', auth, wrap((req, res) => {
+  const c = clipFor(req, res); if (!c) return;
+  if (!canEditClip(c, req.uid)) return bad(res, 'Sem permissão', 403);
+  const title = clean(req.body.title, 100); if (!title) return bad(res, 'Dê um nome ao clipe');
+  run('UPDATE clips SET title=? WHERE id=?', title, c.id);
+  const n = get('SELECT * FROM clips WHERE id=?', c.id);
+  for (const u of clipAudience(n)) dispatch([u], 'CLIP_UPDATE', clipObj(n, u));
+  res.json(clipObj(n, req.uid));
+}));
+app.put('/api/clips/:id/fav', auth, wrap((req, res) => { const c = clipFor(req, res); if (!c) return; run('INSERT OR IGNORE INTO clip_favs VALUES(?,?)', req.uid, c.id); res.json(clipObj(c, req.uid)); }));
+app.delete('/api/clips/:id/fav', auth, wrap((req, res) => { const c = clipFor(req, res); if (!c) return; run('DELETE FROM clip_favs WHERE user_id=? AND clip_id=?', req.uid, c.id); res.json(clipObj(c, req.uid)); }));
+// apagar o clipe: some da galeria, a mensagem sai do chat e o arquivo é removido se nada mais usa
+app.delete('/api/clips/:id', auth, wrap((req, res) => {
+  const c = clipFor(req, res); if (!c) return;
+  if (!canEditClip(c, req.uid)) return bad(res, 'Sem permissão', 403);
+  const ch = get('SELECT * FROM channels WHERE id=?', c.channel_id), to = channelAudience(ch);
+  run('DELETE FROM clips WHERE id=?', c.id);
+  if (c.message_id && get('SELECT 1 x FROM messages WHERE id=?', c.message_id)) { run('DELETE FROM messages WHERE id=?', c.message_id); dispatch(to, 'MESSAGE_DELETE', { id: c.message_id, channel_id: ch.id, guild_id: ch.guild_id }); }
+  if (c.author_id !== req.uid) audit(c.guild_id, req.uid, 'message_delete', c.author_id, `clipe "${c.title}"`);
+  dispatch(to, 'CLIP_DELETE', { id: c.id, guild_id: c.guild_id });
+  unlinkIfUnused(c.url);
+  res.json({});
+}));
+// apaga o arquivo do disco se nada mais usa (mensagens, perfis, emojis, sons, servidores, clipes)
+function unlinkIfUnused(url) {
+  const fname = path.basename(String(url).split('/')[2] || '');
+  const like = '%' + fname.replace(/[%_\\]/g, '\\$&') + '%', used = (sql) => get(sql + " LIKE ? ESCAPE '\\'", like);
+  if (fname && !used('SELECT 1 x FROM messages WHERE attachments') && !used('SELECT 1 x FROM users WHERE avatar') && !used('SELECT 1 x FROM users WHERE banner') && !used('SELECT 1 x FROM users WHERE settings')
+    && !used('SELECT 1 x FROM emojis WHERE url') && !used('SELECT 1 x FROM sounds WHERE url') && !used('SELECT 1 x FROM guilds WHERE icon') && !used('SELECT 1 x FROM guilds WHERE banner') && !used('SELECT 1 x FROM clips WHERE url')) fs.unlink(path.join(UPLOAD_DIR, fname), () => { });
+}
 function setPin(req, res, v) {
   const ch = channelFor(req, res); if (!ch) return;
   if (ch.guild_id && !can(ch.guild_id, req.uid, P.MANAGE_MESSAGES)) return bad(res, 'Sem permissão', 403);

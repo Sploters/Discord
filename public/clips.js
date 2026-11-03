@@ -1,4 +1,4 @@
-// Clipes de transmissão: buffer circular por transmissão e envio do corte (5/15/30/60s) para o chat da sala
+// Clipes de transmissão: buffer circular por transmissão e envio do corte (5/15/30/60s) para o chat da sala e a galeria
 import { api, toast } from './state.js';
 import { createBuffer, trackSig } from './clipbuf.js';
 
@@ -29,7 +29,9 @@ export async function saveClip(key, secs, { channelId, who }) {
   toast('Enviando clipe…');
   try {
     const r = await api('POST', `/upload?name=${encodeURIComponent(name)}`, blob);
-    await api('POST', `/channels/${channelId}/messages`, { content: `🎬 Clipe de ${secs}s da transmissão de ${who}`, attachments: [{ url: r.url, name: r.name, size: r.size, type: 'video/webm' }] });
-    toast(b.hasAudio ? 'Clipe postado no chat da sala' : 'Clipe postado, mas sem áudio: esta transmissão não está enviando som.', !b.hasAudio);
+    // o servidor posta no chat da sala e guarda na galeria de clipes do servidor
+    const title = `${who} — ${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${p2(d.getHours())}:${p2(d.getMinutes())}`; // nome padrão distinto (dá para renomear na galeria)
+    await api('POST', `/channels/${channelId}/clips`, { url: r.url, name: r.name, size: r.size, secs, streamer_id: key.slice(2), has_audio: !!b.hasAudio, title });
+    toast(b.hasAudio ? 'Clipe salvo na galeria e postado no chat da sala' : 'Clipe salvo, mas sem áudio: esta transmissão não está enviando som.', !b.hasAudio);
   } catch (e) { toast('Falha ao enviar o clipe: ' + e.message, true); }
 }

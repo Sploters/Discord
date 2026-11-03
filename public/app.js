@@ -15,6 +15,7 @@ import { initCode, codeSet, codeReset, codeTile, keepEditorFocus } from './code.
 import { startBuffer, stopAllBuffers, pruneBuffers, clipping, saveClip, clipLengths, clipKeys } from './clips.js';
 import { syncThrottle } from './lite.js';
 import { initRemote, onRemoteEvent, tileButton as remoteTileButton, controlling as remoteControlling } from './remote.js';
+import { initClipsGallery, renderClips, onClipEvent } from './clipsgallery.js';
 import { initCallInvite, callCard, onCallInvite, onCallInviteUpdate, canCallInvite, sendCallInvite } from './callinvite.js';
 import { seg, toggle as uiToggle, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
 import { openSettings, openFullProfile } from './settings.js';
@@ -184,6 +185,7 @@ function onEvent(t, d) {
     case 'STREAM_VIEWERS': if (d.viewers.length) S.viewers.set(d.streamer_id, d.viewers); else S.viewers.delete(d.streamer_id); renderVoiceUI(); break;
     case 'SOUNDBOARD': sbIncoming(d, voice); break;
     case 'CALL_INVITE': onCallInvite(d); break;
+    case 'CLIP_CREATE': case 'CLIP_UPDATE': case 'CLIP_DELETE': onClipEvent(t, d); break;
     case 'REMOTE_REQUEST': case 'REMOTE_STATE': case 'REMOTE_INPUT': case 'REMOTE_ERROR': onRemoteEvent(t, d); break;
     case 'CALL_INVITE_UPDATE': onCallInviteUpdate(d); break;
     case 'ROOM_STATE': if (d.channel_id === voice?.channelId) { if (d.code && !(S.room?.cid === d.channel_id && S.room.code)) codeSet(d.code); if (!d.code) codeReset(); const prevSpot = S.room?.cid === d.channel_id ? S.room.spot : null; S.room = { cid: d.channel_id, wb: d.wb, code: !!d.code, spot: d.spot || null, spotBy: d.spot_by || null }; boardState(d.boards);
@@ -279,6 +281,7 @@ function applyRoute(first) {
   } else {
     const g = guild(gid);
     if (!g) { location.hash = '#/@me'; return; }
+    if (cid === 'clips') { S.view = { kind: 'clips', gid, cid: 'clips' }; S.replyTo = null; S.editing = null; S.pending = []; closeFloating(); $('#app').classList.remove('nav-open'); syncWatching(null); renderRail(); renderSide(); renderMain(); return; }
     const chans = g.channels.filter(c => c.type !== 4);
     let ch = chans.find(c => c.id === cid) || chans.find(c => c.id === S.lastChannel[gid]) || chans.find(c => c.type === 0) || chans[0];
     S.view = { kind: 'guild', gid, cid: ch?.id || null };
@@ -460,7 +463,9 @@ function renderSide() {
       can(g.id, PERM.MANAGE_CHANNELS) && h('span.add', { title: 'Criar canal', onclick: (e) => { e.stopPropagation(); channelModal(g, 0, c.id); } }, icon('plus', 16))),
       !S.collapsed.has(c.id) && kids(c.id).map(chRow),
       S.collapsed.has(c.id) && kids(c.id).filter(k => k.id === S.view.cid || S.unread[k.id]).map(chRow));
-    list = h('div#side-list', kids(null).map(chRow), cats.map(catRow));
+    // galeria de clipes do servidor: primeira linha da lista
+    const clipsRow = h('div.ch.clipsrow' + (S.view.kind === 'clips' ? '.active' : ''), { onclick: () => go(g.id, 'clips'), title: 'Todos os clipes salvos neste servidor' }, icon('clip', 20), h('span.name', 'Clipes'));
+    list = h('div#side-list', clipsRow, kids(null).map(chRow), cats.map(catRow));
   }
   const area = h('div#user-area', voicePanel(), userbar());
   side.replaceChildren(head, list, area);
@@ -781,6 +786,7 @@ function renderMain() {
   const main = $('#main'); if (!main) return;
   const v = S.view;
   if (v.kind === 'home') return renderHome(main);
+  if (v.kind === 'clips') return renderClips(main, v.gid);
   const ch = channelById(v.cid);
   if (!ch) return main.replaceChildren(h('div.empty', { style: { margin: 'auto' } }, h('h2', 'Sem canais'), h('p', 'Este servidor ainda não tem canais.')));
   const dm = ch.type === 1, vc = ch.type === 2, peer = dm && dmPeer(ch);
@@ -1836,6 +1842,7 @@ function setupDesktop() {
 
 // gancho de depuração/testes automatizados
 initRemote({ savePrefs, send: gwSend, name: (uid) => nameOf(uid, channelById(voice?.channelId)?.guild_id) || user(uid).display_name, rerender: () => renderVoiceUI() });
+initClipsGallery({ go, jumpTo: (mid) => jumpTo(mid) });
 initCallInvite({ go, joinVoice, voice: () => voice, channelById, guild });
 initActivity({ openDM, profile: (a, uid) => profile(a, uid), userMenu: (e, uid) => userMenu(e, uid), go, joinVoice, watchFriend, voice: () => voice, openSettings: (k) => openSettings(k, ctxSettings()), renderActiveNow });
 window.__lc = { S, get voice() { return voice; }, go, openSettings: (k) => openSettings(k, { voice, logout, go, gid: S.view.gid }) };

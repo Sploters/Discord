@@ -114,3 +114,12 @@ CREATE TABLE IF NOT EXISTS game_prefs(
   hidden INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, platform, game_id));`);
 // visibilidade do FATO de ter a conta vinculada (independente de 'visibility', que controla só a atividade/jogo atual)
 addCol('linked_accounts', 'link_visibility', "TEXT NOT NULL DEFAULT 'friends'");
+
+// Galeria de clipes: cada clipe é um vídeo enviado + a mensagem que o mostra no chat da sala
+db.exec(`CREATE TABLE IF NOT EXISTS clips(
+  id TEXT PRIMARY KEY, guild_id TEXT REFERENCES guilds(id) ON DELETE CASCADE, channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  message_id TEXT, author_id TEXT NOT NULL, streamer_id TEXT, title TEXT NOT NULL, url TEXT NOT NULL, size INTEGER DEFAULT 0,
+  secs INTEGER DEFAULT 0, has_audio INTEGER DEFAULT 1, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_clips_guild ON clips(guild_id, id);
+CREATE INDEX IF NOT EXISTS idx_clips_message ON clips(message_id);
+CREATE TABLE IF NOT EXISTS clip_favs(user_id TEXT NOT NULL, clip_id TEXT NOT NULL REFERENCES clips(id) ON DELETE CASCADE, PRIMARY KEY(user_id, clip_id));`);

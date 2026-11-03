@@ -10,6 +10,7 @@ Chat + voz + vídeo + transmissão de tela auto-hospedado, com layout inspirado 
 - **Espectadores:** cada transmissão mostra quantos e quem está assistindo (clique no selo para a lista).
 - **Clique direito → Entrar na chamada** em quem está em voz.
 - **Controle remoto (mouse e teclado):** quem assiste uma transmissão pede o controle; quem transmite (app para Windows, tela inteira) escolhe liberar mouse e/ou teclado. Aviso vermelho sempre por cima enquanto durar, botão Parar e atalho de emergência **Ctrl+Alt+Shift+Q** (só o teclado físico do dono aciona). Avisa sobre jogos com anti-cheat (e detecta os mais comuns rodando no PC). Detalhes e limitações em `docs/FASE3-REMOTE.md`.
+- **Galeria de clipes:** entrada "Clipes" no topo da lista de canais de cada servidor, com todos os clipes salvos nas salas de voz (Todos / Meus / Favoritos, busca por nome ou pessoa). Prévia que só carrega quando aparece na tela, player com anterior/próximo (setas), renomear, favoritar, baixar, ir para a mensagem e apagar (apaga também a mensagem do chat e o arquivo). Atualiza em tempo real.
 - **Convite para a chamada:** numa sala de voz, chame um amigo ou membro do servidor (clique direito → Convidar para a chamada, ou o botão Convidar na aba Atividade). A pessoa recebe um aviso com toque e um cartão na DM com Entrar/Recusar; se ainda não for membro, aceitar já a coloca no servidor e na sala. Quem convidou vê a resposta. O convite vale 5 min.
 - **Animações:** transições ao trocar de canal, abrir janelas/menus e receber mensagens (desligam em Acessibilidade → Reduzir animações ou em Aparência).
 - **Perfil:** avatar e banner (imagem/GIF), cor, pronomes, status com emoji, bio, prévia ao vivo.
@@ -55,7 +56,7 @@ O cliente do SFU fica em `public/vendor/msc/` (gerado de `mediasoup-client`): `n
     RTC=0 node scripts/ui-test.mjs                    # o mesmo, com voz em malha P2P
     node scripts/desktop-test.mjs                     # app Electron
     node scripts/desktop-share-test.mjs               # Electron transmitindo a tela real para outro usuário
-Os testes de navegador usam o Edge do Windows por padrão; em outro sistema aponte `BROWSER` para um Chrome/Chromium (ex.: `BROWSER=/usr/bin/chromium node scripts/ui-test.mjs`). Também há `remote-test`, `callinvite-test`, `extras-test`, `themes-test`, `lite-test`, `activity-test`, `activity-ui-test`, `steam-test` (sobem o próprio servidor) e `fase2-test` (usa `API`, padrão `http://localhost:3000`).
+Os testes de navegador usam o Edge do Windows por padrão; em outro sistema aponte `BROWSER` para um Chrome/Chromium (ex.: `BROWSER=/usr/bin/chromium node scripts/ui-test.mjs`). Também há `clips-test`, `remote-test`, `callinvite-test`, `extras-test`, `themes-test`, `lite-test`, `activity-test`, `activity-ui-test`, `steam-test` (sobem o próprio servidor) e `fase2-test` (usa `API`, padrão `http://localhost:3000`).
 
 ## Limitações conhecidas
 Sem o SFU (RTC=0 ou mediasoup indisponível) a voz cai para malha P2P, boa até ~6-8 pessoas por sala. Push-to-talk e atalhos de som só com o app em foco (global: mutar/ensurdecer). Sem threads, bots ou criptografia de ponta a ponta.
