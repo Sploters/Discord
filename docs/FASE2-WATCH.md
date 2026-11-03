@@ -33,3 +33,22 @@ Reexecutado com **verificação de conteúdo** (animação visível, id de quadr
 - **Correção** (`server/sfu.js`): piso de banda estimada de 6 Mbps nos transportes de recepção (`setMinOutgoingBitrate`; env `SFU_MIN_OUT_KBPS`, `0` desliga). Resultado em B2/B5/D4 (VP8, 3 camadas): camada 2/2 já na primeira amostra, recepção 1920×1080 a ~48 fps, render ~47 fps. Antes: B2 ficou 24 fps em 480×270 numa execução e 8–16 s para subir em outra.
 - Limitação: o piso favorece LAN/Tailscale; numa conexão muito lenta o espectador pode receber mais do que a rede aguenta. Nesses casos use a camada Baixa/Média no painel de qualidade ou `SFU_MIN_OUT_KBPS=0`.
 - Os ~48 FPS capturados nestes testes são o limite conhecido do capturador do Chromium (ver `PASSO0-DIAGNOSTICO-FPS.md`), não do SFU.
+
+## Validação no Umbrel (2026-11-03, commits a10b213 + correção da unidade de CPU)
+Procedimento: backup do banco, da configuração do container e do código em `~/localcord-backups/*-pre-fase2-20261103-002904.*`; imagem anterior marcada `localcord:rollback-pre-fase2` (id 15433da01d12). **Rollback**: `docker rm -f localcord && docker run … localcord:rollback-pre-fase2` com os mesmos parâmetros do `deploy/umbrel.sh` (ou restaurar o `codigo-pre-fase2-*.tgz` e rodar o deploy). Não foi necessário.
+
+Testes (`scripts/fase2-test.mjs`: 2 usuários reais em Edge headless, sala de voz no Umbrel, transmissão simulada por canvas 1280×720@30 em VP8 3 camadas) — 37 verificações, todas ok:
+- Layouts: Grade, Destaque + faixa, Principal + miniaturas, Lado a lado, Cinema e volta ao Automático; escolha gravada e sincronizada no servidor.
+- Painel de qualidade: 1280×720, 30 FPS recebidos, 2,3 Mbps, perda 0 %; camada Baixa → 320×180; Alta → 1280×720.
+- Pausa automática: com 2 s fora da tela ainda recebia (60 quadros em 2 s); com ~5,5 s, 0 quadros em 2 s (pausado); retomada em 242 ms. Exceções: trocar de canal (miniatura flutuante) não pausa. PiP e tela cheia foram **simulados** nas propriedades do `document` (o headless não abre PiP real) — validam a lógica, não o PiP do navegador.
+- Destaque: sincronizado entre os dois, com contorno; remover limpa; com "Acompanhar" desligado o foco do bob não muda; transmissor que para a transmissão ou sai da sala limpa o destaque.
+- VP8 3 camadas: camada cheia em 377–391 ms nas 3 execuções (antes: 8–16 s ou nunca).
+- `/api/sfu/load`: dono 200, membro comum 403, sem login 401.
+
+Carga do worker (`scripts/fase2-load.mjs`: 2 transmissores 1920×1080@30 VP8 3 camadas + 6 espectadores, 8 pessoas na sala, durante 40 s, amostras de 5 s):
+| Situação | CPU (1 núcleo) | RSS | peers | transports | producers | consumers |
+|---|---|---|---|---|---|---|
+| ocioso | 0 % | 10 MB | 0 | 0 | 0 | 0 |
+| 8 pessoas só com voz | 8,1 % | 14 MB | 8 | 16 | 8 | 56 |
+| + 2 transmissões 1080p, 6 espectadores | média 9,5 %, pico 10 % | 16 MB | 8 | 16 | 10 | 70 |
+Limites do teste: todos os clientes rodaram no mesmo PC (Edge headless) e a fonte é um canvas, não um jogo; uma sala só; Umbrel com 12 núcleos e 14,5 GB. **Isso mostra folga para esta carga, mas não prova que um worker basta** para várias salas ao mesmo tempo ou transmissões 1440p/4K a 120 FPS; falta medir mais salas e bitrates maiores. A correção de unidade do CPU (o mediasoup devolve ms) foi feita após a primeira rodada, em que o campo aparecia como 0 %.
