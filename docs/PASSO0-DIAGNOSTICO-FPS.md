@@ -114,3 +114,20 @@ Pacote `spikes/wgc-capture/pacote` (exe compilado no Linux para `x86_64-pc-windo
 | DXGI Desktop Duplication | 59,7 | (não verificado nesta versão) | — |
 
 Leitura: o WGC dispara mais eventos que a taxa do monitor, mas ~40 % repetem o quadro anterior; entrega ~87–92 % dos quadros da fonte. O DXGI acompanhou os 60 Hz em contagem de apresentações. A partir desta versão o DXGI também lê o número do quadro (`--verify 1`, classe `IdReader` comum aos dois), para comparação justa. Ainda falta: rodar no PC de 143 Hz e comparar com o capturador do Chromium na mesma máquina.
+
+## Spike A — PC do diagnóstico (2026-11-03): RTX 3080, 1920×1080 a 143 Hz, Windows 11 Pro 26200
+| Captura | média | quadros únicos/s | pior segundo | intervalo mediano |
+|---|---|---|---|---|
+| WGC padrão (sem `MinUpdateInterval`) | **48,0** | 48,1 | 48 | **20,84 ms** |
+| WGC `MinUpdateInterval = 0` | **144,0** | 144,1 | 144 | 6,95 ms |
+| WGC `MinUpdateInterval = 0`, sem borda | 144,0 | 144,1 | 144 | 6,95 ms |
+| DXGI Desktop Duplication | 144,0 | 144,1 | 144 | 6,94 ms (p95 7,05) |
+Fonte: 144 fps em todos; 0 quadros repetidos.
+
+**Causa encontrada.** O WGC do Windows 11, quando ninguém define `MinUpdateInterval`, entrega no máximo um quadro a cada
+~20,8 ms = **48 fps**, exatamente o teto medido no Chromium/Electron/Edge (itens 1 e 4). Ou seja, o capturador do
+Chromium usa o WGC com o intervalo padrão do sistema. Com `MinUpdateInterval = 0` (ou com DXGI) a captura nativa
+acompanha os 144 Hz do monitor sem perder nenhum quadro.
+
+**Conclusão.** O capturador nativo resolve o gargalo. Próximo passo: Spike B (captura WGC sem limite → codificador de
+hardware (NVENC via Media Foundation) → RTP para um `PlainTransport` do mediasoup), medindo fim a fim no PC de 143 Hz.
