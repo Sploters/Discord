@@ -27,7 +27,8 @@ async function newUser(name) {
 const clickText = (page, sel, text) => page.evaluate((sel, text) => [...document.querySelectorAll(sel)].find(e => e.textContent.trim().includes(text))?.click(), sel, text);
 try {
   const info = await (await fetch(BASE + '/api/server-info')).json();
-  ok(info.default_avatars.length === 13 && info.default_avatars[8] === '/avatars/9.png' && info.default_avatars.at(-1) === '/avatars/13.png', 'avatares padrão 1–13 em ordem numérica');
+  const nums = info.default_avatars.map(u => parseInt(u.match(/\/avatars\/(\d+)\./)?.[1]));
+  ok(nums.length >= 10 && nums.every((n, i) => n === i + 1), `avatares padrão 1–${nums.length} em ordem numérica (10 depois de 9, não depois de 1)`);
 
   const A = await newUser('alice'), B = await newUser('bob');
   const tokA = await A.evaluate(() => localStorage.lc_token);

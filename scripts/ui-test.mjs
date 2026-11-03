@@ -91,6 +91,10 @@ try {
   await A.evaluate(() => [...document.querySelectorAll('.modal .btn')].find(b => /Transmitir/.test(b.textContent)).click());
   await sleep(4500);
   ok(await B.evaluate(() => !!window.__lc.voice.peers.values().next().value?.streams.screen), 'bob recebeu stream de tela');
+  // transmissão nova de outra pessoa começa fechada (cartão "Assistir"): o bob abre
+  ok(await B.evaluate(() => !!document.querySelector('.tile.cstream .btn')), 'transmissão nova aparece fechada com "Assistir"');
+  await B.evaluate(() => document.querySelector('.tile.cstream .btn')?.click());
+  for (let i = 0; i < 20 && !(await B.evaluate(() => document.querySelector('.tile.screen video')?.videoWidth > 0)); i++) await sleep(500);
   ok(await B.evaluate(() => { const v = document.querySelector('.tile.screen video'); return !!v && v.videoWidth > 0; }), 'vídeo da tela renderizando no bob');
   const br = await A.evaluate(() => { const v = window.__lc.voice, s = v.sfu ? v.sfu.producers.screen?.rtpSender : v.peers.values().next().value.senders.screenvideo; return s && Math.max(...s.getParameters().encodings.map(e => e.maxBitrate || 0)); });
   ok(br > 1e6, `bitrate da transmissão configurado (${br})`);
@@ -119,38 +123,47 @@ try {
   await B.evaluate(() => { window.__plays = []; const A0 = window.Audio; window.Audio = function (u) { window.__plays.push(u); return new A0(u); }; window.Audio.prototype = A0.prototype; });
   await A.evaluate((u) => { window.__lc.S.prefs.mySounds = [{ id: 'm1', name: 'Bip', emoji: '🔔', url: u, vol: 100 }]; }, wav);
   await A.evaluate(() => document.querySelector('#voice-panel button[title="Soundboard"]').click()); await sleep(500);
-  await A.evaluate(() => [...document.querySelectorAll('.sbtabs button')].find(b => /Meus/.test(b.textContent))?.click()); await sleep(300);
   await A.screenshot({ path: `${SHOTS}/07-soundboard.png` });
-  await A.evaluate(() => document.querySelector('.sbtn')?.click()); await sleep(1200);
+  await A.evaluate(() => document.querySelector('.sb-pop [data-sec="me"] .sbsnd:not(.sbadd)')?.click()); await sleep(1200);
   ok((await B.evaluate(() => window.__plays)).includes(wav), 'som do soundboard tocou para a outra pessoa na sala');
   await A.keyboard.press('Escape'); await A.evaluate(() => document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
   await api(tokA, 'POST', `/guilds/${gid}/sounds`, { name: 'Do servidor', emoji: '📣', url: wav, volume: 120 }); await sleep(500);
   ok(await B.evaluate((gid) => window.__lc.S.guilds.get(gid).sounds.length === 1, gid), 'som do servidor chegou aos membros');
 
-  // ---- painéis rápidos: dispositivos, ruído, eco e status ----
-  await A.evaluate(() => document.querySelectorAll('#userbar .ibtn.caret')[0].click()); await sleep(500);
-  await A.screenshot({ path: `${SHOTS}/08-quick-input.png` });
-  await A.evaluate(() => [...document.querySelectorAll('.quick .seg button')].find(b => /Padrão/.test(b.textContent)).click()); await sleep(1200);
-  ok(await A.evaluate(() => window.__lc.S.prefs.noiseMode === 'standard'), 'troca de ruído pelo painel rápido');
+  // ---- painéis rápidos: ruído e eco (teste de microfone), dispositivos (menu do mic/fone) e status ----
+  const away = () => A.evaluate(() => document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+  await A.click('#voice-panel button[title^="Testar microfone"]'); await sleep(500);
+  await A.evaluate(() => [...document.querySelectorAll('.micpop .seg button')].find(b => /Padrão/.test(b.textContent)).click()); await sleep(1200);
+  ok(await A.evaluate(() => window.__lc.S.prefs.noiseMode === 'standard'), 'troca de ruído pelo painel do microfone');
   const echo0 = await A.evaluate(() => window.__lc.S.prefs.echo !== false);
-  await A.evaluate(() => document.querySelector('.quick .qrow .switch').click()); await sleep(300);
-  ok(await A.evaluate(() => (window.__lc.S.prefs.echo !== false)) !== echo0, 'eco ligado/desligado pelo painel rápido');
-  const nDev = await A.evaluate(() => document.querySelectorAll('.quick .dev').length);
-  ok(nDev >= 2, `dispositivos de entrada listados no painel (${nDev})`);
-  await A.evaluate(() => [...document.querySelectorAll('.quick .dev')][1]?.click()); await sleep(1500);
+  await A.evaluate(() => document.querySelector('.micpop .qrow .switch').click()); await sleep(300);
+  ok(await A.evaluate(() => (window.__lc.S.prefs.echo !== false)) !== echo0, 'eco ligado/desligado pelo painel do microfone');
+  await away(); await sleep(200);
+  await A.evaluate(() => document.querySelectorAll('#userbar .ibtn.caret')[0].click()); await sleep(500);
+  await A.evaluate(() => document.querySelector('.dmpop .dm-two').click()); await sleep(400);
+  await A.screenshot({ path: `${SHOTS}/08-quick-input.png` });
+  const nDev = await A.evaluate(() => document.querySelectorAll('.dsub .dm-item').length);
+  ok(nDev >= 2, `dispositivos de entrada listados no submenu (${nDev})`);
+  await A.evaluate(() => document.querySelectorAll('.dsub .dm-item')[1]?.click()); await sleep(1500);
   ok(await A.evaluate(() => !!window.__lc.S.prefs.inputId) && !(await A.evaluate(() => window.__lc.voice.error)), 'troca de dispositivo de entrada ao vivo');
-  await A.evaluate(() => document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))); await sleep(200);
+  await away(); await sleep(200);
   await A.evaluate(() => document.querySelectorAll('#userbar .ibtn.caret')[1].click()); await sleep(400);
+  ok(await A.evaluate(() => !!document.querySelector('.dmpop .dm-range')), 'menu do fone com volume de saída');
   await A.screenshot({ path: `${SHOTS}/09-quick-output.png` });
-  await A.evaluate(() => document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))); await sleep(200);
+  await away(); await sleep(200);
+  const setStatus = async (re) => {
+    if (!(await A.evaluate(() => !!document.querySelector('.mepop')))) { await A.evaluate(() => document.querySelector('#userbar .me').click()); await sleep(400); }
+    await A.evaluate(() => document.querySelector('.mepop .meitem:nth-child(2)').dispatchEvent(new MouseEvent('mouseenter'))); await sleep(200);
+    await A.evaluate((re) => [...document.querySelectorAll('.mefly .stat')].find(b => new RegExp(re).test(b.textContent)).click(), re); await sleep(600);
+  };
   await A.evaluate(() => document.querySelector('#userbar .me').click()); await sleep(400);
   await A.screenshot({ path: `${SHOTS}/10-status-panel.png` });
-  await A.evaluate(() => [...document.querySelectorAll('.quick .stat')].find(b => /Ausente/.test(b.textContent)).click()); await sleep(600);
-  ok(await A.evaluate(() => window.__lc.S.me.status === 'idle'), 'status "Ausente" pelo painel rápido');
-  await A.evaluate(() => [...document.querySelectorAll('.quick .stat')].find(b => /Invisível/.test(b.textContent)).click()); await sleep(600);
+  await setStatus('Ausente');
+  ok(await A.evaluate(() => window.__lc.S.me.status === 'idle'), 'status "Ausente" pelo cartão do usuário');
+  await setStatus('Invisível');
   ok(await B.evaluate(() => { const u = [...window.__lc.S.users.values()].find(u => u.username === 'alice'); return u.status === 'offline'; }), 'invisível: aparece offline para os outros');
-  await A.evaluate(() => [...document.querySelectorAll('.quick .stat')].find(b => /Online/.test(b.textContent)).click()); await sleep(400);
-  await A.evaluate(() => document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+  await setStatus('Online');
+  await away();
 
   // ---- todas as páginas de configurações (usuário e servidor) ----
   const userPages = ['account', 'profile', 'privacy', 'appearance', 'accessibility', 'voice', 'stream', 'sounds', 'soundboard', 'notifications', 'keys', 'advanced'];

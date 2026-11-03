@@ -6,7 +6,8 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "build:vendor": "esbuild scripts/msc-entry.mjs --bundle --format=esm --minify --platform=browser --outfile=public/vendor/msc/mediasoup-client.js"
+    "build:vendor": "esbuild scripts/msc-entry.mjs --bundle --format=esm --minify --platform=browser --outfile=public/vendor/msc/mediasoup-client.js",
+    "check": "node scripts/check.mjs"
   },
   "engines": {
     "node": ">=22.5"

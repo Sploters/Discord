@@ -46,12 +46,14 @@ Instaladores em `desktop/dist/`: `LocalCord-Setup-<versão>.exe` e `LocalCord-Po
 O cliente do SFU fica em `public/vendor/msc/` (gerado de `mediasoup-client`): `npm install && npm run build:vendor`.
 
 ## Testes
+    npm run check                                     # sintaxe de todo o JS (rápido, sem servidor)
     BASE=http://localhost:3000 node scripts/e2e.mjs   # API + gateway + voz + soundboard + conta
     BASE=http://localhost:3000 node scripts/features-test.mjs   # mensagem de voz, espectadores e tradução
     node scripts/ui-test.mjs                          # navegador real: 2 usuários, voz pelo SFU, RNNoise, sons, painéis, configurações
     RTC=0 node scripts/ui-test.mjs                    # o mesmo, com voz em malha P2P
     node scripts/desktop-test.mjs                     # app Electron
     node scripts/desktop-share-test.mjs               # Electron transmitindo a tela real para outro usuário
+Os testes de navegador usam o Edge do Windows por padrão; em outro sistema aponte `BROWSER` para um Chrome/Chromium (ex.: `BROWSER=/usr/bin/chromium node scripts/ui-test.mjs`). Também há `extras-test`, `themes-test`, `lite-test`, `activity-test`, `activity-ui-test`, `steam-test` (sobem o próprio servidor) e `fase2-test` (usa `API`, padrão `http://localhost:3000`).
 
 ## Limitações conhecidas
 Sem o SFU (RTC=0 ou mediasoup indisponível) a voz cai para malha P2P, boa até ~6-8 pessoas por sala. Push-to-talk e atalhos de som só com o app em foco (global: mutar/ensurdecer). Sem threads, bots ou criptografia de ponta a ponta.

@@ -188,8 +188,9 @@ try {
   await A.mouse.click(vb.x + 40, vb.y + vb.height / 2, { button: 'right' }); await sleep(200);
   ok(!!await A.$('.menu .mnode .volctl'), 'também no clique direito da lista lateral');
   await A.keyboard.press('Escape');
-  await A.evaluate(() => document.querySelectorAll('#userbar .caret, .caret')[1]?.click()); await sleep(300);
-  ok(await A.evaluate(() => [...document.querySelectorAll('.qpop h4')].some(h => h.textContent === 'Volume de cada pessoa') && !!document.querySelector('.qpop .volctl .volnum')), 'menu de saída lista o volume de cada pessoa');
+  await A.evaluate(() => document.querySelectorAll('#userbar .ibtn.caret')[1]?.click()); await sleep(300);
+  // o menu do fone (estilo Discord) tem só dispositivo e volume geral; o volume de cada pessoa fica no clique direito (verificado acima)
+  ok(await A.evaluate(() => !!document.querySelector('.dmpop .dm-range') && !document.querySelector('.dmpop .volctl')), 'menu de saída tem volume geral; volume por pessoa só no clique direito');
   await A.screenshot({ path: `${SHOTS}/x6-saida.png` });
   await A.keyboard.press('Escape');
 
@@ -235,9 +236,12 @@ try {
   // ---------- chat da sala de voz: um botão só, abre e fecha ----------
   await A.evaluate((gid, cid) => window.__lc.go(gid, cid), g.id, vch.id); await sleep(500);
   const top = await A.evaluate(() => [...document.querySelectorAll('#topbar .ibtn')].filter(b => getComputedStyle(b).display !== 'none' && b.id !== 'hide-side').map(b => b.id || b.title).concat(document.querySelector('#topbar .search') ? ['busca'] : []));
-  ok(top.length === 1 && top[0] === 'vc-chat-btn', 'sala de voz tem só o botão do chat no topo: ' + top.join(', '));
+  // chat aberto: o topo da sala fica vazio e o X está no cabeçalho do próprio chat
+  ok(top.length === 0 && await A.evaluate(() => !!document.querySelector('#chat.side .vchead button[title="Fechar chat"]')), 'sala de voz: chat aberto fecha pelo X do próprio chat, topo sem botões: ' + top.join(', '));
   const wOpen = await A.evaluate(() => document.getElementById('stage').getBoundingClientRect().width);
-  await A.click('#vc-chat-btn'); await sleep(400);
+  await A.click('#chat.side .vchead button[title="Fechar chat"]'); await sleep(400);
+  const top2 = await A.evaluate(() => [...document.querySelectorAll('#topbar .ibtn')].filter(b => getComputedStyle(b).display !== 'none' && b.id !== 'hide-side').map(b => b.id || b.title));
+  ok(top2.length === 1 && top2[0] === 'vc-chat-btn', 'chat fechado: só o botão do chat no topo: ' + top2.join(', '));
   const closed = await A.evaluate(() => ({ chat: !!document.getElementById('chat'), w: document.getElementById('stage').getBoundingClientRect().width, sel: document.getElementById('vc-chat-btn').classList.contains('sel'), title: document.getElementById('vc-chat-btn').title, pref: window.__lc.S.prefs.vcChat }));
   ok(!closed.chat && closed.w > wOpen + 200 && !closed.sel && closed.title === 'Mostrar chat' && closed.pref === false, `ocultar o chat dá o espaço ao palco (${Math.round(wOpen)} → ${Math.round(closed.w)}px)`);
   await fits('chat da sala fechado');
@@ -247,22 +251,25 @@ try {
   await A.reload(); await A.waitForSelector('#rail .rail-wrap'); await A.evaluate((gid, cid) => window.__lc.go(gid, cid), g.id, vch.id); await sleep(800);
   ok(await A.evaluate(() => !document.getElementById('chat') && !!document.getElementById('vc-chat-btn')), 'chat fechado continua fechado depois de recarregar');
   await A.click('#vc-chat-btn'); await sleep(800);
-  const reopened = await A.evaluate((cid) => ({ chat: !!document.getElementById('chat'), msg: document.querySelector('#msgs')?.textContent.includes('oi na sala'), unread: !!window.__lc.S.unread[cid], dot: document.getElementById('vc-chat-btn').classList.contains('unread'), sel: document.getElementById('vc-chat-btn').classList.contains('sel') }), vch.id);
-  ok(reopened.chat && reopened.msg && !reopened.unread && !reopened.dot && reopened.sel, 'mostrar o chat traz as mensagens e marca como lido');
+  const reopened = await A.evaluate((cid) => ({ chat: !!document.getElementById('chat'), msg: document.querySelector('#msgs')?.textContent.includes('oi na sala'), unread: !!window.__lc.S.unread[cid], btn: !!document.getElementById('vc-chat-btn') }), vch.id);
+  ok(reopened.chat && reopened.msg && !reopened.unread && !reopened.btn, 'mostrar o chat traz as mensagens, marca como lido e o botão vira o X do chat');
 
   // ---------- painéis da direita abrem e fecham no mesmo botão ----------
   await A.evaluate((gid, cid) => window.__lc.go(gid, cid), g.id, text.id); await sleep(600);
-  const panel = () => A.evaluate(() => document.querySelector('#results')?.dataset.kind || null);
+  // fixadas e caixa de entrada são popups abaixo do botão (um de cada vez)
+  const panel = () => A.evaluate(() => document.querySelector('.pinspop') ? 'pins' : document.querySelector('.inboxpop') ? 'inbox' : null);
   await A.click('.pins-btn'); await sleep(400);
-  ok(await panel() === 'pins' && await A.evaluate(() => document.querySelector('.pins-btn').classList.contains('sel')), 'botão de fixadas abre o painel');
+  ok(await panel() === 'pins', 'botão de fixadas abre o painel');
   await A.click('.pins-btn'); await sleep(300);
-  ok(await panel() === null && await A.evaluate(() => !document.querySelector('.pins-btn').classList.contains('sel')), 'clicar de novo em fixadas fecha');
+  ok(await panel() === null, 'clicar de novo em fixadas fecha');
   await A.click('.inbox-btn'); await sleep(400);
   ok(await panel() === 'inbox', 'caixa de entrada abre');
-  await A.click('.pins-btn'); await sleep(400);
-  ok(await panel() === 'pins', 'com a caixa aberta, fixadas troca o painel');
-  await A.click('.inbox-btn'); await sleep(400); await A.click('.inbox-btn'); await sleep(300);
+  await A.click('.inbox-btn'); await sleep(300);
   ok(await panel() === null, 'clicar de novo na caixa de entrada fecha');
+  // o popup da caixa cobre o botão de fixadas; o contrário não: com as fixadas abertas, a caixa troca o painel
+  await A.click('.pins-btn'); await sleep(400); await A.click('.inbox-btn'); await sleep(400);
+  ok(await panel() === 'inbox', 'com as fixadas abertas, a caixa de entrada troca o painel');
+  await A.click('.inbox-btn'); await sleep(300);
 
   // ---------- menu do usuário (clique direito) ----------
   await A.evaluate((gid, cid) => window.__lc.go(gid, cid), g.id, text.id); await sleep(600);
@@ -314,9 +321,10 @@ try {
   await openMenuOnBob(); await clickText(A, '.menu .it', 'Mute'); await sleep(300);
   const mu = await A.evaluate((id) => ({ pref: window.__lc.S.prefs.mutedUsers?.[id], el: (() => { const p = window.__lc.voice.peers.get(id); return p?.audioElBoost ? p.audioElBoost.gain.gain.value : p?.audioEl?.volume; })() }), bobId);
   ok(mu.pref === true && mu.el === 0, 'Mute silencia a voz da pessoa só para você ' + JSON.stringify(mu));
-  const items4 = await openMenuOnBob();
-  ok(items4.includes('Desmutar') && items4.includes('Desafixar'), 'menu mostra "Desmutar" e "Desafixar" depois');
-  await clickText(A, '.menu .it', 'Desmutar'); await sleep(300);
+  // em chamada o menu é o da chamada (estilo Discord): "Mute" vira caixa marcada; fora dela aparece "Desmutar"
+  await openMenuOnBob();
+  ok(await A.evaluate(() => !![...document.querySelectorAll('.menu .it')].find(i => i.textContent.trim() === 'Mute')?.querySelector('.cbx.on')), 'menu da chamada mostra "Mute" marcado depois');
+  await clickText(A, '.menu .it', 'Mute'); await sleep(300);
   ok(await A.evaluate((id) => !window.__lc.S.prefs.mutedUsers?.[id] && (() => { const p = window.__lc.voice.peers.get(id); return p?.audioElBoost ? p.audioElBoost.gain.gain.value : p?.audioEl?.volume; })() === 1, bobId), 'Desmutar devolve o som');
   // bloqueados nas configurações
   await api(tokA, 'PUT', `/relationships/${bobId}`, { type: 2 }); await sleep(500);

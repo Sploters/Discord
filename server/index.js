@@ -8,12 +8,12 @@ import { fileURLToPath } from 'node:url';
 import https from 'node:https';
 import { execFileSync } from 'node:child_process';
 import { WebSocketServer } from 'ws';
-import { all, get, run, newId, UPLOAD_DIR, DATA_DIR } from './db.js';
+import { db, all, get, run, newId, UPLOAD_DIR, DATA_DIR } from './db.js';
 import { startSfu, sfuEnabled, sfuJoin, sfuLeave, sfuRequest, sfuAttachRtp, sfuLoad } from './sfu.js';
 import { getAdapter, listAdapters } from './integrations/index.js';
 import { createActivityService } from './activity.js';
 import { translate, translateEnabled, engineName } from './translate.js';
-import { initMusic, handle as musicHandle, onVoiceJoin as musicOnJoin, onVoiceLeave as musicOnLeave } from './music.js';
+import { initMusic, handle as musicHandle, onVoiceJoin as musicOnJoin, onVoiceLeave as musicOnLeave, stopAll as musicStopAll } from './music.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -1172,3 +1172,20 @@ server.listen(PORT, HOST, () => {
     hs.on('error', (e) => console.error('HTTPS erro:', e.message));
   }
 });
+
+// Encerramento: o mediasoup registra os próprios ouvintes de SIGTERM/SIGINT (só fecha o worker), o que desliga
+// a saída padrão do Node; sem isto o processo continuaria de pé e o `docker stop` esperaria 10 s até matar à força.
+let stopping = false;
+function shutdown(sig) {
+  if (stopping) return; stopping = true;
+  console.log(`  ${sig} recebido: encerrando`);
+  setTimeout(() => process.exit(0), 3000).unref(); // não espera conexões presas
+  try { musicStopAll(); } catch { }
+  try { activity.stop(); } catch { }
+  for (const c of wss.clients) try { c.close(1001, 'Servidor reiniciando'); } catch { }
+  server.close();
+  try { db.close(); } catch { }
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
