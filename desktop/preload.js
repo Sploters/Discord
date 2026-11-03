@@ -17,4 +17,10 @@ contextBridge.exposeInMainWorld('lcDesktop', {
   onUpdate: (cb) => ipcRenderer.on('update-available', (_e, v) => cb(v)),
   saveServer: (url) => ipcRenderer.invoke('save-server', url),
   setThrottle: (on) => ipcRenderer.send('set-throttle', !!on),
+  // controle remoto: só mouse e teclado, com o programa nativo; ver desktop/remote.js
+  remoteCapable: () => ipcRenderer.invoke('remote-capable'),
+  remoteStart: (o) => ipcRenderer.invoke('remote-start', o),
+  remoteInput: (ev) => ipcRenderer.send('remote-input', ev),
+  remoteStop: () => ipcRenderer.send('remote-stop'),
+  onRemoteEvent: (cb) => ipcRenderer.on('remote-event', (_e, k) => cb(k)),
 });

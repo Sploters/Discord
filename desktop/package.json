@@ -1,6 +1,6 @@
 {
   "name": "localcord-desktop",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "LocalCord Desktop — cliente do seu servidor LocalCord",
   "main": "main.js",
   "author": "LocalCord",
@@ -8,7 +8,8 @@
   "scripts": {
     "start": "electron .",
     "icon": "node make-icon.mjs",
-    "dist": "node make-icon.mjs && electron-builder --win"
+    "dist": "npm run native && node make-icon.mjs && electron-builder --win",
+    "native": "node build-native.mjs"
   },
   "build": {
     "appId": "br.local.localcord",
@@ -22,7 +23,8 @@
       "connect.html",
       "splash.html",
       "build/icon.png",
-      "build/tray.png"
+      "build/tray.png",
+      "remote.js"
     ],
     "win": {
       "target": [
@@ -40,7 +42,13 @@
     "portable": {
       "splashImage": "build/splash.bmp",
       "artifactName": "LocalCord-Portable-${version}.${ext}"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "native/lc-input.exe",
+        "to": "lc-input.exe"
+      }
+    ]
   },
   "devDependencies": {
     "electron": "^45.1.0",

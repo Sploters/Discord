@@ -1,3 +1,4 @@
+const remote = require('./remote');
 const { app, BrowserWindow, Tray, Menu, ipcMain, desktopCapturer, session, shell, globalShortcut, nativeImage, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -144,6 +145,7 @@ function setupSession() {
       // janela minimizada (jogo em tela cheia após alt+tab) não pode ser capturada: cai para a tela inteira, que mostra o jogo quando ele volta
       const s = sources.find(x => x.id === pickedSource) || sources.find(x => x.id.startsWith('screen:')) || sources[0];
       if (!s) return callback({});
+      remote.setShared(s); // o controle remoto precisa saber qual monitor está sendo transmitido
       // áudio = loopback do sistema todo (o Windows não isola uma janela), tanto de tela quanto de janela; o renderer pede restrictOwnAudio para excluir o próprio LocalCord
       callback(request.audioRequested ? { video: s, audio: 'loopback' } : { video: s });
     } catch (e) { console.error(e); callback({}); }
@@ -172,6 +174,13 @@ ipcMain.handle('get-sources', async () => {
 });
 ipcMain.handle('select-source', (_e, id) => { pickedSource = id; return true; });
 ipcMain.on('set-badge', (_e, n) => setBadge(n));
+// controle remoto (desktop/remote.js): o renderer só chama start depois que o dono aceitou
+ipcMain.handle('remote-capable', () => remote.capable());
+ipcMain.handle('remote-start', (_e, o) => remote.start(o || {}));
+ipcMain.on('remote-input', (_e, ev) => remote.input(ev));
+ipcMain.on('remote-stop', () => remote.stop());
+remote.onRemoteEvent((k) => { if (win && !win.isDestroyed()) win.webContents.send('remote-event', k); });
+app.on('before-quit', () => remote.shutdown());
 // modo leve: deixa o Chromium desacelerar a página escondida (o renderer só liga fora de chamada)
 ipcMain.on('set-throttle', (_e, on) => { if (win && !win.isDestroyed()) win.webContents.setBackgroundThrottling(!!on); });
 ipcMain.handle('get-settings', () => ({ ...cfg, version: app.getVersion() }));
