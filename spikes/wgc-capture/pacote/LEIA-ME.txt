@@ -1,0 +1,12 @@
+TESTE DE FPS DA CAPTURA DE TELA - LocalCord
+
+1. Extraia esta pasta (botao direito no .zip > Extrair tudo).
+2. Clique duas vezes em "TESTAR (clique duas vezes).bat".
+   Se o Windows mostrar "O Windows protegeu o computador", clique em
+   "Mais informacoes" > "Executar assim mesmo" (o programa nao e assinado).
+3. Aperte Enter, nao mexa no PC por ~1 minuto e meio enquanto a animacao roda.
+4. Abra o resultado.txt e cole o conteudo na conversa.
+
+O teste so mede quantos quadros por segundo o Windows consegue entregar
+da sua tela. Nao instala nada, nao altera configuracoes e nao envia nada
+pela internet.
