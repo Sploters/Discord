@@ -156,6 +156,36 @@ fn main() -> windows::core::Result<()> {
     Ok(())
 }
 
+/// Lê o número do quadro gravado pela animação (32 células no canto superior esquerdo, já escaladas para a tela).
+struct IdReader { staging: ID3D11Texture2D, rw: u32, rh: u32, row_y: usize, cell_x: Vec<usize> }
+impl IdReader {
+    fn new(device: &ID3D11Device, w: i32, h: i32) -> windows::core::Result<Self> {
+        let (sx, sy) = (w as f64 / 1920.0, h as f64 / 1080.0);
+        let rw = ((256.0 * sx).ceil() as u32).max(1).min(w as u32);
+        let rh = ((8.0 * sy).ceil() as u32).max(1).min(h as u32);
+        let row_y = ((4.0 * sy) as usize).min(rh as usize - 1);
+        let cell_x = (0..32usize).map(|b| (((b * 8 + 4) as f64 * sx) as usize).min(rw as usize - 1)).collect();
+        let desc = D3D11_TEXTURE2D_DESC { Width: rw, Height: rh, MipLevels: 1, ArraySize: 1, Format: DXGI_FORMAT_B8G8R8A8_UNORM, SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 }, Usage: D3D11_USAGE_STAGING, BindFlags: 0, CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32, MiscFlags: 0 };
+        let mut t: Option<ID3D11Texture2D> = None;
+        unsafe { device.CreateTexture2D(&desc, None, Some(&mut t))?; }
+        Ok(Self { staging: t.expect("staging"), rw, rh, row_y, cell_x })
+    }
+    fn read(&self, c: &windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext, tex: &ID3D11Texture2D) -> u32 {
+        let bx = D3D11_BOX { left: 0, top: 0, front: 0, right: self.rw, bottom: self.rh, back: 1 };
+        let mut id = 0u32;
+        unsafe {
+            c.CopySubresourceRegion(&self.staging, 0, 0, 0, 0, tex, 0, Some(&bx));
+            let mut m = D3D11_MAPPED_SUBRESOURCE::default();
+            if c.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut m)).is_ok() {
+                let row = std::slice::from_raw_parts((m.pData as *const u8).add(self.row_y * m.RowPitch as usize), self.rw as usize * 4);
+                for b in 0..32usize { if row[self.cell_x[b] * 4 + 1] > 128 { id |= 1 << b; } }
+                c.Unmap(&self.staging, 0);
+            }
+        }
+        id
+    }
+}
+
 /// Comparação: DXGI Desktop Duplication (AcquireNextFrame). Conta só quadros com apresentação nova (LastPresentTime != 0).
 fn dxgi_main(secs: u64) -> windows::core::Result<()> {
     use windows::Win32::Graphics::Dxgi::{IDXGIOutput1, DXGI_OUTDUPL_FRAME_INFO, IDXGIResource};
@@ -167,6 +197,12 @@ fn dxgi_main(secs: u64) -> windows::core::Result<()> {
     let output = unsafe { adapter.EnumOutputs(0)? };
     let output1: IDXGIOutput1 = output.cast()?;
     let dup = unsafe { output1.DuplicateOutput(&device)? };
+    let od = unsafe { output.GetDesc()? };
+    let (ow, oh) = (od.DesktopCoordinates.right - od.DesktopCoordinates.left, od.DesktopCoordinates.bottom - od.DesktopCoordinates.top);
+    let verify = arg("--verify", "0") == "1";
+    let reader = if verify { Some(IdReader::new(&device, ow, oh)?) } else { None };
+    let ctx = unsafe { device.GetImmediateContext()? };
+    let mut ids: Vec<(f64, u32)> = Vec::new();
     let start = Instant::now();
     let mut times: Vec<f64> = Vec::new();
     let mut acc_total: u64 = 0;
@@ -175,7 +211,11 @@ fn dxgi_main(secs: u64) -> windows::core::Result<()> {
         let mut res: Option<IDXGIResource> = None;
         match unsafe { dup.AcquireNextFrame(100, &mut info, &mut res) } {
             Ok(_) => {
-                if info.LastPresentTime != 0 { times.push(start.elapsed().as_secs_f64()); acc_total += info.AccumulatedFrames as u64; }
+                if info.LastPresentTime != 0 {
+                    let t = start.elapsed().as_secs_f64();
+                    times.push(t); acc_total += info.AccumulatedFrames as u64;
+                    if let (Some(rd), Some(r)) = (&reader, &res) { if let Ok(tex) = r.cast::<ID3D11Texture2D>() { ids.push((t, rd.read(&ctx, &tex))); } }
+                }
                 drop(res);
                 unsafe { dup.ReleaseFrame()?; }
             }
@@ -184,6 +224,11 @@ fn dxgi_main(secs: u64) -> windows::core::Result<()> {
         }
     }
     let w: Vec<f64> = times.into_iter().filter(|t| *t >= 2.0).collect();
+    let wi: Vec<&(f64, u32)> = ids.iter().filter(|x| x.0 >= 2.0).collect();
+    let (mut uniq, mut dupf, mut span) = (0usize, 0usize, 0i64);
+    if wi.len() > 1 { let mut prev = wi[0].1; uniq = 1; for x in &wi[1..] { if x.1 == prev { dupf += 1; } else { uniq += 1; } prev = x.1; } span = wi[wi.len() - 1].1 as i64 - wi[0].1 as i64; }
+    let vdur = if wi.len() > 1 { wi[wi.len() - 1].0 - wi[0].0 } else { 0.0 };
+    println!("{{\"verify\":{},\"uniqueFps\":{:.1},\"duplicateFrames\":{},\"sourceFramesSpanFps\":{:.1}}}", verify, if vdur > 0.0 { uniq as f64 / vdur } else { 0.0 }, dupf, if vdur > 0.0 { span as f64 / vdur } else { 0.0 });
     let dur = if w.len() > 1 { w[w.len() - 1] - w[0] } else { 0.0 };
     let mean = if dur > 0.0 { (w.len() as f64 - 1.0) / dur } else { 0.0 };
     let mut per = vec![0u32; secs as usize];
@@ -191,8 +236,8 @@ fn dxgi_main(secs: u64) -> windows::core::Result<()> {
     let series: Vec<f64> = per.iter().map(|&x| x as f64).collect();
     let iv: Vec<f64> = w.windows(2).map(|p| (p[1] - p[0]) * 1000.0).collect();
     println!(
-        "{{\"api\":\"DXGI-DD\",\"size\":\"?\",\"secs\":{},\"minUpdateInterval\":\"n/a\",\"cursor\":true,\"border\":\"n/a\",\"buffers\":0,\"frames\":{},\"meanFps\":{:.1},\"perSecMin\":{:.0},\"perSecP5\":{:.0},\"perSecMedian\":{:.0},\"perSecMax\":{:.0},\"ivMedMs\":{:.2},\"ivP95Ms\":{:.2},\"ivMaxMs\":{:.2},\"series\":{:?},\"accumulatedFramesTotal\":{}}}",
-        secs, w.len(), mean,
+        "{{\"api\":\"DXGI-DD\",\"size\":\"{}x{}\",\"secs\":{},\"minUpdateInterval\":\"n/a\",\"cursor\":true,\"border\":\"n/a\",\"buffers\":0,\"frames\":{},\"meanFps\":{:.1},\"perSecMin\":{:.0},\"perSecP5\":{:.0},\"perSecMedian\":{:.0},\"perSecMax\":{:.0},\"ivMedMs\":{:.2},\"ivP95Ms\":{:.2},\"ivMaxMs\":{:.2},\"series\":{:?},\"accumulatedFramesTotal\":{}}}",
+        ow, oh, secs, w.len(), mean,
         series.iter().cloned().fold(f64::MAX, f64::min), pct(&series, 0.05), pct(&series, 0.5), series.iter().cloned().fold(0.0, f64::max),
         pct(&iv, 0.5), pct(&iv, 0.95), iv.iter().cloned().fold(0.0, f64::max), per, acc_total
     );

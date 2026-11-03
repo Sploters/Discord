@@ -104,3 +104,13 @@ Pacote `spikes/wgc-capture/pacote` (exe compilado no Linux para `x86_64-pc-windo
 - **Inconclusivo quanto ao conteúdo:** "quadros únicos" ≈ 0 e DXGI com 0,4 fps indicam tela parada — a animação provavelmente não estava visível (o console do teste ficava na frente). Além disso a leitura do número do quadro só estava calibrada para 1920×1080.
 - Correções: o teste minimiza o próprio console antes de abrir a animação, codifica o caminho do arquivo na URL, avisa quando a captura só vê quadros repetidos; o spike lê as células escaladas para o tamanho real da tela; saída só em ASCII.
 - A pergunta que decide o capturador próprio (passar de ~48 fps num monitor de 143 Hz) **só pode ser respondida no PC de 143 Hz**.
+
+## Spike A — segunda execução (mesmo PC secundário, 60 Hz, animação visível)
+| Captura | eventos/s | quadros únicos/s | fonte (animação) |
+|---|---|---|---|
+| WGC padrão | 84,5 | 51,9 | ~60 |
+| WGC "sem limite" (ignorado no Win10) | 86,3 | 55,1 | 59,9 |
+| WGC sem borda (ignorado no Win10) | 90,0 | 54,3 | 59,9 |
+| DXGI Desktop Duplication | 59,7 | (não verificado nesta versão) | — |
+
+Leitura: o WGC dispara mais eventos que a taxa do monitor, mas ~40 % repetem o quadro anterior; entrega ~87–92 % dos quadros da fonte. O DXGI acompanhou os 60 Hz em contagem de apresentações. A partir desta versão o DXGI também lê o número do quadro (`--verify 1`, classe `IdReader` comum aos dois), para comparação justa. Ainda falta: rodar no PC de 143 Hz e comparar com o capturador do Chromium na mesma máquina.

@@ -36,7 +36,7 @@ $testes = @(
   @{ nome = 'WGC padrao';            args = @('--secs', '15', '--verify', '1') },
   @{ nome = 'WGC sem limite';        args = @('--secs', '15', '--verify', '1', '--min-interval-ms', '0') },
   @{ nome = 'WGC sem limite/borda';  args = @('--secs', '15', '--verify', '1', '--min-interval-ms', '0', '--border', '0') },
-  @{ nome = 'DXGI (comparacao)';     args = @('--secs', '15', '--api', 'dxgi') }
+  @{ nome = 'DXGI (comparacao)';     args = @('--secs', '15', '--verify', '1', '--api', 'dxgi') }
 )
 function Salvar { try { $linhas | Set-Content -Encoding UTF8 $out } catch { Write-Host "  Nao consegui salvar em $out : $($_.Exception.Message)" -ForegroundColor Red } }
 $linhas = @("LocalCord - teste de FPS da captura nativa", "Data: $(Get-Date -Format 'yyyy-MM-dd HH:mm')", "Monitor: $hz Hz", "GPU: $((Get-CimInstance Win32_VideoController | Select-Object -First 1).Name)", "Windows: $((Get-CimInstance Win32_OperatingSystem).Caption) $((Get-CimInstance Win32_OperatingSystem).BuildNumber)", '')
