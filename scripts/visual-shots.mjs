@@ -49,7 +49,7 @@ try {
   await U[1].page.evaluate(() => window.__lc.voice.toggleScreen({ res: 720, fps: 30, audio: false, hint: 'motion' }).then(() => true)); await sleep(2500);
   await p.evaluate((a) => { window.__lc.voice.openStream(a); }, U[1].id); await sleep(1500);
   await shot(p, '05-sala-grade');
-  const setLayout = async (label) => { await p.evaluate(() => [...document.querySelectorAll('button')].find(b => /^Layout do palco/.test(b.title))?.click()); await sleep(250); if (label === '__menu') return; await p.evaluate((l) => [...document.querySelectorAll('.menu .it')].find(i => new RegExp('^\\W*' + l).test(i.textContent))?.click(), label); await sleep(900); };
+  const setLayout = async (label) => { if (!(await p.evaluate(() => !!document.querySelector('.layoutpop')))) await p.evaluate(() => document.getElementById('vc-layout')?.click()); await sleep(250); if (label === '__menu') return; await p.evaluate((l) => [...document.querySelectorAll('.layoutpop .lopt .lname')].find(i => new RegExp('^' + l).test(i.textContent))?.click(), label); await sleep(900); await p.keyboard.press('Escape'); };
   await setLayout('__menu'); await shot(p, '06-menu-layout'); await p.keyboard.press('Escape'); await p.mouse.click(5, 5);
   for (const [l, f] of [['Destaque', '07-layout-destaque'], ['Principal', '08-layout-principal'], ['Lado a lado', '09-layout-lado'], ['Cinema', '10-layout-cinema']]) { await setLayout(l); await shot(p, f); }
   await setLayout('Autom');

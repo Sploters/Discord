@@ -70,7 +70,7 @@ async function page(tok, desk) {
       window.__ri = []; window.__rs = []; window.__rstop = 0;
       const fns = { isDesktop: true, getSettings: async () => ({}), getUpdate: async () => null, setThrottle: () => { },
         getSources: async () => [{ id: 'screen:1:0', name: 'Tela 1', type: 'screen', thumbnail: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' }],
-        remoteCapable: async () => ({ ok: true }), remoteStart: async (o) => { window.__rs.push(o); return { ok: true }; },
+        remoteCapable: async () => ({ ok: true, antiCheats: window.__ac || [] }), remoteStart: async (o) => { window.__rs.push(o); return { ok: true }; },
         remoteInput: (ev) => window.__ri.push(...ev), remoteStop: () => { window.__rstop++; }, onRemoteEvent: (cb) => { window.__remoteCb = cb; } };
       window.lcDesktop = new Proxy(fns, { get: (t, k) => (k in t ? t[k] : () => Promise.resolve(true)) });
     }
@@ -103,9 +103,15 @@ try {
 
   // pedido -> alice vê o diálogo, libera só o mouse
   await clickCtl(B);
+  // primeira vez: apresentação com o aviso de anti-cheat e as limitações, antes de enviar o pedido
+  const intro = await B.evaluate(() => document.querySelector('.modal')?.textContent || '');
+  ok(/Pedir controle remoto/.test(intro) && /anti-cheat/.test(intro) && /Limitações/.test(intro), 'primeira vez: quem pede vê o aviso de anti-cheat e as limitações');
+  ok(!(await A.evaluate(() => /quer controlar/.test(document.querySelector('.modal')?.textContent || ''))), 'o pedido só sai depois de confirmar a apresentação');
+  await B.evaluate(() => [...document.querySelectorAll('.modal .btn')].find(x => x.textContent === 'Pedir controle').click());
   await A.waitForFunction(() => /quer controlar seu PC/.test(document.querySelector('.modal')?.textContent || ''), { timeout: 5000 }).catch(() => { });
   const dlg = await A.evaluate(() => document.querySelector('.modal')?.textContent || '');
   ok(/bob quer controlar seu PC/.test(dlg) && /Ctrl\+Alt\+Shift\+Q/.test(dlg), 'alice recebe o pedido com opções e o atalho de emergência');
+  ok(/Cuidado com jogos com anti-cheat/.test(dlg) && /Limitações/.test(dlg) && await A.evaluate(() => !document.querySelector('.modal .rmwarn.hot')), 'diálogo do dono: aviso geral de anti-cheat (amarelo) e limitações');
   await A.screenshot({ path: `${SHOTS}/remote-consent.png` });
   await A.evaluate(() => { const cbs = [...document.querySelectorAll('.modal .rmopt input')]; cbs[1].click(); }); // desmarca o teclado
   await A.evaluate(() => [...document.querySelectorAll('.modal .btn')].find(x => x.textContent === 'Permitir').click());
@@ -139,11 +145,14 @@ try {
   ok(await A.evaluate(() => window.__rstop > 0 && !document.getElementById('remote-chip')), 'atalho de emergência: app da alice desarmado e aviso some');
   ok(!(await B.evaluate((uid) => document.querySelector(`.tile.screen[data-sid="${uid}"]`)?.classList.contains('controlling'), a.id)), 'quadro deixa de ser controlado');
 
-  // nova sessão com mouse e teclado; bob digita
+  // nova sessão com mouse e teclado; bob digita. No PC da alice há um anti-cheat "rodando": aviso vermelho com o nome
+  await A.evaluate(() => { window.__ac = ['Riot Vanguard (Valorant, League of Legends)']; });
   await sleep(300); await B.evaluate((uid) => document.querySelector(`.tile.screen[data-sid="${uid}"]`)?.dispatchEvent(new MouseEvent('mouseenter')), a.id); await clickCtl(B);
   await A.waitForFunction(() => /quer controlar/.test(document.querySelector('.modal')?.textContent || ''), { timeout: 5000 }).catch(() => { });
+  ok(await A.evaluate(() => /Anti-cheat rodando agora: Riot Vanguard/.test(document.querySelector('.modal .rmwarn.hot')?.textContent || '')), 'anti-cheat detectado no PC do dono: aviso vermelho com o nome');
   await A.evaluate(() => [...document.querySelectorAll('.modal .btn')].find(x => x.textContent === 'Permitir').click());
   await toastOf(B, 'liberou o mouse e o teclado');
+  ok(true, 'segundo pedido sai direto, sem repetir a apresentação');
   await A.evaluate(() => { window.__ri = []; });
   await B.evaluate(() => document.querySelectorAll('textarea').forEach(t => { t.value = ''; })); // na sessão só com mouse, a tecla ficou no chat do próprio bob (esperado)
   await B.mouse.click(box.x, box.y); await sleep(50);

@@ -9,7 +9,7 @@ Chat + voz + vídeo + transmissão de tela auto-hospedado, com layout inspirado 
 - **Tradução:** clique direito → Traduzir (mostra sob a mensagem, só para você), botão no compositor para traduzir o rascunho e prefixo `$en`, `$es`, `$ja`… para enviar já traduzido. Idioma e "manter original" em Aparência.
 - **Espectadores:** cada transmissão mostra quantos e quem está assistindo (clique no selo para a lista).
 - **Clique direito → Entrar na chamada** em quem está em voz.
-- **Controle remoto (mouse e teclado):** quem assiste uma transmissão pede o controle; quem transmite (app para Windows, tela inteira) escolhe liberar mouse e/ou teclado. Aviso vermelho sempre por cima enquanto durar, botão Parar e atalho de emergência **Ctrl+Alt+Shift+Q** (só o teclado físico do dono aciona). Detalhes e limitações em `docs/FASE3-REMOTE.md`.
+- **Controle remoto (mouse e teclado):** quem assiste uma transmissão pede o controle; quem transmite (app para Windows, tela inteira) escolhe liberar mouse e/ou teclado. Aviso vermelho sempre por cima enquanto durar, botão Parar e atalho de emergência **Ctrl+Alt+Shift+Q** (só o teclado físico do dono aciona). Avisa sobre jogos com anti-cheat (e detecta os mais comuns rodando no PC). Detalhes e limitações em `docs/FASE3-REMOTE.md`.
 - **Convite para a chamada:** numa sala de voz, chame um amigo ou membro do servidor (clique direito → Convidar para a chamada, ou o botão Convidar na aba Atividade). A pessoa recebe um aviso com toque e um cartão na DM com Entrar/Recusar; se ainda não for membro, aceitar já a coloca no servidor e na sala. Quem convidou vê a resposta. O convite vale 5 min.
 - **Animações:** transições ao trocar de canal, abrir janelas/menus e receber mensagens (desligam em Acessibilidade → Reduzir animações ou em Aparência).
 - **Perfil:** avatar e banner (imagem/GIF), cor, pronomes, status com emoji, bio, prévia ao vivo.
@@ -20,7 +20,7 @@ Chat + voz + vídeo + transmissão de tela auto-hospedado, com layout inspirado 
 - **Soundboard:** sons pessoais (ficam na conta) e dos servidores, tocados para toda a sala de voz; favoritos, volume, silenciar, escolher quais servidores usar e **atalho de teclado por som**.
 - **Transmissão de tela:** escolha de tela/janela com miniaturas ao vivo, 720p/1080p/1440p/original, 15/30/60 fps, otimização movimento/nitidez, áudio do sistema, e **mudança de qualidade/fonte durante a transmissão**.
 - **Configurações:** Conta (usuário, senha, excluir conta), Perfil, Privacidade e segurança (sessões), Aparência (4 temas, cor, fonte, espaçamento, arredondamento, 12/24h), Acessibilidade, Voz e vídeo, Transmissão, Sons, Soundboard, Notificações, Atalhos configuráveis, Avançado (exportar/importar, modo desenvolvedor). **Tudo sincroniza na conta** (menos dispositivos de áudio).
-- **App desktop:** janela própria, bandeja, iniciar com o Windows, atalhos globais configuráveis, badge de não lidas, aceleração de hardware, limpar cache.
+- **App desktop:** compatibilidade de vídeo para placas antigas (texto borrado, tela cheia com defeito; ver `docs/DESKTOP-VISUAL.md`), janela própria, bandeja, iniciar com o Windows, atalhos globais configuráveis, badge de não lidas, aceleração de hardware, limpar cache.
 
 ## Servidor
 Requer Node.js >= 22.5 (usa `node:sqlite`) e `openssl`. No Docker/Umbrel já vem no `Dockerfile`.

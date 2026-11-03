@@ -16,7 +16,12 @@ export const pendingFor = (uid) => { const s = S.remote; return !!s && s.state =
 // ---------- quem assiste ----------
 export function requestControl(uid) {
   if (S.remote) return toast('Já existe uma sessão de controle remoto', true);
-  ctx.send('REMOTE_REQUEST', { to: uid });
+  // primeira vez: explica o que é, os riscos com anti-cheat e as limitações antes de pedir
+  if (S.prefs.remoteIntroSeen) return ctx.send('REMOTE_REQUEST', { to: uid });
+  modal('Pedir controle remoto', null, h('div.rmask',
+    h('p', `Você vai pedir para controlar o mouse e/ou o teclado de ${ctx.name(uid)} pela transmissão. A pessoa escolhe o que liberar e pode parar quando quiser.`),
+    antiCheatWarning([]), limitations()),
+    [{ label: 'Cancelar', cls: 'grey' }, { label: 'Pedir controle', fn: () => { S.prefs.remoteIntroSeen = true; ctx.savePrefs?.(); ctx.send('REMOTE_REQUEST', { to: uid }); } }]);
 }
 export function stopControl() { if (S.remote) ctx.send('REMOTE_STOP', { id: S.remote.id }); }
 
@@ -97,10 +102,11 @@ async function onRequest(s) {
     h('p', `${who} vai poder mexer no seu computador pela transmissão, como se estivesse sentado aí. Só aceite se confiar nessa pessoa.`),
     h('label.rmopt', mouse, h('span', h('b', 'Mouse'), h('small', 'mover, clicar, arrastar e rolar'))),
     h('label.rmopt', kb, h('span', h('b', 'Teclado'), h('small', 'digitar e usar atalhos'))),
+    antiCheatWarning(cap.antiCheats || []),
     h('ul.rmnotes',
       h('li', 'Para parar a qualquer momento: botão ', h('b', 'Parar'), ' no aviso vermelho ou ', h('b', 'Ctrl+Alt+Shift+Q'), ' (só o seu teclado aciona).'),
-      h('li', 'Acaba sozinho se alguém sair da sala ou você parar de transmitir.'),
-      h('li', 'Programas abertos como administrador não recebem os comandos (regra do Windows).'))),
+      h('li', 'Acaba sozinho se alguém sair da sala ou você parar de transmitir.')),
+    limitations()),
     [{ label: 'Recusar', cls: 'grey', fn: () => answer(false) }, { label: 'Permitir', cls: 'red', fn: () => { if (!mouse.checked && !kb.checked) { toast('Escolha mouse e/ou teclado', true); return false; } answer(true); } }]);
   askTimer = setTimeout(() => { askDlg?.close?.(); askDlg = null; }, 30000); // o servidor também expira o pedido
 }
@@ -108,6 +114,27 @@ desktop?.onRemoteEvent?.((k) => {
   if (k === 'panic' && S.remote?.owner === S.me.id) ctx.send('REMOTE_STOP', { id: S.remote.id, reason: 'panic' });
   if (k === 'blocked') toast('O Windows bloqueou o controle: a janela em foco foi aberta como administrador.', true);
 });
+
+// jogos com anti-cheat: a entrada injetada pode ser ignorada ou tratada como trapaça (risco de banimento da conta do dono)
+export function antiCheatWarning(found) {
+  const hot = found.length > 0;
+  return h('div.rmwarn' + (hot ? '.hot' : ''),
+    h('b', hot ? `Anti-cheat rodando agora: ${found.join(', ')}` : 'Cuidado com jogos com anti-cheat'),
+    h('p', 'Jogos online com anti-cheat (Valorant, League of Legends, Fortnite, Apex, PUBG, Rainbow Six, CS2 com FACEIT, Call of Duty, Battlefield e outros) podem ', h('b', 'ignorar'), ' os comandos do controle remoto ou considerá-los ', h('b', 'trapaça'), '. Quem corre risco de suspensão ou banimento é a conta do jogo ', h('b', 'neste PC'), ', não a de quem controla.'),
+    h('p', hot ? 'Recomendado: recuse, ou feche o jogo antes de permitir.' : 'Recomendado: não use com esses jogos abertos. Para ajudar alguém com o PC (programas, configurações, jogos sem anti-cheat) não há problema.'));
+}
+// o que o controle remoto não faz (aparece no pedido e no "saiba mais")
+export function limitations() {
+  return h('details.rmlimits', h('summary', 'Limitações'),
+    h('ul',
+      h('li', 'Só funciona transmitindo a ', h('b', 'tela inteira'), ' pelo app para Windows (não uma janela, nem pelo navegador).'),
+      h('li', 'Programas abertos ', h('b', 'como administrador'), ' não recebem os comandos (regra do Windows); você vê um aviso quando acontecer.'),
+      h('li', 'Jogos em ', h('b', 'tela cheia exclusiva'), ' podem não receber os comandos e às vezes aparecem pretos na transmissão; use "janela sem bordas".'),
+      h('li', h('b', 'Ctrl+Alt+Del'), ' e a tela de bloqueio/UAC do Windows não podem ser controlados.'),
+      h('li', 'Há um pequeno atraso: os comandos passam pelo servidor. Bom para ajudar; para jogar à distância pode não ser ideal.'),
+      h('li', 'Só mouse e teclado: controle de videogame ainda não é suportado.'),
+      h('li', 'Com vários monitores, só o monitor transmitido é controlado.')));
+}
 
 // ---------- eventos do servidor ----------
 export function onRemoteEvent(t, d) {
@@ -121,7 +148,7 @@ export function onRemoteEvent(t, d) {
     if (mine) { desktop?.remoteStop?.(); askDlg?.close?.(); askDlg = null; }
     if (was?.id === d.id || !was) {
       const r = d.reason || 'stopped';
-      if (mine) toast(r === 'panic' ? 'Controle remoto encerrado' : r === 'stopped' ? 'Controle remoto encerrado' : `Controle remoto encerrado (${REASON[r] || r})`);
+      if (mine) { if (was?.state === 'active') toast('Controle remoto encerrado'); } // recusar/expirar o pedido: quem recusou não precisa de aviso
       else toast(`${other} ${REASON[r] || 'encerrou o controle remoto'}`, r !== 'stopped' && r !== 'panic');
     }
   } else {
@@ -129,7 +156,7 @@ export function onRemoteEvent(t, d) {
     if (d.state === 'active' && before?.state !== 'active') {
       if (mine) {
         desktop?.remoteStart?.({ who: other, perms: d.perms }).then(r => { if (!r?.ok) { toast(r?.reason || 'Não foi possível iniciar o controle remoto', true); ctx.send('REMOTE_STOP', { id: d.id }); } });
-      } else toast(`${other} liberou o ${d.perms.mouse && d.perms.keyboard ? 'mouse e o teclado' : d.perms.mouse ? 'mouse' : 'teclado'}. Clique na transmissão para controlar.`);
+      } else toast(`${other} liberou o ${d.perms.mouse && d.perms.keyboard ? 'mouse e o teclado' : d.perms.mouse ? 'mouse' : 'teclado'}. Clique na transmissão para controlar. Evite jogos com anti-cheat.`);
     }
   }
   paintChip(); ctx.rerender();

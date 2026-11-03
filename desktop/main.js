@@ -1,5 +1,5 @@
 const remote = require('./remote');
-const { app, BrowserWindow, Tray, Menu, ipcMain, desktopCapturer, session, shell, globalShortcut, nativeImage, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, desktopCapturer, session, shell, globalShortcut, nativeImage, dialog, screen } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const https = require('node:https');
@@ -9,7 +9,7 @@ app.setAppUserModelId('br.local.localcord');
 if (!app.requestSingleInstanceLock()) { app.quit(); return; }
 
 const cfgPath = () => path.join(app.getPath('userData'), 'config.json');
-const defaults = { server: '', autoStart: false, startMinimized: false, closeToTray: true, globalHotkeys: true, hotkeyMute: 'CommandOrControl+Shift+M', hotkeyDeafen: 'CommandOrControl+Shift+D', hotkeyClip: 'CommandOrControl+Alt+C', hardwareAcceleration: true, bounds: { width: 1360, height: 860 } };
+const defaults = { server: '', autoStart: false, startMinimized: false, closeToTray: true, globalHotkeys: true, hotkeyMute: 'CommandOrControl+Shift+M', hotkeyDeafen: 'CommandOrControl+Shift+D', hotkeyClip: 'CommandOrControl+Alt+C', hardwareAcceleration: true, gpuCompat: 'auto', bounds: { width: 1360, height: 860 } };
 let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; } catch { /* primeira execução */ }
 const saveCfg = () => { try { fs.mkdirSync(path.dirname(cfgPath()), { recursive: true }); fs.writeFileSync(cfgPath(), JSON.stringify(cfg, null, 2)); } catch (e) { console.error(e); } };
@@ -18,11 +18,23 @@ const saveCfg = () => { try { fs.mkdirSync(path.dirname(cfgPath()), { recursive:
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,DirectCompositionVideoOverlays,DirectCompositionVideoOverlaySupport');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 if (cfg.hardwareAcceleration === false) app.disableHardwareAcceleration();
+// letras borradas por alguns segundos: o Chromium pinta primeiro uma versão em baixa resolução e só depois a nítida
+app.commandLine.appendSwitch('disable-low-res-tiling');
+// compatibilidade de vídeo (placas/drivers antigos: texto borrado, tela cheia com defeito): rasterização na CPU e
+// sem texturas compartilhadas de vídeo. "auto" liga sozinho em placas Intel antigas (detectado na execução anterior).
+const gpuCompat = cfg.gpuCompat === 'on' || (cfg.gpuCompat !== 'off' && cfg.gpuOld === true);
+if (gpuCompat && cfg.hardwareAcceleration !== false) {
+  app.commandLine.appendSwitch('disable-gpu-rasterization');
+  app.commandLine.appendSwitch('disable-zero-copy');
+  app.commandLine.appendSwitch('disable-gpu-memory-buffer-video-frames');
+}
 const log = (...a) => { try { fs.appendFileSync(path.join(app.getPath('userData'), 'main.log'), `${new Date().toISOString()} ${a.join(' ')}\n`); } catch { /* sem log */ } };
 let win, tray, quitting = false, pickedSource = null, badge = 0;
 const serverHost = () => { try { return new URL(cfg.server).hostname; } catch { return ''; } };
 const trustedHosts = new Set();
-const icon = () => nativeImage.createFromPath(path.join(__dirname, 'build', 'icon.png'));
+// no Windows a barra de tarefas usa o .ico com vários tamanhos (16–256); só o PNG deixava o ícone em branco em alguns PCs
+const icon = () => nativeImage.createFromPath(path.join(__dirname, 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png'));
+const OVERLAY = { color: '#1e1f22', symbolColor: '#b5bac1', height: 28 };
 
 // ---------- teste/normalização do endereço do servidor ----------
 function probe(url) {
@@ -56,28 +68,37 @@ function loadServer() {
 }
 function createWindow(forceShow) {
   win = new BrowserWindow({
-    ...cfg.bounds, minWidth: 940, minHeight: 600, show: false, titleBarStyle: 'hidden', titleBarOverlay: { color: '#1e1f22', symbolColor: '#b5bac1', height: 28 }, backgroundColor: '#1e1f22', title: 'LocalCord', icon: icon(), autoHideMenuBar: true,
+    ...cfg.bounds, minWidth: 940, minHeight: 600, show: false, titleBarStyle: 'hidden', titleBarOverlay: OVERLAY, backgroundColor: '#1e1f22', title: 'LocalCord', icon: icon(), autoHideMenuBar: true,
     webPreferences: { devTools: false, preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, backgroundThrottling: false },
   });
   win.removeMenu(); Menu.setApplicationMenu(null);
   // a página recarregou, navegou ou travou: a sessão no servidor já acabou, então o controle remoto desarma aqui também
   for (const ev of ['did-navigate', 'render-process-gone', 'unresponsive']) win.webContents.on(ev, () => remote.stop());
-  const CSS = 'html.lc-desk #app{margin-top:28px;height:calc(100vh - 28px)} html.lc-desk #settings{top:28px} html.lc-desk #settings .close{top:40px} body.lc-connect{padding-top:28px} #lc-titlebar{position:fixed;top:0;left:0;right:0;height:28px;z-index:2147483000;-webkit-app-region:drag;background:#1e1f22;display:flex;align-items:center;padding-left:12px;font:600 12px "Segoe UI",sans-serif;color:#b5bac1;user-select:none}#lc-upd{display:none;-webkit-app-region:no-drag;margin-left:auto;margin-right:150px;width:28px;height:20px;padding:0;border:0;border-radius:4px;background:#248046;color:#fff;cursor:pointer;align-items:center;justify-content:center}#lc-upd:hover{background:#1a6334}#lc-upd.on{display:flex}#lc-upd svg{width:14px;height:14px;fill:currentColor}';
+  const CSS = 'html.lc-fs #lc-titlebar{display:none} html.lc-desk .fsbox video{will-change:auto;transform:none} :fullscreen{margin:0!important;border:0!important;border-radius:0!important;transform:none!important;animation:none!important} html.lc-desk #app{margin-top:28px;height:calc(100vh - 28px)} html.lc-desk #settings{top:28px} html.lc-desk #settings .close{top:40px} body.lc-connect{padding-top:28px} #lc-titlebar{position:fixed;top:0;left:0;right:0;height:28px;z-index:2147483000;-webkit-app-region:drag;background:#1e1f22;display:flex;align-items:center;padding-left:12px;font:600 12px "Segoe UI",sans-serif;color:#b5bac1;user-select:none}#lc-upd{display:none;-webkit-app-region:no-drag;margin-left:auto;margin-right:150px;width:28px;height:20px;padding:0;border:0;border-radius:4px;background:#248046;color:#fff;cursor:pointer;align-items:center;justify-content:center}#lc-upd:hover{background:#1a6334}#lc-upd.on{display:flex}#lc-upd svg{width:14px;height:14px;fill:currentColor}';
   win.webContents.on('dom-ready', () => {
     win.webContents.insertCSS(CSS).catch(() => { });
     win.webContents.executeJavaScript("document.documentElement.classList.add('lc-desk');if(location.protocol==='file:')document.body.classList.add('lc-connect');if(!document.getElementById('lc-titlebar')){const t=document.createElement('div');t.id='lc-titlebar';t.textContent='LocalCord';document.documentElement.appendChild(t)}").catch(() => { });
     // ícone de download na barra do topo quando há versão nova
     win.webContents.executeJavaScript(`(()=>{const t=document.getElementById('lc-titlebar');if(!t||document.getElementById('lc-upd')||!window.lcDesktop)return;const b=document.createElement('button');b.id='lc-upd';b.innerHTML='<svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2ZM19 9h-4V3H9v6H5l7 7 7-7Z"/></svg>';let busy=false;b.onclick=async()=>{if(busy)return;busy=true;b.style.opacity='.6';const ok=await lcDesktop.installUpdate();if(!ok){busy=false;b.style.opacity=''}};t.appendChild(b);const on=v=>{b.title='Atualizar para a versão '+v.version;b.classList.add('on')};lcDesktop.onUpdate(on);lcDesktop.getUpdate().then(v=>v&&on(v))})()`).catch(() => { });
   });
-  // força o repaint depois de trocar de tela (evita artefatos que só somem ao trocar de janela)
-  win.webContents.on('did-navigate-in-page', () => [0, 60, 300].forEach(t => setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.invalidate(); }, t)));
+  // força o repaint (evita artefatos e texto borrado que só somem ao trocar de janela ou esperar):
+  // ao trocar de tela, entrar/sair da tela cheia, restaurar, maximizar, mover entre monitores ou mudar a escala
+  const repaint = () => [0, 60, 300, 1000].forEach(t => setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.invalidate(); }, t));
+  win.webContents.on('did-navigate-in-page', repaint);
+  for (const ev of ['show', 'restore', 'maximize', 'unmaximize', 'moved', 'focus']) win.on(ev, repaint);
+  screen.on('display-metrics-changed', repaint);
+  // tela cheia de vídeo/transmissão/clipe: os botões nativos da barra de título (sobrepostos) ficavam desenhados por cima
+  // e a página repintava com defeito; esconde a barra durante a tela cheia e repinta ao entrar e ao sair
+  win.on('enter-html-full-screen', () => { try { win.setTitleBarOverlay({ color: '#000000', symbolColor: '#000000', height: 28 }); } catch { } win.webContents.executeJavaScript("document.documentElement.classList.add('lc-fs')").catch(() => { }); repaint(); });
+  win.on('leave-html-full-screen', () => { try { win.setTitleBarOverlay(OVERLAY); } catch { } win.webContents.executeJavaScript("document.documentElement.classList.remove('lc-fs')").catch(() => { }); repaint(); });
   win.webContents.on('devtools-opened', () => win.webContents.closeDevTools());
   win.webContents.on('before-input-event', (e, i) => {
     const k = String(i.key).toLowerCase();
     if (k === 'alt' || k === 'f12' || k === 'f11' || (i.control && i.shift && ['i', 'j', 'c'].includes(k))) e.preventDefault();
   });
   win.on('show', closeSplash);
-  win.once('ready-to-show', () => { if (!(process.argv.includes('--hidden') || cfg.startMinimized) || forceShow) win.show(); });
+  win.once('ready-to-show', () => { win.setIcon(icon()); // reaplica o ícone (janela criada escondida às vezes ficava sem ícone na barra de tarefas)
+    if (!(process.argv.includes('--hidden') || cfg.startMinimized) || forceShow) win.show(); });
   win.on('close', (e) => {
     cfg.bounds = win.isMaximized() ? cfg.bounds : win.getBounds(); saveCfg();
     if (!quitting && cfg.closeToTray) { e.preventDefault(); win.hide(); }
@@ -185,11 +206,12 @@ remote.onRemoteEvent((k) => { if (win && !win.isDestroyed()) win.webContents.sen
 app.on('before-quit', () => remote.shutdown());
 // modo leve: deixa o Chromium desacelerar a página escondida (o renderer só liga fora de chamada)
 ipcMain.on('set-throttle', (_e, on) => { if (win && !win.isDestroyed()) win.webContents.setBackgroundThrottling(!!on); });
-ipcMain.handle('get-settings', () => ({ ...cfg, version: app.getVersion() }));
+ipcMain.handle('get-settings', () => ({ ...cfg, version: app.getVersion(), gpuCompatActive: gpuCompat, gpuName: gpuName }));
 ipcMain.handle('set-settings', (_e, patch) => {
   for (const k of ['autoStart', 'startMinimized', 'closeToTray', 'globalHotkeys']) if (k in patch) cfg[k] = !!patch[k];
   for (const k of ['hotkeyMute', 'hotkeyDeafen', 'hotkeyClip']) if (typeof patch[k] === 'string') cfg[k] = patch[k];
   if ('hardwareAcceleration' in patch) cfg.hardwareAcceleration = !!patch.hardwareAcceleration;
+  if (['auto', 'on', 'off'].includes(patch.gpuCompat)) cfg.gpuCompat = patch.gpuCompat;
   if ('hotkeyMute' in patch || 'hotkeyDeafen' in patch || 'hotkeyClip' in patch) registerHotkeys();
   if ('autoStart' in patch) app.setLoginItemSettings({ openAtLogin: cfg.autoStart, args: ['--hidden'] });
   if ('globalHotkeys' in patch) registerHotkeys();
@@ -244,6 +266,19 @@ app.on('before-quit', () => { quitting = true; });
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => { if (quitting) app.quit(); });
 
+// placa de vídeo: guarda o nome (mostrado nas configurações) e se é uma Intel antiga (até a 4ª geração, ex.: HD 4000),
+// em que o modo automático liga a compatibilidade de vídeo a partir da próxima abertura
+let gpuName = '';
+async function detectGpu() {
+  try {
+    const info = await app.getGPUInfo('basic'), devs = info.gpuDevice || [], g = devs.find(d => d.active) || devs[0];
+    if (!g) return;
+    gpuName = g.deviceString || `${g.vendorId.toString(16)}:${g.deviceId.toString(16)}`;
+    const old = g.vendorId === 0x8086 && g.deviceId < 0x1600; // Intel antes da Broadwell (IDs 0x01xx, 0x04xx, 0x0Axx, 0x0Dxx)
+    log('gpu', gpuName, 'driver', g.driverVersion || '?', 'antiga', old, 'compat ativa', gpuCompat);
+    if (cfg.gpuOld !== old) { cfg.gpuOld = old; saveCfg(); }
+  } catch (e) { log('gpu info falhou', e.message); }
+}
 app.whenReady().then(() => {
   showSplash(); // primeira coisa: a janelinha aparece na hora, o resto carrega logo depois (sem travar o desenho dela)
   setTimeout(() => {
@@ -251,6 +286,7 @@ app.whenReady().then(() => {
     if (cfg.server) trustedHosts.add(serverHost());
     loadServer();
     setTimeout(checkUpdate, 5000); setInterval(checkUpdate, 3600e3);
+    setTimeout(detectGpu, 3000);
     if (process.env.LC_TEST_SERVER && !cfg.server) { cfg.server = process.env.LC_TEST_SERVER; trustedHosts.add(serverHost()); loadServer(); }
   }, 80);
 });

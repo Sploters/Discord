@@ -32,7 +32,16 @@ quem assiste (navegador/app)      servidor (gateway WS)              dono (app d
 | Atalho de emergência no processo nativo | `lc-input` (gancho de baixo nível, só teclado físico) |
 | Entrada aplicada só pelo processo nativo | o renderer nunca simula eventos; `lc-input` só injeta armado |
 
+## Jogos com anti-cheat
+- **Aviso para os dois lados.** Quem pede vê, na primeira vez, uma apresentação com o aviso e as limitações (fica marcado em `remoteIntroSeen`); quem transmite vê o aviso em todo pedido.
+- **Detecção no PC do dono.** Ao receber o pedido, o app desktop lê a lista de processos (`tasklist`, só leitura) e procura anti-cheats conhecidos: Riot Vanguard, Easy Anti-Cheat, BattlEye, FACEIT, EA Javelin, nProtect GameGuard, ACE (Tencent), XIGNCODE3, PunkBuster, EQU8, Ricochet. Se encontrar, o aviso fica **vermelho** e cita o nome; senão, aviso **amarelo** geral.
+- **O risco.** O anti-cheat pode ignorar a entrada injetada ou tratá-la como trapaça; quem arrisca suspensão/banimento é a **conta do jogo no PC controlado**. A recomendação mostrada é recusar ou fechar o jogo antes. Nada é bloqueado à força: a decisão é do dono.
+- A detecção não é garantia: anti-cheats novos, renomeados ou que rodam só como driver podem não aparecer na lista.
+
 ## Limitações conhecidas
+- Jogos em **tela cheia exclusiva** podem não receber os comandos e às vezes aparecem pretos na transmissão (use "janela sem bordas").
+- A tela de bloqueio, o UAC e o Ctrl+Alt+Del não podem ser controlados.
+- Com vários monitores, só o transmitido é controlado.
 - **Só a tela inteira**: transmitindo uma janela, o pedido é recusado com a explicação (mapear a janela fica para depois).
 - **Janelas de administrador** (UAC) não recebem a entrada injetada (regra do Windows, UIPI). O dono vê um aviso quando isso acontece.
 - **Jogos com anti-cheat** podem ignorar ou bloquear entrada injetada.

@@ -16,7 +16,7 @@ import { startBuffer, stopAllBuffers, pruneBuffers, clipping, saveClip, clipLeng
 import { syncThrottle } from './lite.js';
 import { initRemote, onRemoteEvent, tileButton as remoteTileButton, controlling as remoteControlling } from './remote.js';
 import { initCallInvite, callCard, onCallInvite, onCallInviteUpdate, canCallInvite, sendCallInvite } from './callinvite.js';
-import { seg, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
+import { seg, toggle as uiToggle, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
 import { openSettings, openFullProfile } from './settings.js';
 import { saveCustomTheme } from './themeeditor.js';
 import { isLightPair, THEME_CODE_RE, decodeTheme, gradientCss, styleName, stripThemeCodes, themeText, encodeTheme, GRADIENT_THEMES, themeDef } from './themes.js';
@@ -792,6 +792,7 @@ function renderMain() {
         : [h('span.hash', icon(vc ? 'voice' : 'hash', 24)), h('span', { title: ch.name }, chName(ch)), ch.topic && h('span.topic', ch.topic)],
       h('div.spacer'),
       // sala de voz: só o botão que mostra o chat; aberto, ele vira o X no topo do próprio chat
+      vc && h('div#vc-layout-slot'),
       vc ? !chatOpen && h('button#vc-chat-btn.ibtn' + (S.unread[ch.id] ? '.unread' : ''), { title: 'Mostrar chat', onclick: () => toggleVcChat(ch) }, icon('dm')) : [
         dm && h('button.ibtn', { title: voice.channelId === ch.id ? 'Desligar' : 'Iniciar chamada de voz', onclick: () => voice.channelId === ch.id ? voice.leave() : joinVoice(ch.id) }, icon(voice.channelId === ch.id ? 'phoneoff' : 'phone')),
         h('button.ibtn', { title: 'Ir para a primeira mensagem', onclick: jumpToTop }, icon('totop')),
@@ -1478,11 +1479,24 @@ const STAGE_LAYOUTS = [
   { id: 'side', label: 'Lado a lado', hint: 'Duas colunas iguais' },
   { id: 'cinema', label: 'Cinema', hint: 'Só a transmissão em destaque' },
 ];
-function layoutMenu(e, cur) {
-  const tog = (k, label, hint) => ({ label: (S.prefs[k] !== false ? '✓ ' : '   ') + label, hint, fn: () => { S.prefs[k] = S.prefs[k] === false; savePrefs(); renderVoiceUI(); applyVisibility(); } });
-  menu(e, [...STAGE_LAYOUTS.map(l => ({ label: (cur === l.id ? '✓ ' : '   ') + l.label, hint: l.hint, fn: () => { S.prefs.stageLayout = l.id; savePrefs(); renderVoiceUI(); } })), '-',
-    tog('followSpot', 'Acompanhar destaques da sala', 'Quando alguém destaca uma transmissão, ela abre em destaque para você'),
-    tog('autoPause', 'Pausar vídeo fora da tela', 'Economiza banda: o vídeo de quadros escondidos pausa (o áudio continua). Também pausa os clipes desse quadro')]);
+// miniatura de cada layout (caixas desenhadas com CSS grid; a primeira caixa é a "principal")
+const LAYOUT_MINI = { auto: 4, grid: 4, spot: 4, sidebar: 4, side: 2, cinema: 1 };
+const layoutMini = (id) => h('div.lmini.lm-' + id, Array.from({ length: LAYOUT_MINI[id] }, (_, i) => h('i' + (i === 0 ? '.main' : ''))), id === 'auto' && h('b.lmauto', 'A'));
+// painel de layout do palco: miniaturas clicáveis + opções
+function layoutMenu(e) {
+  const btn = e.currentTarget;
+  if (document.querySelector('.layoutpop')) return closeFloating();
+  const cur = () => (STAGE_LAYOUTS.some(l => l.id === S.prefs.stageLayout) ? S.prefs.stageLayout : 'auto');
+  const grid = h('div.lgrid');
+  const draw = () => grid.replaceChildren(...STAGE_LAYOUTS.map(l => h('button.lopt' + (cur() === l.id ? '.on' : ''), { title: l.hint, onclick: () => { S.prefs.stageLayout = l.id; savePrefs(); renderVoiceUI(); draw(); } },
+    layoutMini(l.id), h('span.lname', l.label), h('small', l.hint))));
+  const opt = (k, label, hint) => h('div.lrow', h('div', h('b', label), h('small', hint)), uiToggle(S.prefs[k] !== false, (v) => { S.prefs[k] = v; savePrefs(); renderVoiceUI(); applyVisibility(); }));
+  draw();
+  const pop = popout(btn, h('div.lpanel', h('div.lhead', icon('layout', 18), h('b', 'Layout do palco')), grid,
+    h('div.lsep'),
+    opt('followSpot', 'Acompanhar destaques da sala', 'Quando alguém destaca uma transmissão, ela abre grande para você'),
+    opt('autoPause', 'Pausar vídeo fora da tela', 'Economiza banda: quadros escondidos pausam o vídeo (o áudio continua)')));
+  pop.classList.add('layoutpop'); anchorRight(pop, btn, 8);
 }
 // pausa automática: o vídeo de uma transmissão que não está à vista (quadro oculto, rolado para fora, janela minimizada) pausa no servidor após 4 s
 const tileVis = new Map(), pauseTimers = new Map();
@@ -1602,7 +1616,9 @@ function renderVoiceUI(speakOnly) {
     !dm && h('button.roundbtn', { title: 'Música (bot) — indisponível', disabled: true, style: { opacity: .4, cursor: 'not-allowed' } }, icon('music', 24)),
     btn('phoneoff', 'Desconectar', false, () => voice.leave(), '.red'),
   ] : h('button.btn.green', { style: { minWidth: '220px', minHeight: '46px', fontSize: '16px' }, onclick: () => joinVoice(ch.id) }, dm ? 'Atender / entrar na chamada' : 'Entrar na sala de voz'));
-  if (inRoom && tiles.length > 1) bar.append(h('button.layoutbtn', { title: 'Layout do palco: ' + STAGE_LAYOUTS.find(l => l.id === layout).label, onclick: (e) => layoutMenu(e, layout) }, icon('sidebar', 18)));
+  // botão de layout no topo do palco (à direita): mostra o layout atual e abre o painel com as miniaturas
+  const slot = document.getElementById('vc-layout-slot');
+  if (slot) slot.replaceChildren(...(inRoom && tiles.length > 1 ? [h('button#vc-layout' + (document.querySelector('.layoutpop') ? '.open' : ''), { title: 'Mudar o layout do palco', onclick: layoutMenu }, icon('layout', 18), h('span', STAGE_LAYOUTS.find(l => l.id === layout).label), icon('chevdown', 14))] : []));
   if (hasScreen) bar.append(h('button.partbtn' + (S.hideMembers ? '.membershid' : ''), { title: S.hideMembers ? 'Mostrar participantes' : 'Ocultar participantes', onclick: () => { S.hideMembers = !S.hideMembers; renderVoiceUI(); } }, icon('caret', 16), icon('users', 18)));
   if (inRoom) { // botões da transmissão na linha da barra, à direita: valem para o quadro grande (em destaque ou na grade), não para os minimizados
     const barCtl = h('div.bar-ctl');
@@ -1819,7 +1835,7 @@ function setupDesktop() {
 }
 
 // gancho de depuração/testes automatizados
-initRemote({ send: gwSend, name: (uid) => nameOf(uid, channelById(voice?.channelId)?.guild_id) || user(uid).display_name, rerender: () => renderVoiceUI() });
+initRemote({ savePrefs, send: gwSend, name: (uid) => nameOf(uid, channelById(voice?.channelId)?.guild_id) || user(uid).display_name, rerender: () => renderVoiceUI() });
 initCallInvite({ go, joinVoice, voice: () => voice, channelById, guild });
 initActivity({ openDM, profile: (a, uid) => profile(a, uid), userMenu: (e, uid) => userMenu(e, uid), go, joinVoice, watchFriend, voice: () => voice, openSettings: (k) => openSettings(k, ctxSettings()), renderActiveNow });
 window.__lc = { S, get voice() { return voice; }, go, openSettings: (k) => openSettings(k, { voice, logout, go, gid: S.view.gid }) };

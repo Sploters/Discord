@@ -35,4 +35,10 @@ function draw(size, { bubbleOnly = false, bg = [88, 101, 242] } = {}) {
 fs.mkdirSync(new URL('./build/', import.meta.url), { recursive: true });
 fs.writeFileSync(new URL('./build/icon.png', import.meta.url), draw(512));
 fs.writeFileSync(new URL('./build/tray.png', import.meta.url), draw(32));
+// .ico para a barra de tarefas e o executável do Windows: cada tamanho desenhado na própria resolução (PNG dentro do ICO)
+const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256], imgs = sizes.map(n => draw(n));
+const head = Buffer.alloc(6 + 16 * sizes.length); head.writeUInt16LE(0, 0); head.writeUInt16LE(1, 2); head.writeUInt16LE(sizes.length, 4);
+let off = head.length;
+sizes.forEach((n, i) => { const e = 6 + 16 * i; head[e] = n >= 256 ? 0 : n; head[e + 1] = n >= 256 ? 0 : n; head.writeUInt16LE(1, e + 4); head.writeUInt16LE(32, e + 6); head.writeUInt32LE(imgs[i].length, e + 8); head.writeUInt32LE(off, e + 12); off += imgs[i].length; });
+fs.writeFileSync(new URL('./build/icon.ico', import.meta.url), Buffer.concat([head, ...imgs]));
 console.log('ícones gerados em desktop/build');

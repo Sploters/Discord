@@ -36,7 +36,9 @@ async function session(name, token) {
 }
 const clickText = (page, sel, rx) => page.evaluate((sel, rx) => { const el = [...document.querySelectorAll(sel)].find(e => new RegExp(rx).test(e.textContent)); if (!el) return false; el.click(); return true; }, sel, rx);
 const clickTitle = (page, rx) => page.evaluate((rx) => { const el = [...document.querySelectorAll('button')].find(e => new RegExp(rx).test(e.title)); if (!el) return false; el.click(); return true; }, rx);
-const setLayout = async (page, label) => { await clickTitle(page, '^Layout do palco'); await sleep(200); const r = await clickText(page, '.menu .it', '^\\W*' + label); await sleep(500); return r; };
+// painel de layout (botão no topo do palco): abre, escolhe a miniatura pelo nome e fecha
+const openLayout = async (page) => { if (!(await page.evaluate(() => !!document.querySelector('.layoutpop')))) { await page.evaluate(() => document.getElementById('vc-layout')?.click()); await sleep(200); } };
+const setLayout = async (page, label) => { await openLayout(page); const r = await clickText(page, '.layoutpop .lopt .lname', '^' + label); await sleep(500); await page.keyboard.press('Escape'); await sleep(100); return r; };
 const stageInfo = (page) => page.evaluate(() => ({ grid: !!document.querySelector('#stage .grid.fit'), spot: !!document.querySelector('#stage .spot'), strip: !!document.querySelector('#stage .strip'), split: !!document.querySelector('#stage .splitwrap'), side: !!document.querySelector('#stage .grid.sidebyside'), tiles: document.querySelectorAll('#stage .tile').length, screens: document.querySelectorAll('#stage .tile.screen').length }));
 const recvSnap = (page, uid) => page.evaluate(async (uid) => { const s = await window.__lc.voice.streamStats(uid); const v = window.__lc.voice; return s ? { w: s.w, h: s.h, fps: s.fps, kbps: s.kbps, loss: s.loss, audio: s.audio, layer: s.layer, pref: s.layerPref, q: s.quality, auto: [...(v.autoPaused || [])] } : null; }, uid);
 const decoded = (page, uid) => page.evaluate(async (uid) => { const p = window.__lc.voice.peers.get(uid); let n = 0; for (const [id, src] of p.consumers) if (src === 'screen') for (const r of (await window.__lc.voice.sfu.consumers.get(id).c.getStats()).values()) if (r.type === 'inbound-rtp') n = r.framesDecoded; return n; }, uid);
@@ -90,7 +92,7 @@ try {
   // ---------- 2. layouts nomeados ----------
   await B.evaluate((a) => { window.__lc.S.focus = null; }, aid); await sleep(300);
   const tiles0 = await stageInfo(B); ok(tiles0.tiles >= 3 && tiles0.screens === 1, 'palco com transmissão + participantes (>= 3 quadros)', tiles0);
-  ok(await B.evaluate(() => !!document.querySelector('.layoutbtn')), 'botão de layout aparece com vários quadros');
+  ok(await B.evaluate(() => !!document.getElementById('vc-layout')), 'botão de layout aparece com vários quadros');
   const L = {};
   for (const [lab, key] of [['Grade', 'grid'], ['Destaque', 'spot'], ['Principal', 'sidebar'], ['Lado a lado', 'side'], ['Cinema', 'cinema'], ['Autom', 'auto']]) { const clicked = await setLayout(B, lab); L[key] = { clicked, ...(await stageInfo(B)), pref: await B.evaluate(() => window.__lc.S.prefs.stageLayout) }; }
   ok(L.grid.grid && !L.grid.spot, 'layout Grade', L.grid); ok(L.spot.spot && L.spot.strip && !L.spot.split, 'layout Destaque + faixa', L.spot);
@@ -149,7 +151,7 @@ try {
   await spotBtn(A); await sleep(1200);
   const s2 = await B.evaluate(() => ({ spot: window.__lc.S.room?.spot, focus: window.__lc.S.focus })); ok(s2.spot === null && s2.focus === null, 'remover o destaque limpa para todos', s2);
   // bob desliga o acompanhamento
-  await clickTitle(B, '^Layout do palco'); await sleep(200); await clickText(B, '.menu .it', 'Acompanhar destaques'); await sleep(500);
+  await openLayout(B); await B.evaluate(() => [...document.querySelectorAll('.layoutpop .lrow')].find(r => /Acompanhar destaques/.test(r.textContent))?.querySelector('.switch')?.click()); await sleep(500); await B.keyboard.press('Escape');
   ok(await B.evaluate(() => window.__lc.S.prefs.followSpot === false), 'bob desativa "Acompanhar destaques"');
   await spotBtn(A); await sleep(1500);
   const s3 = await B.evaluate(() => ({ spot: window.__lc.S.room?.spot, focus: window.__lc.S.focus })); ok(s3.spot === 's:' + aid && s3.focus === null, 'com o acompanhamento desligado o bob recebe o estado mas NÃO muda o foco', s3);

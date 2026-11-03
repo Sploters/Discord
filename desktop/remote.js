@@ -2,7 +2,7 @@
 // está sendo transmitido e mostra um aviso sempre por cima de tudo enquanto alguém controla.
 // O renderer (página do LocalCord) só chega aqui depois que o dono aceitou o pedido na própria tela.
 const { BrowserWindow, screen } = require('electron');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -27,11 +27,32 @@ function sharedRect() {
   return [r.x, r.y, r.width, r.height];
 }
 
-function capable() {
+// anti-cheats conhecidos rodando agora (nome do processo -> o que mostrar). Só lê a lista de processos do Windows.
+const ANTICHEATS = {
+  'vgc.exe': 'Riot Vanguard (Valorant, League of Legends)', 'vgtray.exe': 'Riot Vanguard (Valorant, League of Legends)',
+  'easyanticheat.exe': 'Easy Anti-Cheat (Fortnite, Apex, Rust…)', 'easyanticheat_eos.exe': 'Easy Anti-Cheat (Fortnite, Apex, Rust…)',
+  'beservice.exe': 'BattlEye (PUBG, Rainbow Six, DayZ…)', 'beservice_x64.exe': 'BattlEye (PUBG, Rainbow Six, DayZ…)',
+  'faceit.exe': 'FACEIT', 'faceitservice.exe': 'FACEIT', 'faceitclient.exe': 'FACEIT',
+  'eaanticheat.gameservice.exe': 'EA Javelin Anti-Cheat (Battlefield, FC…)', 'eaanticheat.gameservicelauncher.exe': 'EA Javelin Anti-Cheat (Battlefield, FC…)',
+  'gamemon.des': 'nProtect GameGuard', 'gamemon64.des': 'nProtect GameGuard', 'gameguard.des': 'nProtect GameGuard',
+  'ace-guard client.exe': 'ACE (Tencent)', 'sguard64.exe': 'ACE (Tencent)', 'xigncode.exe': 'XIGNCODE3', 'x3.xem': 'XIGNCODE3',
+  'pnkbstra.exe': 'PunkBuster', 'mhyprot2.sys': 'mhyprot (HoYoverse)', 'eqguard.exe': 'EQU8', 'zakynthos.exe': 'Ricochet (Call of Duty)',
+};
+function antiCheats() {
+  if (process.platform !== 'win32') return Promise.resolve([]);
+  return new Promise((res) => execFile('tasklist', ['/fo', 'csv', '/nh'], { windowsHide: true, timeout: 4000, maxBuffer: 4 << 20 }, (err, out) => {
+    if (err) return res([]);
+    const found = new Set();
+    for (const line of String(out).split(/\r?\n/)) { const name = (line.match(/^"([^"]+)"/) || [])[1]; const hit = name && ANTICHEATS[name.toLowerCase()]; if (hit) found.add(hit); }
+    res([...found]);
+  }));
+}
+
+async function capable() {
   if (process.platform !== 'win32') return { ok: false, reason: 'O controle remoto só funciona no app para Windows.' };
   if (!helperPath()) return { ok: false, reason: 'Componente de controle remoto não encontrado. Atualize o app.' };
   if (!sharedRect()) return { ok: false, reason: 'Transmita a tela inteira (não uma janela) para permitir controle remoto.' };
-  return { ok: true };
+  return { ok: true, antiCheats: await antiCheats() };
 }
 
 function ensureHelper() {
@@ -83,8 +104,8 @@ function showIndicator(who, perms) {
 }
 function closeIndicator() { const w = indicator; indicator = null; if (w && !w.isDestroyed()) w.destroy(); }
 
-function start({ who, perms }) {
-  const c = capable(); if (!c.ok) return c;
+async function start({ who, perms }) {
+  const c = await capable(); if (!c.ok) return c;
   if (!ensureHelper()) return { ok: false, reason: 'Não foi possível iniciar o componente de controle remoto.' };
   write({ t: 'arm', rect: sharedRect() }); armed = true;
   showIndicator(String(who || 'Alguém').slice(0, 40), { mouse: !!perms?.mouse, keyboard: !!perms?.keyboard });

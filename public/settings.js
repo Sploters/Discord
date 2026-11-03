@@ -500,6 +500,9 @@ function appPage() {
     row('Iniciar minimizado', null, toggle(s.startMinimized, v => desktop.setSettings({ startMinimized: v }))),
     row('Fechar para a bandeja', 'Ao fechar a janela o app continua rodando (para ficar em chamada).', toggle(s.closeToTray, v => desktop.setSettings({ closeToTray: v }))),
     row('Atalhos globais', 'Mutar/ensurdecer funcionam com o app em segundo plano (veja Atalhos).', toggle(s.globalHotkeys, v => desktop.setSettings({ globalHotkeys: v }))),
+    row('Compatibilidade de vídeo', 'Use se as letras ficam borradas por alguns segundos ou a tela cheia aparece com defeito. Desenha o texto e a interface pela CPU (um pouco mais pesado). "Automático" liga sozinho em placas de vídeo antigas.' + (s.gpuName ? ` Placa: ${s.gpuName}.` : '') + ` Agora: ${s.gpuCompatActive ? 'ligada' : 'desligada'}.`,
+      h('select.gpucompat', { onchange: async (e) => { await desktop.setSettings({ gpuCompat: e.target.value }); if (await confirmBox('Reiniciar o LocalCord?', 'A compatibilidade de vídeo só muda depois de reiniciar o app. Se estiver numa chamada, você sai dela.', 'Reiniciar agora')) desktop.relaunch(); else toast('Vale na próxima vez que abrir o app'); } },
+        [['auto', 'Automático'], ['on', 'Ligada'], ['off', 'Desligada']].map(([v, l]) => h('option', { value: v, selected: (s.gpuCompat || 'auto') === v }, l)))),
     row('Servidor', s.server, h('button.btn.grey', { onclick: () => desktop.changeServer() }, 'Trocar servidor')),
     row('Versão', `LocalCord Desktop ${s.version}`, null)));
   return h('div', h('h2', 'Aplicativo (desktop)'), box);
