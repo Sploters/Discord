@@ -201,3 +201,17 @@ export function fsVideo(attrs = {}, cls = '') {
   box.video = v;
   return box;
 }
+
+// roda fn quando el sair da página (popups, painéis, páginas de configuração): solta ouvintes globais na hora,
+// em vez de esperar o próximo evento (o que segurava a tela inteira na memória). Um observador só, desligado quando vazio.
+const gone = new Map(); let goneObs = null;
+export function whenGone(el, fn) {
+  gone.set(el, { fn, seen: el.isConnected }); // só conta como "saiu" depois de ter entrado na página
+  if (!goneObs) {
+    goneObs = new MutationObserver(() => {
+      for (const [e, g] of gone) { if (e.isConnected) g.seen = true; else if (g.seen) { gone.delete(e); try { g.fn(); } catch { } } }
+      if (!gone.size) { goneObs.disconnect(); goneObs = null; }
+    });
+    goneObs.observe(document.body, { childList: true, subtree: true });
+  }
+}

@@ -1,4 +1,4 @@
-import { h, icon, avatar, framePos, parsePos } from './util.js';
+import { h, icon, avatar, framePos, parsePos, whenGone } from './util.js';
 import { S, api, tryApi, savePrefs, user, guild, can, PERM, PERM_LABELS, toast, confirmBox, promptBox, modal, menu, nameOf, desktop, applyTheme, emojiPicker, channelById } from './state.js';
 import { createMic, newAudioContext, NOISE_MODES, VOICE_BITRATES } from './voice.js';
 import { profileCard } from './card.js';
@@ -82,10 +82,12 @@ const USER_GROUPS = [
 const SERVER_PAGES = [['overview', 'Visão geral', 'nome ícone banner dono'], ['channels', 'Canais', 'ordem renomear'], ['roles', 'Cargos', 'permissões'], ['emojis', 'Emojis', ''], ['sounds', 'Soundboard do servidor', 'sons áudio'], ['members', 'Membros', 'expulsar banir castigo'], ['bans', 'Banimentos', 'banir desbanir'], ['audit', 'Registro de auditoria', 'log moderação histórico'], ['invites', 'Convites', 'link']];
 
 export function openSettings(kind, ctx) {
-  document.getElementById('settings')?.remove();
+  const prev = document.getElementById('settings'); if (prev) (prev._close ? prev._close() : prev.remove()); // abrir de novo: fecha direito a anterior (solta os ouvintes)
   const root = h('div#settings'), pane = h('div.pane'), nav = h('div.nav'), content = h('div.content', pane);
   const cleanups = []; const reg = (f) => cleanups.push(f);
-  const close = () => { cleanups.forEach(f => f()); cleanups.length = 0; root.remove(); document.removeEventListener('keydown', esc); document.dispatchEvent(new Event('settings-closed')); };
+  const close = () => { cleanups.forEach(f => f()); cleanups.length = 0; root.remove(); document.removeEventListener('keydown', esc); document.removeEventListener('lite-changed', onLite); document.dispatchEvent(new Event('settings-closed')); };
+  // (antes o ouvinte de "modo leve mudou" só saía quando o modo leve mudava: segurava a tela inteira na memória a cada abertura)
+  const onLite = () => drawNav();
   const esc = (e) => { if (e.key === 'Escape' && !document.getElementById('tedit') && !document.querySelector('.backdrop') && !pane.querySelector('.capturing') && !document.querySelector('.popout,.menu,.emoji-picker')) close(); };
   const isServer = kind === 'server', gid = ctx?.gid;
   const R = {
@@ -111,7 +113,7 @@ export function openSettings(kind, ctx) {
   document.getElementById('layer').append(root); document.addEventListener('keydown', esc);
   const first = isServer ? 'overview' : (['account', 'profile', 'privacy', 'connections', 'appearance', 'accessibility', 'voice', 'stream', 'sounds', 'soundboard', 'notifications', 'keys', 'extras', 'advanced', 'app', 'lite'].includes(kind) ? kind : 'account');
   current = first; drawNav(); show(first);
-  const onLite = () => (document.body.contains(root) ? drawNav() : document.removeEventListener('lite-changed', onLite));
+  root._close = close;
   document.addEventListener('lite-changed', onLite);
 }
 
@@ -370,12 +372,21 @@ function voicePage(ctx, reg) {
   let test = null, raf = 0, loopback = false, testCtx;
   const stopTest = () => { cancelAnimationFrame(raf); test?.dispose(); test = null; testCtx?.close(); testCtx = null; meterBar.style.width = '0'; testBtn.textContent = 'Testar microfone'; };
   reg(stopTest);
-  const restartTest = async () => { if (test) { stopTest(); await startTest(); } if (voice.active) voice.rebuildMic(); };
+  // reiniciar o teste: um de cada vez (cliques seguidos viram um só); o anterior sempre é desligado antes
+  let testBusy = null, testAgain = false;
+  const restartTest = () => {
+    if (voice.active) voice.rebuildMic();
+    if (!test && !testBusy) return;
+    if (testBusy) { testAgain = true; return; }
+    testBusy = (async () => { do { testAgain = false; stopTest(); await startTest(); } while (testAgain); })().finally(() => { testBusy = null; });
+  };
   const startTest = async () => {
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error('Acesse via HTTPS ou use o app desktop para usar o microfone.');
-      testCtx = newAudioContext(); await testCtx.resume();
-      test = await createMic(S.prefs, testCtx); test.setLoopback(loopback);
+      const myCtx = testCtx = newAudioContext(); await myCtx.resume();
+      const t = await createMic(S.prefs, myCtx);
+      if (testCtx !== myCtx) { t.dispose(); myCtx.close(); return; } // parou (ou recomeçou) enquanto abria o microfone
+      test = t; test.setLoopback(loopback);
       if (test.error) toast(test.error, true);
       const buf = new Uint8Array(test.analyser.fftSize);
       const loop = () => { test.analyser.getByteTimeDomainData(buf); let p = 0; for (const v of buf) p = Math.max(p, Math.abs(v - 128)); const db = 20 * Math.log10(Math.max(p / 128, 1e-4)); meterBar.style.width = Math.max(0, Math.min(100, (db + 70) / 70 * 100)) + '%'; raf = requestAnimationFrame(loop); };
@@ -383,7 +394,7 @@ function voicePage(ctx, reg) {
     } catch (e) { toast(e.message || 'Falha ao acessar o microfone', true); stopTest(); }
   };
   const testBtn = h('button.btn', { onclick: () => (test ? stopTest() : startTest()) }, 'Testar microfone');
-  const noiseCards = h('div.cards'), drawNoise = () => noiseCards.replaceChildren(...Object.entries(NOISE_MODES).map(([k, l]) => h('div.ncard' + (S.prefs.noiseMode === k ? '.on' : ''), { onclick: () => { S.prefs.noiseMode = k; save(); drawNoise(); restartTest(); } },
+  const noiseCards = h('div.cards'), drawNoise = () => noiseCards.replaceChildren(...Object.entries(NOISE_MODES).map(([k, l]) => h('div.ncard' + (S.prefs.noiseMode === k ? '.on' : ''), { onclick: () => { if ((S.prefs.noiseMode || 'standard') === k) return; S.prefs.noiseMode = k; save(); drawNoise(); restartTest(); } },
     h('b', l), h('small', { off: 'Sem processamento. Voz crua.', standard: 'Filtro do navegador; leve e simples.', rnnoise: 'Rede neural RNNoise: remove teclado, ventilador e ruído de fundo.', gtcrn: 'Modelo mais forte; melhor em ruídos difíceis, usa mais CPU.' }[k]))));
   drawNoise(); setTimeout(placeMark, 0);
   const gateLbl = h('span', S.prefs.gateDb + ' dB');
@@ -452,8 +463,8 @@ function soundboardPage() {
         h('button.btn.grey', { onclick: () => playLocal(s.url, soundVol(s)) }, '▶'),
         (src.own || (src.guild && can(src.guild.id, PERM.MANAGE_GUILD))) && h('button.btn.grey', { onclick: () => editSound(src, s) }, 'Editar'))) : [h('div.mut', 'Nenhum som ainda.')]))));
   };
-  const onChange = () => document.body.contains(box) && draw();
-  document.addEventListener('sb-changed', onChange); draw();
+  const onChange = () => draw();
+  document.addEventListener('sb-changed', onChange); draw(); queueMicrotask(() => whenGone(box, () => document.removeEventListener('sb-changed', onChange)));
   return h('div', h('h2', 'Soundboard'), card(row('Silenciar sons do soundboard', 'Você deixa de ouvir os sons que os outros tocam.', toggle(!!S.prefs.sbMuted, v => { S.prefs.sbMuted = v; save(); })),
     h('label.f', { style: { marginTop: '12px' } }, 'Volume dos sons que você ouve', slider(0, 100, S.prefs.sbVolume ?? 70, 5, v => { S.prefs.sbVolume = v; save(); }, v => v + '%'))),
     hint('Abra o soundboard rapidamente pelo botão ♫ da barra do usuário ou da chamada. Clique direito num som: favoritar, atalho, prévia.'), box);
@@ -563,7 +574,7 @@ function serverSoundsPage(gid) {
     const src = { key: gid, title: g.name, guild: g, sounds: g.sounds || [] };
     box.replaceChildren(...(src.sounds.length ? src.sounds.map(s => h('div.srow2', h('span.e', s.emoji || '🔊'), h('span.n', s.name), h('small.mut', soundVol(s) + '%'), h('button.btn.grey', { onclick: () => playLocal(s.url, soundVol(s)) }, '▶'), canEdit && h('button.btn.grey', { onclick: () => editSound(src, s) }, 'Editar'))) : [hint('Nenhum som neste servidor ainda.')]));
   };
-  const onChange = () => document.body.contains(box) && draw(); document.addEventListener('sb-changed', onChange); draw();
+  const onChange = () => draw(); document.addEventListener('sb-changed', onChange); draw(); queueMicrotask(() => whenGone(box, () => document.removeEventListener('sb-changed', onChange)));
   return h('div', h('h2', 'Soundboard do servidor'), canEdit && card(hint('Sons curtos (até 15 s, 2 MB) que qualquer membro pode tocar na sala de voz, até 48 por servidor.'), h('button.btn', { onclick: () => addSound(gid) }, '+ Adicionar som')), card(box));
 }
 function invitesPage(gid) {

@@ -1,5 +1,5 @@
 // Soundboard: sons pessoais (sincronizados na conta) + sons dos servidores, tocados para toda a sala de voz.
-import { h, icon, avatar, initials } from './util.js';
+import { h, icon, avatar, initials, whenGone } from './util.js';
 import { S, api, tryApi, toast, savePrefs, modal, promptBox, popout, closeFloating, guild, can, PERM, confirmBox, menu, emojiPicker } from './state.js';
 import { toggle, slider, comboFromEvent, comboLabel, captureKey } from './ui.js';
 
@@ -180,8 +180,9 @@ export function openSoundboard(anchor, voice, { openSettings } = {}) {
   list.onscroll = spy;
   body.append(h('div.sbtop', h('div.sbsearch', icon('search', 16), search), volBtn), rail, list,
     !voice?.active && h('div.sbhint', 'Você não está em uma sala de voz: os sons tocam só para você.'));
-  const onChange = () => document.body.contains(body) ? draw() : document.removeEventListener('sb-changed', onChange);
+  const onChange = () => draw();
   document.addEventListener('sb-changed', onChange);
+  queueMicrotask(() => whenGone(body, () => document.removeEventListener('sb-changed', onChange)));
   draw();
   const el = pop = popout(anchor, body, 'up'); el.classList.add('sb-pop');
   const r = anchor.getBoundingClientRect(); el.style.top = Math.max(8, r.top - el.getBoundingClientRect().height - 12) + 'px'; el.style.left = Math.max(8, Math.min(r.left - 120, innerWidth - el.getBoundingClientRect().width - 8)) + 'px';

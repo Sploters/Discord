@@ -14,6 +14,7 @@ import { getAdapter, listAdapters } from './integrations/index.js';
 import { createActivityService } from './activity.js';
 import { createCallInvites } from './callinvites.js';
 import { createRemote } from './remote.js';
+import { mountStatic } from './static.js';
 import { mountGifs } from './gifs.js';
 import { mountLfg } from './lfg.js';
 import { translate, translateEnabled, engineName } from './translate.js';
@@ -1151,6 +1152,7 @@ app.put('/api/activity/games/:platform/:gameId', auth, wrap((req, res) => { // e
 }));
 app.get('/api/activity/hidden', auth, wrap((req, res) => res.json(all('SELECT gp.platform, gp.game_id, (SELECT a.title FROM activities a WHERE a.user_id=gp.user_id AND a.platform=gp.platform AND a.game_id=gp.game_id ORDER BY a.created_at DESC LIMIT 1) title FROM game_prefs gp WHERE gp.user_id=? AND gp.hidden=1', req.uid))));
 app.get('/api/server-info', (req, res) => res.json({ name: 'LocalCord', registration: OPEN_REGISTRATION, default_avatars: DEFAULT_AVATARS }));
+if (process.env.STATIC_OFF !== '1') mountStatic(app, path.join(__dirname, '..', 'public')); // comprimido, versionado e com modulepreload (server/static.js)
 app.use(express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
 app.get(/^\/(?!api|files|gateway).*/, (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 

@@ -23,7 +23,7 @@ try {
   // ~12 s gravados pelo mesmo buffer dos clipes (quadro-chave a cada 1 s), com o tempo escrito na imagem
   console.log('  gravando 12 s…');
   await P.evaluate(async () => {
-    const { createBuffer } = await import('/clipbuf.js');
+    const { createBuffer } = await window.__lc.import('clipbuf.js');
     const c = document.createElement('canvas'); c.width = 640; c.height = 360; const x = c.getContext('2d'); const t0 = performance.now();
     const iv = setInterval(() => { const s = (performance.now() - t0) / 1000; x.fillStyle = `hsl(${(s * 40) % 360},60%,35%)`; x.fillRect(0, 0, 640, 360); x.fillStyle = '#fff'; x.font = 'bold 64px sans-serif'; x.fillText(s.toFixed(1) + ' s', 40, 120); }, 33);
     const ac = new AudioContext(), o = ac.createOscillator(), d = ac.createMediaStreamDestination(); o.connect(d); o.start();
@@ -46,14 +46,14 @@ try {
   }, expr);
   const o = await probe('window.__orig');
   ok(o.dur >= 11 && o.dur <= 13.5 && o.ended, 'original: ~12 s e toca até o fim', o);
-  const t1 = await P.evaluate(async () => { const { trimWebm, keyframeTimes } = await import('/webm.js'); const r = trimWebm(window.__orig, 4200, 9000); window.__t1 = r.bytes; return { s: r.startMs, e: r.endMs, size: r.bytes.length, orig: window.__orig.length, keys: keyframeTimes(window.__orig).length }; });
+  const t1 = await P.evaluate(async () => { const { trimWebm, keyframeTimes } = await window.__lc.import('webm.js'); const r = trimWebm(window.__orig, 4200, 9000); window.__t1 = r.bytes; return { s: r.startMs, e: r.endMs, size: r.bytes.length, orig: window.__orig.length, keys: keyframeTimes(window.__orig).length }; });
   ok(t1.s <= 4200 && t1.s >= 3000 && t1.e === 9000, 'corte 4,2–9 s: início no quadro-chave anterior (até ~1 s antes), fim exato', t1);
   ok(t1.keys >= 10, 'clipe tem quadro-chave a cada ~1 s', t1.keys);
   ok(t1.size < t1.orig * 0.65, 'arquivo cortado é menor (sem recomprimir)', { cortado: t1.size, original: t1.orig });
   const p1 = await probe('window.__t1');
   const want = (9000 - t1.s) / 1000;
   ok(Math.abs(p1.dur - want) < 0.4 && p1.ended && p1.frames > 10 && p1.seek, 'cortado: duração certa, toca até o fim e permite pular', { ...p1, esperado: want });
-  const t2 = await P.evaluate(async () => { const { trimWebm } = await import('/webm.js'); const r = trimWebm(window.__t1, 1500, 3500); window.__t2 = r.bytes; return { s: r.startMs, e: r.endMs }; });
+  const t2 = await P.evaluate(async () => { const { trimWebm } = await window.__lc.import('webm.js'); const r = trimWebm(window.__t1, 1500, 3500); window.__t2 = r.bytes; return { s: r.startMs, e: r.endMs }; });
   const p2 = await probe('window.__t2');
   ok(p2.ended && Math.abs(p2.dur - (t2.e - t2.s) / 1000) < 0.4, 'cortar de novo um clipe já cortado (arquivo da galeria) funciona', { ...t2, ...p2 });
   // ---------- galeria: Cortar (cria uma cópia) ----------

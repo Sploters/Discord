@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS channels(id TEXT PRIMARY KEY, guild_id TEXT REFERENCE
 CREATE TABLE IF NOT EXISTS dm_participants(channel_id TEXT REFERENCES channels(id) ON DELETE CASCADE, user_id TEXT REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(channel_id,user_id));
 CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY, channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE, author_id TEXT NOT NULL, content TEXT, created_at INTEGER, edited_at INTEGER, reply_to TEXT, attachments TEXT DEFAULT '[]', pinned INTEGER DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_msg_channel ON messages(channel_id, id);
+CREATE INDEX IF NOT EXISTS idx_msg_created ON messages(created_at); -- "Do grupo" (GIFs recentes) e buscas por data sem varrer a tabela toda
 CREATE TABLE IF NOT EXISTS reactions(message_id TEXT REFERENCES messages(id) ON DELETE CASCADE, user_id TEXT, emoji TEXT, PRIMARY KEY(message_id,user_id,emoji));
 CREATE TABLE IF NOT EXISTS invites(code TEXT PRIMARY KEY, guild_id TEXT REFERENCES guilds(id) ON DELETE CASCADE, creator_id TEXT, uses INTEGER DEFAULT 0, created_at INTEGER);
 CREATE TABLE IF NOT EXISTS relationships(user_id TEXT, other_id TEXT, type INTEGER, PRIMARY KEY(user_id,other_id));

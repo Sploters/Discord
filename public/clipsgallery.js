@@ -1,7 +1,7 @@
 // Galeria de clipes do servidor: todos os clipes salvos nas salas de voz, num só lugar.
 // Abas Todos / Meus / Favoritos, busca, prévia que só carrega quando aparece na tela, player com anterior/próximo,
 // renomear, favoritar, baixar, ir para a mensagem e apagar. Atualiza em tempo real (CLIP_CREATE/UPDATE/DELETE).
-import { h, icon, fsVideo } from './util.js';
+import { h, icon, fsVideo, whenGone } from './util.js';
 import { openTrimmer } from './cliptrim.js';
 import { postClip } from './clips.js';
 import { S, tryApi, toast, menu, modal, confirmBox, promptBox, can, PERM, guild, nameOf } from './state.js';
@@ -93,8 +93,8 @@ function player(i) {
     dl.href = c.url; dl.download = fileName(c);
     prev.disabled = k === 0; next.disabled = k === st.clips.length - 1;
   };
-  const keys = (e) => { if (!document.body.contains(box)) return removeEventListener('keydown', keys); if (e.key === 'ArrowLeft') show(cur - 1); if (e.key === 'ArrowRight') show(cur + 1); };
-  addEventListener('keydown', keys);
+  const keys = (e) => { if (e.key === 'ArrowLeft') show(cur - 1); if (e.key === 'ArrowRight') show(cur + 1); };
+  addEventListener('keydown', keys); queueMicrotask(() => whenGone(box, () => removeEventListener('keydown', keys)));
   modal('Clipe', null, box, [{ label: 'Fechar', cls: 'grey' }], { width: 'min(1100px, 94vw)' });
   box.closest('.modal')?.classList.add('clipmodal');
   show(cur);

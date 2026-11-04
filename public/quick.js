@@ -116,7 +116,7 @@ export function openMicPanel(anchor, voice, { openSettings } = {}) {
   const body = h('div.qpop.micpop',
     h('h4', 'Teste de microfone'), meter, h('small.mhint', voice.micGraph ? 'Fale algo: a barra mostra o que os outros recebem (já com os filtros).' : 'Microfone indisponível nesta chamada.'),
     voice.micGraph && loopBtn, voice.micGraph && h('small.mhint', 'Use fone de ouvido para não dar microfonia.'),
-    h('h4', 'Redução de ruído'), seg(NOISE_MODES, S.prefs.noiseMode, v => { S.prefs.noiseMode = v; savePrefs(); rebuild(); }),
+    h('h4', 'Redução de ruído'), seg(NOISE_MODES, S.prefs.noiseMode, v => { if ((S.prefs.noiseMode || 'standard') === v) return; S.prefs.noiseMode = v; savePrefs(); rebuild(); }),
     h('div.qrow', h('span', 'Cancelamento de eco'), toggle(S.prefs.echo !== false, v => { S.prefs.echo = v; savePrefs(); rebuild(); })),
     h('div.qrow', h('span', 'Porta de ruído'), toggle(!!S.prefs.gate, v => { S.prefs.gate = v; savePrefs(); rebuild(); })),
     openSettings && h('button.btn.link', { style: { marginTop: '8px' }, onclick: () => { closeFloating(); openSettings('voice'); } }, 'Mais opções de voz…'));

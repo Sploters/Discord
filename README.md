@@ -44,6 +44,9 @@ Atualizar: reconstrua a imagem e recrie o container com o mesmo volume (o banco 
 Botão 🎵 na barra da chamada: cole um link (YouTube, SoundCloud, Spotify, Bandcamp, Twitch, Vimeo…) ou digite o nome da música. O bot entra na sala como um participante (cada um ajusta o volume dele), mantém uma fila/playlist e qualquer pessoa da sala pode pausar, pular, remover músicas ou tirá-lo da chamada. Sai sozinho após 5 min parado (`MUSIC_IDLE_MIN`) ou quando todos saem. O áudio vem do yt-dlp (sem anúncios) + ffmpeg, ambos já incluídos na imagem Docker; o Spotify só fornece os nomes das faixas, que são procurados no YouTube. Requer o SFU de voz ativo.
 Variáveis: `MUSIC_IDLE_MIN`, `MUSIC_ALLOW_ANY=1` (libera qualquer site), `YTDLP_COOKIES=/data/cookies.txt` (se o YouTube pedir login), `YTDLP_PATH`, `FFMPEG_PATH`. Se o YouTube parar de funcionar, refaça o deploy para baixar o yt-dlp atualizado.
 
+### Desempenho
+A interface é entregue comprimida e com cache longo (versão do servidor no endereço dos arquivos; ver `docs/AUDITORIA-DESEMPENHO.md`). `STATIC_OFF=1` desliga isso em caso de problema. Medição: `node scripts/perf-audit.mjs <rótulo>`.
+
 ### GIFs
 Botão **GIF** no campo de mensagem: busca, "Em alta", Favoritos (por pessoa) e "Do grupo" (GIFs já mandados nos chats que a pessoa vê). A busca usa a **KLIPY** (gratuita; a API da Tenor foi desligada pelo Google em 2026) ou a **GIPHY**. Crie uma chave de API de desenvolvedor no site do serviço e coloque-a num arquivo na pasta de dados do servidor: `~/localcord-data/klipy.key` (ou `giphy.key`), depois reinicie o container (`sh deploy/umbrel.sh`). Também vale a variável `KLIPY_API_KEY` / `GIPHY_API_KEY`. Sem chave, o botão mostra só Favoritos e "Do grupo". O servidor só busca a lista (com cache de 10 min e um id anônimo por pessoa); os GIFs carregam direto do serviço. No modo leve, os GIFs do chat ficam parados e animam ao passar o mouse.
 

@@ -64,7 +64,7 @@ try {
   ok((await call(a.tok, 'POST', '/call-invites', { user_id: a.id })).status === 400, 'não dá para convidar a si mesmo');
 
   // menu da pessoa (em chamada) tem "Convidar para a chamada" para o amigo
-  ok(await A.evaluate(async (uid) => { const m = await import('/callinvite.js'); return m.canCallInvite(uid); }, b.id), 'amigo fora do servidor pode ser convidado (a interface oferece)');
+  ok(await A.evaluate(async (uid) => { const m = await window.__lc.import('callinvite.js'); return m.canCallInvite(uid); }, b.id), 'amigo fora do servidor pode ser convidado (a interface oferece)');
 
   // alice convida o bob (amigo, ainda não é membro)
   const r = await call(a.tok, 'POST', '/call-invites', { user_id: b.id });

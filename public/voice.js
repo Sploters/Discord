@@ -107,18 +107,28 @@ export class Voice {
   getCtx() { this.ctx ||= newAudioContext(); this.ctx.resume?.(); return this.ctx; }
 
   async buildMic() {
-    this.micGraph?.dispose(); this.analysers.get(this.myId)?.src.disconnect(); this.analysers.delete(this.myId);
+    const gen = (this._micGen = (this._micGen || 0) + 1);
+    this.micGraph?.dispose(); this.micGraph = null; this.analysers.get(this.myId)?.src.disconnect(); this.analysers.delete(this.myId);
     const g = await createMic(this.prefs, this.getCtx());
+    // outra montagem começou enquanto esta carregava (ex.: trocar o filtro várias vezes): esta já nasce velha e é desligada
+    // (antes ficava ligada, com a IA de ruído processando à toa, e o áudio ia acumulando atraso)
+    if (gen !== this._micGen) { g.dispose(); return false; }
     this.micGraph = g; this.mic = g.stream; this.updateMonitor?.();
     this.error = g.error;
     this.analysers.set(this.myId, { src: { disconnect() { } }, an: g.analyser, buf: new Uint8Array(g.analyser.fftSize), level: 0 });
     this.applyMute();
   }
   // Troca a cadeia de áudio (ex.: mudou o modo de ruído) sem reconectar
-  async rebuildMic() {
+  // vários pedidos seguidos viram um só: espera a montagem atual terminar e monta de novo uma vez, com as opções mais novas
+  rebuildMic() {
+    if (this._rb) { this._rbAgain = true; return this._rb; }
+    this._rb = (async () => { do { this._rbAgain = false; await this.rebuildOnce(); } while (this._rbAgain && this.channelId); })().finally(() => { this._rb = null; });
+    return this._rb;
+  }
+  async rebuildOnce() {
     if (!this.channelId) return;
     try {
-      const old = this.micGraph; await this.buildMic();
+      const old = this.micGraph; if (await this.buildMic() === false) return;
       const track = this.mic.getAudioTracks()[0];
       if (this.sfu) await this.sfuProduce('mic', track);
       else for (const p of this.peers.values()) { const s = p.senders.micaudio; if (s) await s.replaceTrack(track); else p.senders.micaudio = p.pc.addTrack(track, this.mic); }

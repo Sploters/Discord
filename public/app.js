@@ -2,7 +2,7 @@ import { nativeEnded } from './nativetest.js';
 import { openFxPicker, fxBadge } from './fxui.js';
 import { fxInfo } from './voicefx.js';
 import { gifPicker, gifEl, isGifMessage, toggleFav as toggleGifFav, isFav as isGifFav } from './gifs.js';
-import { h, icon, avatar, fsVideo, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyEmoji, isImageUrl, SHORT, inviteCodes, callCodes, stripInvites, inviteText, parsePos, framePos, initials } from './util.js';
+import { h, icon, avatar, fsVideo, whenGone, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyEmoji, isImageUrl, SHORT, inviteCodes, callCodes, stripInvites, inviteText, parsePos, framePos, initials } from './util.js';
 import { S, api, tryApi, user, guild, channelById, member, nameOf, roleColor, can, perms, PERM, dmPeer, relType, toast, modal, confirmBox, promptBox, menu, popout, emojiPicker, lightbox, closeFloating, beep, notify, notifPolicy, channelMuted, desktop, applyTheme, emojiUrl, allEmojis, savePrefs, relite } from './state.js';
 import { Voice, SCREEN_PRESETS, VOICE_BITRATES } from './voice.js';
 import { playSound } from './sounds.js';
@@ -1596,9 +1596,8 @@ function autoClosed() {
 }
 function renderVoiceUI(speakOnly) {
   if (speakOnly) {
-    document.querySelectorAll('.tile[data-uid],.avatar[data-uid]').forEach(e => e.classList.toggle('speaking', voice.speaking.has(e.dataset.uid)));
-    document.querySelectorAll('.tile[data-uid],.avatar[data-uid]').forEach(e => e.classList.toggle('sbplay', voice.sbActive.has(e.dataset.uid)));
-    document.getElementById('vp-ping') && updatePing();
+    // só as classes de "falando"; o ping já é medido 1x por segundo (antes cada fala disparava uma medição extra)
+    document.querySelectorAll('.tile[data-uid],.avatar[data-uid]').forEach(e => { const u = e.dataset.uid; e.classList.toggle('speaking', voice.speaking.has(u)); e.classList.toggle('sbplay', voice.sbActive.has(u)); });
     return;
   }
   renderSide(); refreshFeedView();
@@ -1709,7 +1708,7 @@ function clipMenu(e, key, who) {
 const ctxSettings = () => ({ voice, logout, go });
 function noiseMenu(e) {
   const cur = S.prefs.noiseMode;
-  menu(e, [['off', 'Nenhuma'], ['standard', 'Padrão (navegador)'], ['rnnoise', 'Alta — RNNoise (IA)'], ['gtcrn', 'Máxima — GTCRN (IA)']].map(([k, l]) => ({ label: (cur === k ? '✓ ' : '   ') + 'Ruído: ' + l, fn: async () => { S.prefs.noiseMode = k; savePrefs(); await voice.rebuildMic(); toast('Redução de ruído: ' + l); } })));
+  menu(e, [['off', 'Nenhuma'], ['standard', 'Padrão (navegador)'], ['rnnoise', 'Alta — RNNoise (IA)'], ['gtcrn', 'Máxima — GTCRN (IA)']].map(([k, l]) => ({ label: (cur === k ? '✓ ' : '   ') + 'Ruído: ' + l, fn: async () => { if ((cur || 'standard') === k) return; S.prefs.noiseMode = k; savePrefs(); await voice.rebuildMic(); toast('Redução de ruído: ' + l); } })));
 }
 async function startShare() {
   if (voice.screen) return liveShareModal();
@@ -1766,10 +1765,12 @@ const pingHist = []; // [{ t, ms }] dos últimos 60 s
 const lastPing = () => pingHist.at(-1)?.ms ?? null;
 const pingLevel = (p) => (p == null ? '' : p < 80 ? 'good' : p < 200 ? 'mid' : 'bad');
 const pingEl = () => { const el = h('button#vp-ping.ping', { onclick: (e) => openPingChart(e.currentTarget) }, icon('wifi', 16)); paintPing(el); return el; };
+// só mexe no que mudou: trocar className/title à toa faz o navegador recalcular o estilo da página
+const setIf = (el, k, v) => { if (el[k] !== v) el[k] = v; };
 function paintPing(el) {
   const p = lastPing();
-  el.className = 'ping ' + pingLevel(p);
-  el.title = p == null ? 'Medindo a conexão…' : `Ping: ${p} ms (clique para ver o gráfico)`;
+  setIf(el, 'className', 'ping ' + pingLevel(p));
+  setIf(el, 'title', p == null ? 'Medindo a conexão…' : `Ping: ${p} ms (clique para ver o gráfico)`);
 }
 // ida e volta pelo gateway: funciona mesmo sem transporte de mídia conectado (sem microfone, sozinho ouvindo)
 const wsPings = new Map(); let wsPingN = 0;
@@ -1801,8 +1802,8 @@ const isAutoAbr = () => S.prefs.voiceBitrate === 'auto' || S.prefs.voiceBitrate 
 const abrEl = () => { const el = h('button#vp-abr.abr', { onclick: (e) => openAbrPicker(e.currentTarget) }); paintAbr(el); return el; };
 function paintAbr(el) {
   const k = voice.micKbps(), auto = isAutoAbr();
-  el.textContent = (auto ? 'Auto · ' : '') + k + 'k';
-  el.title = `Qualidade da voz: ${k} kbps${auto ? ' (automático)' : ''}${voice.sentKbps != null ? ` — enviando ~${voice.sentKbps} kbps agora` : ''}. Clique para mudar.`;
+  setIf(el, 'textContent', (auto ? 'Auto · ' : '') + k + 'k');
+  setIf(el, 'title', `Qualidade da voz: ${k} kbps${auto ? ' (automático)' : ''}${voice.sentKbps != null ? ` — enviando ~${voice.sentKbps} kbps agora` : ''}. Clique para mudar.`);
 }
 function openAbrPicker(anchor) {
   const body = h('div.qpop', h('h4', 'Qualidade da voz'), seg(VOICE_BITRATES, isAutoAbr() ? 'auto' : S.prefs.voiceBitrate, (v) => { S.prefs.voiceBitrate = v; savePrefs(); voice.retuneAudio(); paintAbr(anchor); }),
@@ -1853,8 +1854,8 @@ function openPingChart(anchor) {
   });
   svg.addEventListener('mouseleave', () => { tip.classList.add('hidden'); svg.querySelector('.pcross')?.remove(); svg.querySelector('.phov')?.remove(); });
   draw();
-  const onSample = () => { if (!document.body.contains(body)) return document.removeEventListener('ping-sample', onSample); if (tip.classList.contains('hidden')) draw(); };
-  document.addEventListener('ping-sample', onSample);
+  const onSample = () => { if (tip.classList.contains('hidden')) draw(); };
+  document.addEventListener('ping-sample', onSample); queueMicrotask(() => whenGone(body, () => document.removeEventListener('ping-sample', onSample)));
   const el = popout(anchor, body, 'up'); el.classList.add('quick');
   const r = anchor.getBoundingClientRect(), b = el.getBoundingClientRect();
   el.style.top = Math.max(8, r.top - b.height - 10) + 'px'; el.style.left = Math.max(8, r.left) + 'px';
@@ -1895,7 +1896,9 @@ initLfg({ go, profile: (a, uid) => profile(a, uid), inVoice: () => !!voice?.chan
 initClipsGallery({ go, jumpTo: (mid) => jumpTo(mid) });
 initCallInvite({ go, joinVoice, voice: () => voice, channelById, guild });
 initActivity({ openDM, profile: (a, uid) => profile(a, uid), userMenu: (e, uid) => userMenu(e, uid), go, joinVoice, watchFriend, voice: () => voice, openSettings: (k) => openSettings(k, ctxSettings()), renderActiveNow });
-window.__lc = { S, get voice() { return voice; }, go, openSettings: (k) => openSettings(k, { voice, logout, go, gid: S.view.gid }) };
+// testes: importa um módulo do app pelo mesmo endereço (com a versão) que o app usa, para pegar a mesma instância
+const VQ = new URL(import.meta.url).search;
+window.__lc = { S, import: (f) => import('./' + f + VQ), get voice() { return voice; }, go, openSettings: (k) => openSettings(k, { voice, logout, go, gid: S.view.gid }) };
 
 // =============== Boot ===============
 (async function boot() {

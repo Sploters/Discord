@@ -78,7 +78,7 @@ try {
   await A.screenshot({ path: `${SHOTS}/t3-claro.png` });
 
   // compartilhar no chat
-  const code = await A.evaluate(async () => (await import('/themes.js')).encodeTheme(window.__lc.S.prefs.customThemes[0]));
+  const code = await A.evaluate(async () => (await window.__lc.import('themes.js')).encodeTheme(window.__lc.S.prefs.customThemes[0]));
   await api(tokA, 'POST', `/channels/${text.id}/messages`, { content: 'olha meu tema ' + code });
   await B.evaluate((gid, cid) => window.__lc.go?.(gid, cid), g.id, text.id); await sleep(800);
   ok(!!await B.$('.themeshare'), 'código no chat vira cartão de tema');
@@ -131,7 +131,7 @@ try {
   await B.screenshot({ path: `${SHOTS}/t9-nome-chat.png` });
 
   // qualidade da voz
-  await B.evaluate(async () => { window.__lc.S.prefs.theme = 'g:sunset'; (await import('/state.js')).applyTheme(); });
+  await B.evaluate(async () => { window.__lc.S.prefs.theme = 'g:sunset'; (await window.__lc.import('state.js')).applyTheme(); });
   for (const page of [A, B]) await page.evaluate((gid, cid) => window.__lc.go(gid, cid), g.id, vch.id);
   await sleep(600);
   for (const page of [A, B]) await page.evaluate(() => [...document.querySelectorAll('#stage .btn')].find(b => /Entrar/.test(b.textContent))?.click());

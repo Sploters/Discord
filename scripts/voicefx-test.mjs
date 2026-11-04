@@ -26,7 +26,7 @@ try {
   const A = await page(a.tok), B = await page(b.tok);
   // ---------- processamento ----------
   const dsp = await A.evaluate(async () => {
-    const { FX, createFx, loadFx } = await import('/voicefx.js');
+    const { FX, createFx, loadFx } = await window.__lc.import('voicefx.js');
     const out = {};
     for (const f of [{ id: 'nenhum' }, ...FX, { id: 'nenhum', key: 'tom', tone: true }, { id: 'grossa', key: 'tomGrossa', tone: true }, { id: 'esquilo', key: 'tomEsquilo', tone: true }, { id: 'eco', key: 'tomEco', tone: true }]) {
       const ctx = new OfflineAudioContext(1, 48000 * 2, 48000); await loadFx(ctx);

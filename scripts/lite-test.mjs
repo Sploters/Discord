@@ -73,7 +73,7 @@ try {
   // mudança manual durante o modo leve sobrevive a recarregar (a conta não a desfaz)
   await page.click('#settings .litehero .switch'); await sleep(200);
   await page.evaluate(() => { window.__lc.S.prefs.noiseMode = 'gtcrn'; window.__lc.savePrefs?.(); });
-  await page.evaluate(async () => { const m = await import('/state.js'); m.savePrefs(); }); await sleep(1800);
+  await page.evaluate(async () => { const m = await window.__lc.import('state.js'); m.savePrefs(); }); await sleep(1800);
   await page.reload(); await page.waitForSelector('#rail .rail-wrap'); await sleep(1200);
   const rl = await P();
   ok(rl.lightMode === true && rl.noiseMode === 'gtcrn' && rl.animations === false, 'mudança manual sobrevive a recarregar com modo leve: ' + JSON.stringify(rl));
@@ -82,7 +82,7 @@ try {
   await page.click('#settings .litehero .switch'); await sleep(300);
   const rl2 = await P();
   ok(rl2.noiseMode === 'gtcrn' && rl2.animations === before.animations && rl2.clipsOn === before.clipsOn, 'desativar depois: manual fica, resto volta');
-  await page.evaluate(async () => { const p = window.__lc.S.prefs; p.noiseMode = 'rnnoise'; (await import('/state.js')).savePrefs(); }); await sleep(1500);
+  await page.evaluate(async () => { const p = window.__lc.S.prefs; p.noiseMode = 'rnnoise'; (await window.__lc.import('state.js')).savePrefs(); }); await sleep(1500);
 
   // desktop (ponte falsa): economia só fora de chamada
   const D = await browser.newPage(); await D.setViewport({ width: 1440, height: 900 });
@@ -118,7 +118,7 @@ try {
   const clip = await D.evaluate(async () => {
     const c = document.createElement('canvas'); c.width = 320; c.height = 180; const x = c.getContext('2d');
     const iv = setInterval(() => { x.fillStyle = '#' + Math.floor(Math.random() * 1e6).toString(16).padStart(6, '0'); x.fillRect(0, 0, 320, 180); }, 33);
-    const stream = c.captureStream(30), m = await import('/clips.js');
+    const stream = c.captureStream(30), m = await window.__lc.import('clips.js');
     m.startBuffer('s:teste', stream, null); await new Promise(r => setTimeout(r, 1500));
     const rec = m.clipping('s:teste'); m.stopAllBuffers(); await new Promise(r => setTimeout(r, 300));
     const r = { rec, after: m.clipping('s:teste'), track: stream.getVideoTracks()[0].readyState }; clearInterval(iv); return r;
