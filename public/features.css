@@ -938,3 +938,13 @@ select.gpucompat:focus { outline: 2px solid var(--brand, #5865f2); outline-offse
    no painel da esquerda e só reaparecem aqui quando o painel some (tela estreita) */
 #stage .bar .solo-narrow, .bar .roundbtn.solo-narrow { display: none; }
 @media (max-width: 640px) { #stage .bar .solo-narrow, .bar .roundbtn.solo-narrow { display: inline-flex; } }
+
+/* ---------- novidades ---------- */
+.newsintro { color: var(--text-muted); margin: 0 0 12px; font-size: 14px; }
+.newslist { display: flex; flex-direction: column; gap: 8px; }
+.newsitem { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--bg-sec); }
+.newsitem .newse { font-size: 26px; width: 36px; text-align: center; flex: none; }
+.newsitem .newst { flex: 1; min-width: 0; } .newsitem .newst b { color: var(--header); font-size: 15px; } .newsitem .newst p { margin: 2px 0 0; font-size: 13px; color: var(--text-muted); line-height: 1.35; }
+.newsitem .btn { flex: none; }
+.newsbody { max-height: min(62vh, 640px); overflow-y: auto; padding-right: 4px; }
+.newspage .newsrel h3 { margin: 18px 0 10px; color: var(--header); font-size: 16px; } .newspage .newsrel:first-of-type h3 { margin-top: 4px; }

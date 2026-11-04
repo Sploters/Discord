@@ -44,6 +44,9 @@ Atualizar: reconstrua a imagem e recrie o container com o mesmo volume (o banco 
 Botão 🎵 na barra da chamada: cole um link (YouTube, SoundCloud, Spotify, Bandcamp, Twitch, Vimeo…) ou digite o nome da música. O bot entra na sala como um participante (cada um ajusta o volume dele), mantém uma fila/playlist e qualquer pessoa da sala pode pausar, pular, remover músicas ou tirá-lo da chamada. Sai sozinho após 5 min parado (`MUSIC_IDLE_MIN`) ou quando todos saem. O áudio vem do yt-dlp (sem anúncios) + ffmpeg, ambos já incluídos na imagem Docker; o Spotify só fornece os nomes das faixas, que são procurados no YouTube. Requer o SFU de voz ativo.
 Variáveis: `MUSIC_IDLE_MIN`, `MUSIC_ALLOW_ANY=1` (libera qualquer site), `YTDLP_COOKIES=/data/cookies.txt` (se o YouTube pedir login), `YTDLP_PATH`, `FFMPEG_PATH`. Se o YouTube parar de funcionar, refaça o deploy para baixar o yt-dlp atualizado.
 
+### Novidades
+Depois de uma atualização, quem já usava o app vê uma vez a janela "Novidades" (o que mudou, com botões "Experimentar"); fica gravado na conta, então não repete em outro aparelho. Conta nova não recebe a lista. Histórico em Configurações → Novidades e no menu do perfil. Para anunciar uma atualização: acrescente uma entrada no topo de `NEWS` em `public/changelog.js` com um id novo (a data).
+
 ### Desempenho
 A interface é entregue comprimida e com cache longo (versão do servidor no endereço dos arquivos; ver `docs/AUDITORIA-DESEMPENHO.md`). `STATIC_OFF=1` desliga isso em caso de problema. Medição: `node scripts/perf-audit.mjs <rótulo>`.
 

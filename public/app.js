@@ -1,4 +1,5 @@
 import { nativeEnded } from './nativetest.js';
+import { setNewsActions, maybeShowNews, markSeen as markNewsSeen } from './changelog.js';
 import { openFxPicker, fxBadge } from './fxui.js';
 import { fxInfo } from './voicefx.js';
 import { gifPicker, gifEl, isGifMessage, toggleFav as toggleGifFav, isFav as isGifFav } from './gifs.js';
@@ -113,6 +114,7 @@ function onEvent(t, d) {
       if (!voice) voice = new Voice({ send: gwSend, ice: S.ice, myId: S.me.id, prefs: S.prefs, onUpdate: (speakOnly) => renderVoiceUI(speakOnly) });
       voice.onAutoAdjust = (msg) => toast(msg);
       voice.onNativeFail = (msg) => toast(msg, true);
+      setNewsActions(newsActions);
       voice.fxLookup = (uid) => S.voice.get(uid)?.channel_id === voice.channelId ? S.voice.get(uid)?.fx : null;
       if (S.nativeOk === undefined) { S.nativeOk = null; voice.nativeCapable().then(r => { S.nativeOk = !!r.ok; S.nativeWhy = r.reason || ''; }); }
       voice.onBlackCapture = (black) => { if (black) toast('Sua transmissão está saindo preta. Se for um jogo, coloque-o em "Janela sem bordas" (tela cheia exclusiva e alguns anti-cheats bloqueiam a captura).', true); renderVoiceUI(); };
@@ -123,7 +125,9 @@ function onEvent(t, d) {
       if (!S.synced) api('GET', '/me/settings').then(r => { // sincroniza preferências entre dispositivos
         const keep = { inputId: S.prefs.inputId, outputId: S.prefs.outputId, videoId: S.prefs.videoId };
         const local = { ...S.prefs }; Object.assign(S.prefs, r.settings || {}, keep); relite(r.settings || {}, local); S.friendPolicy = r.friend_policy; S.synced = true;
-        localStorage.setItem('lc_prefs', JSON.stringify(S.prefs)); applyTheme(); if (!Object.keys(r.settings || {}).length) savePrefs(); renderSide();
+        localStorage.setItem('lc_prefs', JSON.stringify(S.prefs)); applyTheme();
+        if (!Object.keys(r.settings || {}).length) { markNewsSeen(); savePrefs(); } else maybeShowNews(); // conta nova não precisa da lista do que mudou
+        renderSide();
       }).catch(() => { S.synced = true; });
       if (pendingInvite) { const c = pendingInvite; pendingInvite = null; history.replaceState({}, '', '/'); joinInvite(c); }
       applyRoute(true);
@@ -544,6 +548,16 @@ function voicePanel() {
       h('button', { title: 'Música (bot) — indisponível', disabled: true, style: { opacity: .4, cursor: 'not-allowed' } }, icon('music', 20))));
 }
 const voiceAct = (fn) => Promise.resolve().then(fn).catch(e => toast(e.message, true));
+// botões "Experimentar" da janela de Novidades (public/changelog.js)
+const newsActions = {
+  fx: () => { const b = [...document.querySelectorAll('#voice-panel .row button')].find(x => /Efeito/.test(x.title)); if (voice?.active && b) b.click(); else toast('Entre numa sala de voz e clique no botão de máscara do painel de voz (ou Ctrl+Shift+E).'); },
+  gifs: () => { const b = $('#composer .gifbtn'); if (b) b.click(); else toast('Abra um chat e clique em GIF, ao lado do emoji.'); },
+  clips: () => { const gid = S.view.gid && S.view.gid !== '@me' ? S.view.gid : [...S.guilds.keys()][0]; if (gid) go(gid, 'clips'); else toast('Entre num servidor para ver a galeria de clipes.'); },
+  lfg: () => go('@me', 'lfg'),
+  stream: () => openSettings('stream', ctxSettings()),
+  poll: () => { const ch = channelById(S.view.cid); if (ch && $('#composer')) pollModal(ch); else toast('Abra um chat e use o + do campo de mensagem → "Criar enquete".'); },
+  settings: () => openSettings('news', ctxSettings()),
+};
 // botão de efeitos de voz (painel de voz e controles da sala): com efeito ligado mostra o emoji dele
 function fxButton(size, round, cls = '') {
   const f = fxInfo(voice?.fx);

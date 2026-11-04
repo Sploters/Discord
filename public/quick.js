@@ -1,5 +1,6 @@
 // Painéis rápidos: dispositivos de áudio, cancelamento de eco/ruído e status — sem abrir as configurações.
 import { h, icon, avatar, framePos } from './util.js';
+import { openNews } from './changelog.js';
 import { styleName } from './themes.js';
 import { S, api, tryApi, toast, savePrefs, popout, closeFloating, user, nameOf } from './state.js';
 import { seg, toggle, slider } from './ui.js';
@@ -170,6 +171,7 @@ export function openStatusPanel(anchor, { openSettings, openFullProfile, logout 
         h('div.megroup',
           item(icon('edit', 16), 'Editar perfil', () => { closeFloating(); openSettings?.('profile'); }),
           item(h('i.sdot.' + cur[2]), h('span', 'Status: ' + cur[1], me.status === 'invisible' && h('span', { title: 'Seu status e sua atividade ficam ocultos quando você está invisível', style: { marginLeft: '6px' } }, '⚠')), () => openFly(body.querySelector('.meitem:nth-child(2)')), h('span.mearrow', '›'), true),
+          item(icon('sparkle', 16), 'Novidades', () => { closeFloating(); openNews(); }),
         ),
         S.prefs.lightMode && h('div.megroup',
           item(icon('leaf', 16), h('span', 'Modo leve ativo', h('small.melite', 'neste computador')), () => { closeFloating(); openSettings?.('lite'); })),
