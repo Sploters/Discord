@@ -57,12 +57,13 @@ function moreMenu(e, c) {
     canEdit(c) && { label: 'Apagar clipe', danger: true, fn: () => remove(c) },
   ]);
 }
-// corta um clipe da galeria: o original fica; a cópia cortada vira um clipe novo no mesmo canal
-async function trimCopy(c) {
-  toast('Abrindo o clipe…');
-  let bytes; try { const r = await fetch(c.url); if (!r.ok) throw new Error('HTTP ' + r.status); bytes = new Uint8Array(await r.arrayBuffer()); } catch (e) { return toast('Não consegui abrir o vídeo: ' + e.message, true); }
-  openTrimmer(bytes, { title: (c.title + ' (cortado)').slice(0, 100), action: 'Salvar cópia cortada',
-    onSave: ({ blob, secs, title }) => postClip(blob, { channelId: c.channel_id, secs, streamerId: c.streamer?.id, hasAudio: c.has_audio, title, who: c.streamer ? who(c.streamer) : 'clipe' }) });
+// corta um clipe da galeria: o original fica; a cópia cortada vira um clipe novo no mesmo canal.
+// O editor abre na hora tocando o vídeo do servidor; o arquivo baixa em segundo plano (com progresso) só para o corte.
+function trimCopy(c) {
+  try {
+    openTrimmer({ url: c.url, size: c.size }, { title: (c.title + ' (cortado)').slice(0, 100), action: 'Salvar cópia cortada',
+      onSave: ({ blob, secs, title }) => postClip(blob, { channelId: c.channel_id, secs, streamerId: c.streamer?.id, hasAudio: c.has_audio, title, who: c.streamer ? who(c.streamer) : 'clipe' }) });
+  } catch (e) { toast('Não consegui abrir o editor: ' + e.message, true); }
 }
 async function rename(c) {
   const t = await promptBox('Renomear clipe', 'Nome', c.title); if (t == null || !t.trim() || t.trim() === c.title) return;
@@ -102,7 +103,7 @@ function player(i) {
   // renomear no lugar: Enter salva, Esc ou clicar fora cancela/salva
   const editTitle = () => {
     const c = st.clips[cur]; if (!c || !canEdit(c) || trow.querySelector('input')) return;
-    const inp = h('input.pttlin', { value: c.title, maxLength: 100 });
+    const inp = h('input.pttlin', { name: 'clip-title', 'aria-label': 'Nome do clipe', value: c.title, maxLength: 100 });
     let done = false;
     const finish = async (save) => {
       if (done) return; done = true;
@@ -131,7 +132,7 @@ function draw() {
   const root = st.root; if (!root || !document.body.contains(root)) return;
   const g = guild(st.gid);
   const tabs = [['all', 'Todos'], ['mine', 'Meus'], ['fav', 'Favoritos']].map(([k, l]) => h('button.ctab' + (st.filter === k ? '.on' : ''), { onclick: () => { if (st.filter === k) return; st.filter = k; st.clips = []; draw(); load(true); } }, l));
-  const search = h('input.csearch', { placeholder: 'Buscar por nome ou pessoa', value: st.q, oninput: (e) => { clearTimeout(st.t); st.t = setTimeout(() => { st.q = e.target.value.trim(); load(true); }, 250); } });
+  const search = h('input.csearch', { name: 'clip-search', type: 'search', 'aria-label': 'Buscar clipes', placeholder: 'Buscar por nome ou pessoa', value: st.q, oninput: (e) => { clearTimeout(st.t); st.t = setTimeout(() => { st.q = e.target.value.trim(); load(true); }, 250); } });
   const grid = h('div.cgrid', st.clips.map(card));
   const empty = !st.clips.length && !st.loading && h('div.cempty', h('div.ceart', icon('clip', 40)),
     h('b', st.q ? 'Nenhum clipe encontrado' : st.filter === 'fav' ? 'Nenhum favorito ainda' : st.filter === 'mine' ? 'Você ainda não tem clipes' : 'Nenhum clipe ainda'),

@@ -69,8 +69,17 @@ try {
   await P.evaluate((gid) => window.__lc.go(gid, 'clips'), g.id); await sleep(1200);
   await P.evaluate(() => document.querySelector('#clipsview .clipcard .cbtns button[title="Mais opções"]').click()); await sleep(300);
   ok(await P.evaluate(() => [...document.querySelectorAll('.menu .item, .menu button, .menu div')].some(x => /Cortar \(cria uma cópia\)/.test(x.textContent))), 'menu do clipe tem "Cortar (cria uma cópia)…"');
+  // conexão lenta (~1 Mb/s): o editor tem que abrir na hora, tocando do servidor, enquanto o arquivo baixa
+  const cdp = await P.createCDPSession(); await cdp.send('Network.enable');
+  await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 40, downloadThroughput: 125000, uploadThroughput: 1e7 });
+  const t0 = Date.now();
   await P.evaluate(() => [...document.querySelectorAll('.menu *')].find(x => x.children.length === 0 && /Cortar \(cria uma cópia\)/.test(x.textContent))?.click());
   await P.waitForSelector('.trimmer .trtrack', { timeout: 8000 });
+  const openMs = Date.now() - t0, dlNote = await P.evaluate(() => document.querySelector('.trimmer .qinfo')?.textContent || '');
+  ok(openMs < 1000 && /Baixando o clipe/.test(dlNote), 'editor abre na hora mesmo com conexão lenta (mostra o progresso do download)', { openMs, dlNote });
+  await P.waitForFunction(() => /Fim/.test(document.querySelector('.trimmer .trlab')?.textContent || '') && !/Baixando/.test(document.querySelector('.trimmer .qinfo')?.textContent || ''), { timeout: 30000 });
+  ok(true, 'download termina e o editor fica pronto para cortar', Date.now() - t0);
+  await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
   await P.waitForFunction(() => /Fim/.test(document.querySelector('.trimmer .trlab')?.textContent || ''), { timeout: 8000 });
   await sleep(2500); // miniaturas
   // arrasta a alça do início até ~40% e a do fim até ~75%
