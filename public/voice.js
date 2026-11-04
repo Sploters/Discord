@@ -378,6 +378,14 @@ export class Voice {
       this.onUpdate();
     } catch (e) { console.warn('consume', e); s.seen.delete(producer_id); }
   }
+  // Assiste um producer qualquer da sala, inclusive o próprio (teste da transmissão nativa: o vídeo faz a volta pelo servidor)
+  async watchProducer(producer_id) {
+    const s = this.sfu; if (!s?.ready) throw new Error('A voz ainda não conectou ao servidor');
+    const r = await this.sfuReq('consume', { transport_id: s.recv.id, producer_id, rtpCapabilities: s.device.rtpCapabilities });
+    const c = await s.recv.consume({ id: r.id, producerId: r.producer_id, kind: r.kind, rtpParameters: r.rtpParameters });
+    await this.sfuReq('resume', { consumer_id: c.id });
+    return { track: c.track, consumer: c, close: () => { try { c.close(); } catch { } } };
+  }
   onSfuConsumerClosed({ consumer_id }) {
     const e = this.sfu?.consumers.get(consumer_id); if (!e) return;
     this.sfu.consumers.delete(consumer_id); e.c.close();

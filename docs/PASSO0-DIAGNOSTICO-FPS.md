@@ -131,3 +131,26 @@ acompanha os 144 Hz do monitor sem perder nenhum quadro.
 
 **Conclusão.** O capturador nativo resolve o gargalo. Próximo passo: Spike B (captura WGC sem limite → codificador de
 hardware (NVENC via Media Foundation) → RTP para um `PlainTransport` do mediasoup), medindo fim a fim no PC de 143 Hz.
+
+## Spike B — captura nativa → H.264 na placa → RTP → SFU → app (2026-11-04)
+Peças (tudo fora do botão "Transmitir tela" normal):
+- **Servidor** (`server/sfu.js` `sfuAttachNative`, rota `POST /api/native-screen` e `/stop`): cria um `PlainTransport`
+  (UDP, `comedia`, `rtcpMux`) numa porta de `RTC_NATIVE_PORTS` (padrão 40001-40010, mapeadas no `deploy/umbrel.sh` e no
+  `Dockerfile`) e um producer H.264 Baseline (`42e01f`, PT 102, NACK/PLI/FIR) registrado como a **tela** da pessoa.
+  Devolve o código `LC120 <host> <porta> <ssrc> <pt>`. A sessão fecha sozinha 6 s depois do último pacote, em 10 min sem
+  receber nada, em 30 min no total ou quando a pessoa sai da sala; avisa o app com `NATIVE_SCREEN_END`.
+- **App** (`public/nativetest.js`, Configurações → Transmissão → Experimental): gera o código, assiste a **própria**
+  transmissão pelo servidor (`voice.watchProducer`) e mede por segundo: quadros recebidos, decodificados, exibidos
+  (`requestVideoFrameCallback`), banda, perda e atraso do buffer. Os outros da sala também recebem como tela.
+- **Programa** (`spikes/native-stream`, binário `transmitir.exe`): WGC com `MinUpdateInterval = 0` → BGRA→NV12 com escala
+  no `ID3D11VideoProcessor` → codificador H.264 de **hardware** do Media Foundation (assíncrono, texturas D3D11, CBR,
+  baixa latência, GOP 2 s, sem quadros B; escolhe o da mesma placa pela LUID) → RTP (FU-A, SPS/PPS antes de todo IDR,
+  reenvio por NACK, quadro-chave por PLI/FIR, SR a cada 1 s). Ritmo limitado ao fps pedido; se o codificador não pediu
+  entrada, o quadro é descartado e contado. Pacote: `spikes/native-stream/pacote` (`montar.sh`).
+
+Validação sem Windows (`node scripts/native-test.mjs`, `H=1080` opcional): ffmpeg gera H.264 a 120 fps no lugar da
+captura+placa; o mesmo empacotador RTP envia ao servidor; o app mede. 720p: 120,0 recebidos / 120,1 decodificados,
+0 perdas. 1080p: ~118 de mediana (decodificação por software do navegador de teste, sem GPU). "Exibidos" no navegador
+de teste fica em 35-50 (sem GPU); não vale como medida.
+
+Falta: rodar o pacote no PC de 143 Hz (a parte Windows — captura, conversão e codificador — só foi compilada, não executada).

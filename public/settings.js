@@ -16,6 +16,7 @@ import { MAX_VOL } from './quick.js';
 import { refreshFreeze } from './freeze.js';
 import { connectionsPage } from './activity.js';
 import { litePage, liteOn } from './lite.js';
+import { openNativeTest } from './nativetest.js';
 
 const SWATCHES = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55d', '#faa61a', '#9b59b6', '#1abc9c', '#e67e22', '#3498db', '#95a5a6', '#2c2f33', '#ffffff'];
 const save = () => savePrefs();
@@ -416,7 +417,10 @@ function streamPage() {
   const o = { res: 1080, fps: 30, hint: 'motion', audio: true, ...S.prefs.screen };
   const commit = () => { S.prefs.screen = { res: o.res, fps: o.fps, hint: o.hint, audio: o.audio }; save(); };
   return h('div', h('h2', 'Transmissão de tela'), hint('Esses são os valores iniciais ao clicar em "Transmitir tela". Você ainda escolhe a tela/janela e pode mudar a qualidade durante a transmissão.'),
-    card(qualityPanel(o, commit), row('Compartilhar áudio do sistema por padrão', null, toggle(o.audio, v => { o.audio = v; commit(); }))));
+    card(qualityPanel(o, commit), row('Compartilhar áudio do sistema por padrão', null, toggle(o.audio, v => { o.audio = v; commit(); }))),
+    section('Experimental'),
+    card(row('Teste: transmissão a 120 FPS', 'A transmissão normal fica limitada a ~48 FPS pelo Windows. Este teste usa um programa à parte (pacote de teste) que captura sem esse limite, e mede aqui quantos quadros chegam. Entre numa sala de voz antes.',
+      h('button.btn', { onclick: () => openNativeTest() }, 'Abrir teste'))));
 }
 
 // ============================ Sons do app ============================

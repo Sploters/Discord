@@ -1,0 +1,16 @@
+TESTE DA TRANSMISSAO A 120 FPS - LocalCord
+
+Antes: o servidor do LocalCord (Umbrel) precisa estar atualizado com a versao
+deste teste (sh deploy/umbrel.sh), porque ele abre as portas UDP 40001-40010.
+
+1. Extraia esta pasta (botao direito no .zip > Extrair tudo).
+2. Clique duas vezes em "TESTAR (clique duas vezes).bat".
+   Se o Windows mostrar "O Windows protegeu o computador", clique em
+   "Mais informacoes" > "Executar assim mesmo" (o programa nao e assinado).
+3. Siga as instrucoes da janela: gerar o codigo no LocalCord, colar,
+   deixar a animacao na esquerda e o LocalCord na direita, Enter.
+4. Mande para o Claude o resultado.txt e o resultado do LocalCord.
+
+O programa captura a tela, comprime o video na placa de video e envia para
+o seu servidor do LocalCord por 1 minuto. Nao instala nada e nao envia nada
+para fora do seu servidor.

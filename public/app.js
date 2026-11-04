@@ -1,3 +1,4 @@
+import { nativeEnded } from './nativetest.js';
 import { h, icon, avatar, fsVideo, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyEmoji, isImageUrl, SHORT, inviteCodes, callCodes, stripInvites, inviteText, parsePos, framePos, initials } from './util.js';
 import { S, api, tryApi, user, guild, channelById, member, nameOf, roleColor, can, perms, PERM, dmPeer, relType, toast, modal, confirmBox, promptBox, menu, popout, emojiPicker, lightbox, closeFloating, beep, notify, notifPolicy, channelMuted, desktop, applyTheme, emojiUrl, allEmojis, savePrefs, relite } from './state.js';
 import { Voice, SCREEN_PRESETS, VOICE_BITRATES } from './voice.js';
@@ -209,6 +210,7 @@ function onEvent(t, d) {
     case 'PONG': wsPings.get(d.n)?.(); break;
     case 'SFU_NEW_PRODUCER': voice.onSfuProducer(d); break;
     case 'SFU_CONSUMER_CLOSED': voice.onSfuConsumerClosed(d); break;
+    case 'NATIVE_SCREEN_END': nativeEnded(d); break;
     case 'TYPING': {
       let m = S.typing.get(d.channel_id); if (!m) S.typing.set(d.channel_id, m = new Map());
       m.set(d.user_id, Date.now() + 8000); renderTyping(); previewTyping(); setTimeout(() => { renderTyping(); previewTyping(); }, 8100); break;

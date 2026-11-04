@@ -108,6 +108,36 @@ export async function sfuAttachRtp(cid, uid) {
   return { port: t.tuple.localPort, ssrc, payloadType: 101, close: () => { try { p.close(); } catch { } try { t.close(); } catch { } } };
 }
 
+// Transmissão nativa (teste de 120 FPS): um programa no PC captura a tela, comprime em H.264 na placa de vídeo e
+// manda RTP puro (UDP) para esta porta. Aparece na sala como a transmissão de tela da pessoa.
+// Porta(s): RTC_NATIVE_PORTS (padrão 40001-40010, UDP), anunciadas no mesmo IP do SFU. comedia: o servidor aprende o
+// endereço de quem enviar o primeiro pacote (só quem tem o código sabe a porta e o ssrc; numa VPN isso basta para o teste).
+const NATIVE_PORTS = (() => { const [a, b] = String(process.env.RTC_NATIVE_PORTS || '40001-40010').split('-').map(Number); return { min: a || 40001, max: b || a || 40010 }; })();
+function nativeListen() {
+  if (process.env.RTC_ANNOUNCED_IP) return { protocol: 'udp', ip: '0.0.0.0', announcedAddress: process.env.RTC_ANNOUNCED_IP.split(',')[0].trim(), portRange: NATIVE_PORTS };
+  return { protocol: 'udp', ip: '0.0.0.0', portRange: NATIVE_PORTS };
+}
+export const NATIVE_PT = 102;
+export async function sfuAttachNative(cid, uid) {
+  const r = rooms.get(cid), peer = r?.peers.get(uid);
+  if (!peer) throw new Error('fora da sala');
+  const t = await r.router.createPlainTransport({ listenInfo: nativeListen(), rtcpMux: true, comedia: true, enableSctp: false });
+  const ssrc = 1000000 + Math.floor(Math.random() * 1e8);
+  let p;
+  try {
+    p = await t.produce({ kind: 'video', appData: { source: 'screen', native: true }, rtpParameters: {
+      codecs: [{ mimeType: 'video/H264', payloadType: NATIVE_PT, clockRate: 90000,
+        parameters: { 'packetization-mode': 1, 'profile-level-id': '42e01f', 'level-asymmetry-allowed': 1 },
+        rtcpFeedback: [{ type: 'nack' }, { type: 'nack', parameter: 'pli' }, { type: 'ccm', parameter: 'fir' }] }],
+      encodings: [{ ssrc }] } });
+  } catch (e) { t.close(); throw e; }
+  peer.transports.set(t.id, t);
+  t.observer.on('close', () => peer.transports.delete(t.id));
+  registerProducer(r, peer, 'screen', p);
+  return { transport: t, producer: p, port: t.tuple.localPort, ip: t.tuple.localAddress, ssrc, payloadType: NATIVE_PT,
+    close: () => { try { p.close(); } catch { } try { t.close(); } catch { } } };
+}
+
 // Requisições do cliente (via gateway). Retorna o payload da resposta ou lança erro.
 export async function sfuRequest(cid, uid, op, d) {
   const r = rooms.get(cid), peer = r?.peers.get(uid);
@@ -115,7 +145,7 @@ export async function sfuRequest(cid, uid, op, d) {
   const transport = () => { const t = peer.transports.get(String(d.transport_id)); if (!t) throw new Error('transporte inválido'); return t; };
   switch (op) {
     case 'transport': {
-      if (peer.transports.size >= 2) throw new Error('transportes demais');
+      if ([...peer.transports.values()].filter(t => t.appData?.dir).length >= 2) throw new Error('transportes demais');
       const t = await r.router.createWebRtcTransport({ webRtcServer, enableUdp: true, enableTcp: true, preferUdp: true, initialAvailableOutgoingBitrate: 8_000_000, appData: { dir: d.dir === 'send' ? 'send' : 'recv' } });
       if (t.appData.dir === 'recv' && MIN_OUT_KBPS > 0) await t.setMinOutgoingBitrate(MIN_OUT_KBPS * 1000).catch(() => { });
       peer.transports.set(t.id, t);

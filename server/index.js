@@ -9,7 +9,7 @@ import https from 'node:https';
 import { execFileSync } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 import { db, all, get, run, newId, UPLOAD_DIR, DATA_DIR } from './db.js';
-import { startSfu, sfuEnabled, sfuJoin, sfuLeave, sfuRequest, sfuAttachRtp, sfuLoad } from './sfu.js';
+import { startSfu, sfuEnabled, sfuJoin, sfuLeave, sfuRequest, sfuAttachRtp, sfuAttachNative, sfuLoad } from './sfu.js';
 import { getAdapter, listAdapters } from './integrations/index.js';
 import { createActivityService } from './activity.js';
 import { createCallInvites } from './callinvites.js';
@@ -1040,6 +1040,36 @@ app.get('/files/:f/:name?', (req, res) => {
   if (!SAFE_INLINE.test(mime) || req.query.download) res.attachment(req.params.name || f);
   res.sendFile(f, { root: UPLOAD_DIR, dotfiles: 'allow' });
 });
+
+// ---- transmissão nativa (teste de 120 FPS): gera um código com IP, porta UDP e ssrc; o programa de captura no PC
+// manda o H.264 para lá. O app de quem gerou assiste a própria transmissão pelo servidor e mede os FPS. ----
+const natives = new Map(); // uid -> sessão
+function endNative(uid, why) {
+  const n = natives.get(uid); if (!n) return;
+  natives.delete(uid); clearInterval(n.timer); n.close();
+  dispatch([uid], 'NATIVE_SCREEN_END', { producer_id: n.producer.id, reason: why });
+}
+app.post('/api/native-screen', auth, (req, res) => (async () => {
+  const cid = currentVoice(req.uid);
+  if (!cid) return bad(res, 'Entre numa sala de voz primeiro');
+  if (!sfuEnabled()) return bad(res, 'O servidor de voz (SFU) está desligado');
+  endNative(req.uid, 'replaced');
+  const n = await sfuAttachNative(cid, req.uid);
+  const host = process.env.RTC_ANNOUNCED_IP ? process.env.RTC_ANNOUNCED_IP.split(',')[0].trim() : (n.ip && n.ip !== '0.0.0.0' ? n.ip : req.hostname);
+  n.started = 0; n.last = 0; n.bytes = 0; n.t0 = Date.now();
+  n.timer = setInterval(async () => {
+    if (n.producer.closed) return endNative(req.uid, 'closed');
+    const st = await n.producer.getStats().catch(() => []), b = st.reduce((x, e) => x + (e.byteCount || 0), 0), now = Date.now();
+    if (b > n.bytes) { n.bytes = b; n.last = now; if (!n.started) n.started = now; }
+    if (!n.started && now - n.t0 > 10 * 60_000) endNative(req.uid, 'timeout');
+    else if (n.started && now - n.last > 6000) endNative(req.uid, 'stopped');
+    else if (now - n.t0 > 30 * 60_000) endNative(req.uid, 'limit');
+  }, 2000);
+  natives.set(req.uid, n);
+  n.producer.observer.on('close', () => { if (natives.get(req.uid) === n) endNative(req.uid, 'closed'); });
+  res.json({ code: `LC120 ${host} ${n.port} ${n.ssrc} ${n.payloadType}`, producer_id: n.producer.id, host, port: n.port, ssrc: n.ssrc });
+})().catch(e => { console.error('native-screen', e); if (!res.headersSent) bad(res, 'Não consegui preparar a transmissão: ' + e.message, 500); }));
+app.post('/api/native-screen/stop', auth, (req, res) => { endNative(req.uid, 'stopped'); res.json({ ok: true }); });
 
 app.get('/api/sfu/load', auth, (req, res) => { // só donos de servidor: carga do worker do mediasoup
   if (!get('SELECT 1 AS x FROM guilds WHERE owner_id=?', req.uid)) return bad(res, 'Sem permissão', 403);
