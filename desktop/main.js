@@ -152,7 +152,10 @@ function registerHotkeys() {
   globalShortcut.unregisterAll();
   if (!cfg.globalHotkeys) return;
   const send = (k) => win?.webContents.send('hotkey', k);
-  const reg = (acc, k) => { try { if (acc && !globalShortcut.register(acc, () => send(k))) log('atalho em uso por outro app:', acc); } catch (e) { log('atalho inválido', acc, e.message); } };
+  // atalhos salvos por versões antigas com o nome da tecla (ex.: CommandOrControl+Backslash): troca pelo caractere
+  const KEYS = { Backslash: '\\', IntlBackslash: '\\', Slash: '/', IntlRo: '/', Period: '.', Comma: ',', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Minus: '-', Equal: '=', Backquote: '`' };
+  const fix = (acc) => String(acc || '').split('+').map(p => KEYS[p] || p).join('+');
+  const reg = (acc, k) => { acc = fix(acc); try { if (acc && !globalShortcut.register(acc, () => send(k))) log('atalho em uso por outro app:', acc); } catch (e) { log('atalho inválido', acc, e.message); } };
   reg(cfg.hotkeyMute, 'mute'); reg(cfg.hotkeyDeafen, 'deafen'); reg(cfg.hotkeyClip, 'clip');
 }
 function setBadge(n) {

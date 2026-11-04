@@ -48,9 +48,13 @@ export function comboFromEvent(e) {
   return [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.code].filter(Boolean).join('+');
 }
 export const comboLabel = (c) => !c ? '—' : c.split('+').map(p => p.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Arrow/, 'Seta ').replace('Backquote', '`').replace('Space', 'Espaço')).join(' + ');
+// nome da tecla (e.code) -> nome que o Electron aceita nos atalhos globais (pontuação vira o próprio caractere;
+// "Backslash" e companhia davam "atalho inválido" e o atalho nunca funcionava)
+const ACCEL_KEYS = { Backslash: '\\', IntlBackslash: '\\', Slash: '/', IntlRo: '/', Period: '.', Comma: ',', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']',
+  Minus: '-', Equal: '=', Backquote: '`', NumpadAdd: 'numadd', NumpadSubtract: 'numsub', NumpadMultiply: 'nummult', NumpadDivide: 'numdiv', NumpadDecimal: 'numdec', NumpadEnter: 'Enter' };
 export function comboToAccel(c) {
   if (!c) return '';
-  return c.split('+').map(p => p === 'Ctrl' ? 'CommandOrControl' : p.replace(/^Key/, '').replace(/^Digit/, '').replace('Space', 'Space').replace(/^Arrow/, '')).join('+');
+  return c.split('+').map(p => p === 'Ctrl' ? 'CommandOrControl' : ACCEL_KEYS[p] || p.replace(/^Numpad(\d)$/, 'num$1').replace(/^Key/, '').replace(/^Digit/, '').replace(/^Arrow/, '')).join('+');
 }
 export function captureKey(button, current, onSet, { combo = true, label = '' } = {}) {
   const paint = (c) => (button.textContent = `${label}${comboLabel(c)}`);
