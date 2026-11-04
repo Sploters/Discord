@@ -153,4 +153,14 @@ captura+placa; o mesmo empacotador RTP envia ao servidor; o app mede. 720p: 120,
 0 perdas. 1080p: ~118 de mediana (decodificação por software do navegador de teste, sem GPU). "Exibidos" no navegador
 de teste fica em 35-50 (sem GPU); não vale como medida.
 
-Falta: rodar o pacote no PC de 143 Hz (a parte Windows — captura, conversão e codificador — só foi compilada, não executada).
+### Primeira execução no PC de 143 Hz (RTX 3080, Windows 11 26200) — lado de quem envia
+| Medida | Valor |
+|---|---|
+| Captura (WGC, intervalo 0) | 144,0 fps |
+| Enviados (limitado a 120) | média 120,0, mediana 120, pior segundo 119 (60 s) |
+| Codificador | NVIDIA H.264 Encoder MFT, 1920×1080, 6,62 ms mediano por quadro (p95 7,05) |
+| Descartados por codificador ocupado | 0 |
+| Banda | 16,2 Mbps (CBR pedido: 16) |
+| Quadros-chave / NACK / PLI | 31 (GOP 2 s) / 0 / 0 |
+Sem erros de conversão nem de entrada. A parte Windows funcionou na primeira execução. Falta o lado de quem assiste
+(resultado do app) para fechar a medida fim a fim.
