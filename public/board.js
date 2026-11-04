@@ -51,6 +51,7 @@ export function boardCanvas(id, { interactive = false, video = null } = {}) {
     if (canvas.width !== Math.round(cw * dpr)) { canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr); }
     const g = canvas.getContext('2d'), a = area(), vw = zoomable ? zoomOf(id) : { z: 1, x: 0, y: 0 };
     g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, canvas.width, canvas.height);
+    canvas.classList.toggle('empty', !(boards.get(id) || []).length); // app desktop: sem desenho, a camada some de cima do vídeo
     g.setTransform(dpr * vw.z, 0, 0, dpr * vw.z, dpr * vw.x, dpr * vw.y);
     g.lineCap = g.lineJoin = 'round';
     for (const s of boards.get(id) || []) {
