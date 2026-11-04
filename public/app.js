@@ -1053,7 +1053,8 @@ function shareThemePicker(ch) {
   const tile = (t) => h('button.tpick' + (t === cur ? '.cur' : ''), { title: `Enviar "${t.name}"`, onclick: () => send(t) }, h('i', { style: { background: gradientCss(t) } }), h('span', t.name), t === cur && h('small', 'em uso'));
   const body = h('div.tpicker',
     h('h5', 'Seus temas'), mine.length ? h('div.tpgrid', mine.map(tile)) : h('p.tpempty', 'Você ainda não criou temas. Crie em Configurações → Aparência → Criar tema.'),
-    h('h5', 'Temas prontos'), h('div.tpgrid', presets.map(tile)));
+    h('h5', 'Temas prontos'), h('div.tpgrid', presets.filter(t => !t.group).map(tile)),
+    h('h5', 'Agentes do Valorant'), h('div.tpgrid', presets.filter(t => t.group === 'valorant').map(tile)));
   const dlg = modal('Compartilhar tema', 'Quem receber vê o bloco do tema e pode usá-lo com um clique.', body, [{ label: 'Cancelar', cls: 'link' }], { width: '540px' });
 }
 function plusMenu(e, ch, fileIn) {

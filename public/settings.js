@@ -275,12 +275,15 @@ function privacyPage(reg) {
 
 // ============================ Aparência / acessibilidade ============================
 function appearancePage() {
-  const th = h('div.cards'), gr = h('div.cards'), mine = h('div.cards');
+  const th = h('div.cards'), gr = h('div.cards'), val = h('div.cards'), mine = h('div.cards');
   const pick = (k) => { S.prefs.theme = k; save(); applyTheme(); drawTh(); };
   const gcard = (k, t, extra) => h('div.ncard.tgrad' + (t.base === 'light' ? '.light' : '') + (S.prefs.theme === k ? '.on' : ''), { style: { background: gradientCss(t) }, onclick: () => pick(k) }, extra, h('b', t.name));
   const drawTh = () => {
     th.replaceChildren(...Object.entries(SOLID_THEMES).map(([k, l]) => h('div.ncard.theme-' + k + (S.prefs.theme === k ? '.on' : ''), { onclick: () => pick(k) }, h('b', l))));
-    gr.replaceChildren(...Object.entries(GRADIENT_THEMES).map(([k, t]) => gcard('g:' + k, t, h('div.tact', h('button', { title: 'Personalizar uma cópia', onclick: (e) => { e.stopPropagation(); openThemeEditor({ ...t, name: t.name + ' (cópia)' }, { onExit: drawTh }); } }, icon('edit', 14))))));
+    const preset = ([k, t]) => gcard('g:' + k, t, h('div.tact', h('button', { title: 'Personalizar uma cópia', onclick: (e) => { e.stopPropagation(); openThemeEditor({ ...t, name: t.name + ' (cópia)' }, { onExit: drawTh }); } }, icon('edit', 14))));
+    const all = Object.entries(GRADIENT_THEMES);
+    gr.replaceChildren(...all.filter(([, t]) => !t.group).map(preset));
+    val.replaceChildren(...all.filter(([, t]) => t.group === 'valorant').map(preset));
     mine.replaceChildren(...(S.prefs.customThemes || []).map(t => gcard('c:' + t.id, t, h('div.tact',
       h('button', { title: 'Copiar código para compartilhar', onclick: (e) => { e.stopPropagation(); shareTheme(t); } }, icon('link', 14)),
       h('button', { title: 'Editar', onclick: (e) => { e.stopPropagation(); openThemeEditor(t, { onExit: drawTh }); } }, icon('edit', 14)),
@@ -292,6 +295,7 @@ function appearancePage() {
   const set = (k) => (v) => { S.prefs[k] = v; save(); applyTheme(); };
   return h('div', h('h2', 'Aparência'), section('Tema'), card(th),
     section('Temas em gradiente'), card(gr, hint('Passe o mouse num tema e clique no lápis para criar uma versão sua a partir dele.')),
+    section('Agentes do Valorant'), card(val, hint('Um tema para cada agente, nas cores dele.')),
     section('Seus temas'), card(mine, hint('Crie um gradiente com até 5 cores e compartilhe: o código colado no chat vira um cartão com o botão "Usar tema".')),
     section('Cor de destaque'), card(swatches(S.prefs.accent, (c) => { S.prefs.accent = c; save(); applyTheme(); })),
     section('Fonte'), card(h('label.f', 'Família da fonte', seg({ default: 'Padrão', rounded: 'Arredondada', serif: 'Serifada', mono: 'Monoespaçada', dyslexia: 'Legível (dislexia)' }, S.prefs.fontFamily, set('fontFamily'))),
