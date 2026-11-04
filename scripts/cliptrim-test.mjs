@@ -25,7 +25,9 @@ try {
   await P.evaluate(async () => {
     const { createBuffer } = await window.__lc.import('clipbuf.js');
     const c = document.createElement('canvas'); c.width = 640; c.height = 360; const x = c.getContext('2d'); const t0 = performance.now();
-    const iv = setInterval(() => { const s = (performance.now() - t0) / 1000; x.fillStyle = `hsl(${(s * 40) % 360},60%,35%)`; x.fillRect(0, 0, 640, 360); x.fillStyle = '#fff'; x.font = 'bold 64px sans-serif'; x.fillText(s.toFixed(1) + ' s', 40, 120); }, 33);
+    // o vídeo só começa a mudar 0,8 s depois: o áudio chega antes e o MediaRecorder numera o vídeo como trilha 2 (caso real que quebrava o corte)
+    let go = false; setTimeout(() => { go = true; }, 800);
+    const iv = setInterval(() => { if (!go) return; const s = (performance.now() - t0) / 1000; x.fillStyle = `hsl(${(s * 40) % 360},60%,35%)`; x.fillRect(0, 0, 640, 360); x.fillStyle = '#fff'; x.font = 'bold 64px sans-serif'; x.fillText(s.toFixed(1) + ' s', 40, 120); }, 33);
     const ac = new AudioContext(), o = ac.createOscillator(), d = ac.createMediaStreamDestination(); o.connect(d); o.start();
     const st = c.captureStream(30); st.addTrack(d.stream.getAudioTracks()[0]);
     const b = createBuffer(st, null, { bps: 1_500_000 });
@@ -45,10 +47,12 @@ try {
     return { dur: Math.round(dur * 10) / 10, ended, frames, seek };
   }, expr);
   const o = await probe('window.__orig');
-  ok(o.dur >= 11 && o.dur <= 13.5 && o.ended, 'original: ~12 s e toca até o fim', o);
+  ok(o.dur >= 10.5 && o.dur <= 13.5 && o.ended, 'original: ~12 s e toca até o fim', o);
   const t1 = await P.evaluate(async () => { const { trimWebm, keyframeTimes } = await window.__lc.import('webm.js'); const r = trimWebm(window.__orig, 4200, 9000); window.__t1 = r.bytes; return { s: r.startMs, e: r.endMs, size: r.bytes.length, orig: window.__orig.length, keys: keyframeTimes(window.__orig).length }; });
   ok(t1.s <= 4200 && t1.s >= 3000 && t1.e === 9000, 'corte 4,2–9 s: início no quadro-chave anterior (até ~1 s antes), fim exato', t1);
-  ok(t1.keys >= 10, 'clipe tem quadro-chave a cada ~1 s', t1.keys);
+  ok(t1.keys >= 10 && t1.keys <= 14, 'clipe tem quadro-chave a cada ~1 s (só os do vídeo, não os do áudio)', t1.keys);
+  const k1 = await P.evaluate(async () => { const W = await window.__lc.import('webm.js'); const f = (b) => { const sp = W.splitWebm(b), vt = W.videoTrack(sp.header); return { vt, key: W.parseCluster(sp.clusters[0], vt).keyStart }; }; return { orig: f(window.__orig), cortado: f(window.__t1) }; });
+  ok(k1.orig.key && k1.cortado.key, 'original e cortado começam num quadro-chave do vídeo (com a trilha certa)', k1);
   ok(t1.size < t1.orig * 0.65, 'arquivo cortado é menor (sem recomprimir)', { cortado: t1.size, original: t1.orig });
   const p1 = await probe('window.__t1');
   const want = (9000 - t1.s) / 1000;

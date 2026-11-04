@@ -96,7 +96,18 @@ try {
   ok(fs1.box && fs1.w === fs1.W, 'tela cheia é da caixa e o vídeo ocupa a tela toda', fs1);
   if (process.env.SHOTS) await A.screenshot({ path: `${OUT}/02b-tela-cheia.png` });
   await A.evaluate(() => document.exitFullscreen()); await sleep(400);
-  await A.evaluate(() => [...document.querySelectorAll('.modal .btn')].find(x => x.textContent === 'Fechar').click()); await sleep(300);
+  // sem rodapé (.mf), cabe na tela com folga embaixo, e o lápis renomeia ali mesmo
+  const lay = await A.evaluate(() => { const m = document.querySelector('.modal.clipmodal'), r = m.getBoundingClientRect(), mb = m.querySelector('.mb'); return { mf: !!m.querySelector('.mf'), fits: r.bottom <= innerHeight - 8, scroll: mb.scrollHeight > mb.clientHeight + 1, pad: parseFloat(getComputedStyle(mb).paddingBottom) }; });
+  ok(!lay.mf && lay.fits && !lay.scroll && lay.pad >= 20, 'player sem rodapé, cabe na tela sem rolar e com margem embaixo', lay);
+  if (process.env.SHOTS) await A.screenshot({ path: `${OUT}/02c-player.png` });
+  await A.evaluate(() => document.querySelector('.clipplayer .pedit').click()); await sleep(150);
+  await A.keyboard.down('Control'); await A.keyboard.press('KeyA'); await A.keyboard.up('Control');
+  await A.keyboard.type('Jogada renomeada'); await A.keyboard.press('Enter');
+  await A.waitForFunction(() => document.querySelector('.clipplayer .pttl')?.textContent === 'Jogada renomeada', { timeout: 4000 }).catch(() => { });
+  const rn = await A.evaluate(() => ({ t: document.querySelector('.clipplayer .pttl')?.textContent, input: !!document.querySelector('.clipplayer .pttlin'), card: [...document.querySelectorAll('#clipsview .ctitle')].some(x => x.textContent === 'Jogada renomeada') }));
+  ok(rn.t === 'Jogada renomeada' && !rn.input && rn.card, 'lápis no título renomeia no próprio player (e a galeria atualiza)', rn);
+  await A.evaluate(() => document.querySelector('.modal.clipmodal .inv-x').click()); await sleep(300);
+  ok(!(await A.evaluate(() => !!document.querySelector('.clipplayer'))), 'X do topo fecha o player');
   // favoritar e aba Favoritos
   await A.evaluate(() => document.querySelectorAll('#clipsview .clipcard .cbtns button')[0].click()); await sleep(500);
   await A.evaluate(() => [...document.querySelectorAll('#clipsview .ctab')].find(x => x.textContent === 'Favoritos').click());

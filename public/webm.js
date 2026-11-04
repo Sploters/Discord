@@ -22,8 +22,36 @@ const uint = (b, p, n) => { let v = 0; for (let i = 0; i < n; i++) v = v * 256 +
 const size8 = (v) => { const o = new Uint8Array(8); o[0] = 0x01; for (let i = 7; i >= 1; i--) { o[i] = v % 256; v = Math.floor(v / 256); } return o; };
 const u64 = (v) => { const o = new Uint8Array(8); for (let i = 7; i >= 0; i--) { o[i] = v % 256; v = Math.floor(v / 256); } return o; };
 
-// { ts, body (depois do Timecode), keyStart } de um cluster
-export function parseCluster(c) {
+// número da trilha de vídeo no cabeçalho (Tracks > TrackEntry com TrackType 1). O MediaRecorder numera as trilhas na ordem
+// em que o primeiro quadro de cada uma chega: se o áudio chega antes, o vídeo vira a trilha 2. Sem cabeçalho legível: 1.
+export function videoTrack(h) {
+  if (!h) return 1;
+  for (let i = 0; i < h.length - 4; i++) {
+    if (h[i] !== 0x16 || h[i + 1] !== 0x54 || h[i + 2] !== 0xae || h[i + 3] !== 0x6b) continue;
+    const s = readSize(h, i + 4); if (!s) return 1;
+    const end = s.unknown ? h.length : Math.min(h.length, i + 4 + s.len + s.value);
+    for (let q = i + 4 + s.len; q < end;) {
+      const id = readId(h, q); const z = id && readSize(h, q + id.len); if (!z || z.unknown) break;
+      const d = q + id.len + z.len;
+      if (id.id === 0xae) {
+        let num = 0, type = 0;
+        for (let r = d, e = Math.min(end, d + z.value); r < e;) {
+          const cid = readId(h, r); const cs = cid && readSize(h, r + cid.len); if (!cs || cs.unknown) break;
+          const cd = r + cid.len + cs.len;
+          if (cid.id === 0xd7) num = uint(h, cd, cs.value); else if (cid.id === 0x83) type = uint(h, cd, cs.value);
+          r = cd + cs.value;
+        }
+        if (type === 1 && num) return num;
+      }
+      q = d + z.value;
+    }
+    return 1;
+  }
+  return 1;
+}
+
+// { ts, body (depois do Timecode), keyStart } de um cluster. vt: trilha de vídeo (videoTrack do cabeçalho)
+export function parseCluster(c, vt = 1) {
   const sz = readSize(c, 4); if (!sz) return null;
   let p = 4 + sz.len;
   const end = sz.unknown ? c.length : Math.min(c.length, p + sz.value);
@@ -31,7 +59,7 @@ export function parseCluster(c) {
   const ts = readSize(c, p + 1); if (!ts) return null;
   const tsVal = uint(c, p + 1 + ts.len, ts.value);
   const body = p + 1 + ts.len + ts.value;
-  // quadro-chave de vídeo (trilha 1) como primeiro bloco de vídeo do cluster?
+  // o primeiro bloco de vídeo do cluster é um quadro-chave? (os blocos de áudio antes dele não contam)
   let keyStart = false;
   for (let q = body; q < end;) {
     const id = readId(c, q); if (!id) break;
@@ -39,7 +67,7 @@ export function parseCluster(c) {
     const data = q + id.len + s.len;
     if (id.id === 0xa3) {
       const tr = readSize(c, data);
-      if (tr && tr.value === 1) { keyStart = !!(c[data + tr.len + 2] & 0x80); break; }
+      if (tr && tr.value === vt) { keyStart = !!(c[data + tr.len + 2] & 0x80); break; }
     } else if (id.id === 0xa0) { // BlockGroup: o quadro-chave é o que não tem ReferenceBlock (0xFB)
       let track = 0, ref = false;
       for (let r = data, e = data + (s.unknown ? 0 : s.value); r < e;) {
@@ -48,21 +76,33 @@ export function parseCluster(c) {
         if (cid.id === 0xa1) track = readSize(c, cd)?.value; else if (cid.id === 0xfb) ref = true;
         r = cd + cs.value;
       }
-      if (track === 1) { keyStart = !ref; break; }
+      if (track === vt) { keyStart = !ref; break; }
     }
     q = data + (s.unknown ? 0 : s.value);
   }
   return { ts: tsVal, body, end, keyStart };
 }
 
+// fim do último elemento inteiro do cluster: o MediaRecorder entrega pedaços que podem terminar no meio de um bloco
+// (ex.: só o byte 0xA3 do próximo SimpleBlock); um bloco pela metade no fim fazia o arquivo parecer quebrado
+function wholeEnd(c, from, to) {
+  let q = from;
+  while (q < to) {
+    const id = readId(c, q); const s = id && q + id.len < to && readSize(c, q + id.len);
+    if (!s || s.unknown || q + id.len + s.len + s.value > to) break;
+    q += id.len + s.len + s.value;
+  }
+  return q;
+}
+
 // header: bytes antes do 1º cluster. clusters: [Uint8Array] já contíguos (último = o seguinte ao fim, só para dar o tempo final).
 export function buildClip(header, clusters, endTs) {
-  const parsed = clusters.map(parseCluster);
+  const parsed = clusters.map(c => parseCluster(c));
   if (!parsed.length || parsed.some(x => !x)) return null;
   const base = parsed[0].ts, dur = Math.max(1, (endTs ?? parsed[parsed.length - 1].ts + 1000) - base);
   const parts = [withDuration(header, dur)];
   clusters.forEach((c, i) => {
-    const x = parsed[i], rest = c.subarray(x.body, x.end);
+    const x = parsed[i], rest = c.subarray(x.body, wholeEnd(c, x.body, x.end));
     const tc = new Uint8Array(10); tc[0] = 0xe7; tc[1] = 0x88; tc.set(u64(x.ts - base), 2);
     parts.push(Uint8Array.from(CLUSTER_ID), size8(tc.length + rest.length), tc, rest);
   });
@@ -129,7 +169,7 @@ function cleanHeader(h) {
 
 // separa um WebM inteiro em cabeçalho + clusters (anda pelo tamanho; tamanho desconhecido = até o próximo cluster válido)
 export function splitWebm(b) {
-  const cand = findClusters(b).filter(p => parseCluster(b.subarray(p, Math.min(b.length, p + 64))));
+  const cand = findClusters(b).filter(p => parseCluster(b.subarray(p, Math.min(b.length, p + 64)), 0));
   if (!cand.length) return null;
   const clusters = []; let p = cand[0];
   while (p < b.length && isCluster(b, p)) {
@@ -166,7 +206,7 @@ function blocksOf(c, x) {
  */
 export function trimWebm(bytes, startMs, endMs) {
   const sp = splitWebm(bytes); if (!sp) return null;
-  const info = sp.clusters.map(parseCluster);
+  const vt = videoTrack(sp.header), info = sp.clusters.map(c => parseCluster(c, vt));
   if (!info.length || info.some(x => !x)) return null;
   const base = info[0].ts, rel = (i) => info[i].ts - base;
   let pick = -1;
@@ -195,6 +235,6 @@ export function trimWebm(bytes, startMs, endMs) {
 // tempos (relativos ao início) dos clusters que começam com quadro-chave: onde um corte pode começar
 export function keyframeTimes(bytes) {
   const sp = splitWebm(bytes); if (!sp) return [];
-  const info = sp.clusters.map(parseCluster); if (!info[0]) return [];
+  const vt = videoTrack(sp.header), info = sp.clusters.map(c => parseCluster(c, vt)); if (!info[0]) return [];
   return info.filter(x => x && x.keyStart).map(x => x.ts - info[0].ts);
 }

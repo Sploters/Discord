@@ -199,6 +199,9 @@ export function fsVideo(attrs = {}, cls = '') {
   box.append(btn);
   v.addEventListener('dblclick', (e) => { e.preventDefault(); toggle(); });
   v.addEventListener('keydown', (e) => { if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggle(); } });
+  // tocando: sem cantos arredondados no vídeo (a máscara dos cantos obriga a recompor a página a cada quadro; travava em PC fraco)
+  const on = () => box.classList.toggle('playing', !v.paused);
+  v.addEventListener('play', on); v.addEventListener('pause', on); v.addEventListener('ended', on);
   box.video = v;
   return box;
 }

@@ -1,5 +1,5 @@
 // Buffer circular de uma transmissão: MediaRecorder em WebM, ~65s, e corte dos últimos N segundos. Sem imports de UI (testável).
-import { findClusters, parseCluster, buildClip } from './webm.js';
+import { findClusters, parseCluster, buildClip, videoTrack } from './webm.js';
 
 const KEEP = 65000;
 
@@ -52,7 +52,7 @@ export function createBuffer(stream, audio, opts = {}) {
     };
     const all = new Uint8Array(await slice(base, buf.size).arrayBuffer());
     const list = cl.map((c, i) => all.subarray(c.off - base, (cl[i + 1]?.off ?? buf.size) - base));
-    const info = list.map(parseCluster), last = info[info.length - 1];
+    const vt = videoTrack(buf.header), info = list.map(c => parseCluster(c, vt)), last = info[info.length - 1];
     if (!last) return null;
     const endTs = last.ts + Math.max(0, buf.chunks[buf.chunks.length - 1].t - cl[cl.length - 1].t); // tempo de mídia ao fim do que foi gravado
     let pick = -1;

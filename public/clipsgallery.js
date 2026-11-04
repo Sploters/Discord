@@ -78,25 +78,52 @@ async function remove(c) {
 }
 function upsert(c) { const i = st.clips.findIndex(x => x.id === c.id); if (i >= 0) { st.clips[i] = c; draw(); } }
 
-// player: vídeo grande, anterior/próximo (botões e setas), Esc fecha
+// player: vídeo grande, anterior/próximo (botões e setas), Esc fecha; lápis ao lado do nome renomeia ali mesmo
 function player(i) {
   if (i < 0 || !st.clips[i]) return;
+  // a prévia do cartão (mouse em cima) continuaria tocando atrás do player: dois vídeos decodificando pesam em máquina fraca
+  st.root?.querySelectorAll('.clipcard video').forEach(x => x.pause());
   let cur = i;
   const vbox = fsVideo({ autoplay: true, preload: 'auto' }, '.pvid'), v = vbox.video;
   const title = h('b.pttl'), meta = h('div.pmeta'), prev = h('button.pnav.prev', { title: 'Anterior (←)', onclick: () => show(cur - 1) }, icon('chevl', 28)), next = h('button.pnav.next', { title: 'Próximo (→)', onclick: () => show(cur + 1) }, icon('chevr', 28));
+  const pen = h('button.ibtn.pedit', { title: 'Renomear', onclick: () => editTitle() }, icon('edit', 16));
+  const trow = h('div.ptrow', title, pen);
   const dl = h('a.btn.grey', { download: '' }, icon('dl', 16), 'Baixar');
-  const box = h('div.clipplayer', h('div.pstage', prev, vbox, next), h('div.pbar', h('div.ptxt', title, meta), dl));
+  const box = h('div.clipplayer', h('div.pstage', prev, vbox, next), h('div.pbar', h('div.ptxt', trow, meta), dl));
   const show = (k) => {
     if (k < 0 || k >= st.clips.length) return; cur = k; const c = st.clips[k];
+    if (trow.querySelector('input')) trow.replaceChildren(title, pen);
     v.poster = thumbUrl(c.url) || ''; v.src = c.url; v.play().catch(() => { });
-    title.textContent = c.title; meta.textContent = `${c.streamer ? 'de ' + who(c.streamer) + ' · ' : ''}clipado por ${who(c.author)} · ${ago(c.created_at)} · ${c.secs}s${c.has_audio ? '' : ' · sem áudio'}`;
+    title.textContent = c.title; title.title = c.title; pen.hidden = !canEdit(c);
+    meta.textContent = `${c.streamer ? 'de ' + who(c.streamer) + ' · ' : ''}clipado por ${who(c.author)} · ${ago(c.created_at)} · ${c.secs}s${c.has_audio ? '' : ' · sem áudio'}`;
     dl.href = c.url; dl.download = fileName(c);
     prev.disabled = k === 0; next.disabled = k === st.clips.length - 1;
   };
-  const keys = (e) => { if (e.key === 'ArrowLeft') show(cur - 1); if (e.key === 'ArrowRight') show(cur + 1); };
+  // renomear no lugar: Enter salva, Esc ou clicar fora cancela/salva
+  const editTitle = () => {
+    const c = st.clips[cur]; if (!c || !canEdit(c) || trow.querySelector('input')) return;
+    const inp = h('input.pttlin', { value: c.title, maxLength: 100 });
+    let done = false;
+    const finish = async (save) => {
+      if (done) return; done = true;
+      const t = inp.value.trim();
+      if (save && t && t !== c.title) {
+        const r = await tryApi('PATCH', `/clips/${c.id}`, { title: t });
+        if (r) { upsert({ ...r, fav: c.fav }); if (st.clips[cur]?.id === c.id) title.textContent = title.title = r.title; }
+      }
+      if (inp.isConnected) trow.replaceChildren(title, pen);
+    };
+    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') finish(true); if (e.key === 'Escape') { e.preventDefault(); finish(false); } });
+    inp.addEventListener('blur', () => finish(true));
+    trow.replaceChildren(inp); inp.focus(); inp.select();
+  };
+  const keys = (e) => { if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return; if (e.key === 'ArrowLeft') show(cur - 1); if (e.key === 'ArrowRight') show(cur + 1); };
   addEventListener('keydown', keys); queueMicrotask(() => whenGone(box, () => removeEventListener('keydown', keys)));
-  modal('Clipe', null, box, [{ label: 'Fechar', cls: 'grey' }], { width: 'min(1100px, 94vw)' });
-  box.closest('.modal')?.classList.add('clipmodal');
+  const dlg = modal('Clipe', null, box, [], { width: 'min(1100px, 94vw)' });
+  const md = dlg.el.querySelector('.modal');
+  md?.classList.add('clipmodal');
+  md?.querySelector('.mf')?.remove(); // sem rodapé: fechar fica no X do topo (e clicando fora)
+  md?.querySelector('.mh')?.append(h('button.inv-x', { title: 'Fechar', onclick: dlg.close }, icon('x', 20)));
   show(cur);
 }
 
