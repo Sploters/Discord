@@ -1,6 +1,5 @@
-// Transmissão nativa (Spike B) sem Windows: ffmpeg gera H.264 a 120 fps (no lugar da captura + placa de vídeo), o
-// programa de teste (spikes/native-stream, compilado para Linux) empacota em RTP e manda para o PlainTransport do
-// servidor; o app (navegador) abre o teste em Configurações > Transmissão, gera o código e mede os FPS recebidos.
+// Transmissão nativa sem Windows: o programa (native/lc-stream, compilado para Linux) usa um ffmpeg no lugar da
+// captura + placa de vídeo, empacota em RTP, criptografa (SRTP) e manda para o PlainTransport do servidor; o app (navegador) abre o teste em Configurações > Transmissão, gera o código e mede os FPS recebidos.
 // Uso: node scripts/native-test.mjs   (H=720|1080, FPS=120, SECS=12; SHOTS=1 salva capturas em .testshots/native)
 import puppeteer from 'puppeteer-core';
 import { spawn, execFileSync } from 'node:child_process';
@@ -10,8 +9,8 @@ const EXE = process.env.BROWSER || 'C:/Program Files (x86)/Microsoft/Edge/Applic
 const H = +(process.env.H || 720), W = Math.round(H * 16 / 9), FPS = +(process.env.FPS || 120), SECS = +(process.env.SECS || 12);
 let fails = 0; const ok = (c, m, x) => { console.log((c ? '  ok   ' : '  FAIL ') + m + (x !== undefined ? '  ' + JSON.stringify(x) : '')); if (!c) fails++; };
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-execFileSync('cargo', ['build', '--release', '--quiet'], { cwd: 'spikes/native-stream', stdio: 'inherit' });
-const BIN = 'spikes/native-stream/target/release/transmitir';
+execFileSync('cargo', ['build', '--release', '--quiet'], { cwd: 'native/lc-stream', stdio: 'inherit' });
+const BIN = 'native/lc-stream/target/release/lc-stream';
 fs.rmSync('.testdata13', { recursive: true, force: true }); fs.mkdirSync(OUT, { recursive: true });
 const srv = spawn('node', ['server/index.js'], { env: { ...process.env, PORT, HTTPS: '0', DATA_DIR: './.testdata13', RTC_PORT: '41000', RTC_IPS: '127.0.0.1', RTC_NATIVE_PORTS: '41001-41005' }, stdio: ['ignore', 'pipe', 'inherit'] });
 let srvOut = ''; srv.stdout.on('data', d => (srvOut += d));
@@ -27,7 +26,7 @@ async function page(tok) {
   await p.goto(BASE); await p.waitForSelector('#rail .rail-wrap');
   return p;
 }
-let tx = null, ff = null;
+let tx = null;
 try {
   const a = await reg('alice'), b = await reg('bruno');
   ok((await call(a.tok, 'POST', '/native-screen')).status === 400, 'fora de uma sala de voz: recusado');
@@ -45,21 +44,25 @@ try {
   await A.evaluate(() => [...document.querySelectorAll('.ntest button')].find(x => /Gerar código/.test(x.textContent)).click());
   await A.waitForSelector('.ntcode code', { timeout: 8000 });
   const code = await A.evaluate(() => document.querySelector('.ntcode code').textContent);
-  ok(/^LC120 \S+ 4100[1-5] \d+ 102$/.test(code), 'código gerado com host, porta da faixa nativa, ssrc e payload', code);
+  ok(/^LC120 \S+ 4100[1-5] \d+ 102 [A-Za-z0-9+/]{40} [A-Za-z0-9+/]{40}$/.test(code), 'código gerado com host, porta da faixa nativa, ssrc, payload e as duas chaves SRTP', code.slice(0, 40) + '…');
   // bruno (outra pessoa na sala) é avisado do novo producer de tela
   // fonte: ffmpeg (H.264 baseline com AUD) -> programa de teste -> RTP
-  ff = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', `testsrc2=size=${W}x${H}:rate=${FPS}`, '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-profile:v', 'baseline',
-    '-x264-params', `aud=1:keyint=${FPS * 2}`, '-b:v', H >= 1080 ? '16M' : '8M', '-f', 'h264', '-'], { stdio: ['ignore', 'pipe', 'inherit'] });
-  tx = spawn(BIN, ['--code', code, '--secs', String(SECS), '--fps', String(FPS)], { stdio: ['pipe', 'pipe', 'pipe'] });
-  ff.stdout.pipe(tx.stdin); ff.stdout.on('error', () => { }); tx.stdin.on('error', () => { });
+  // sem a chave: o servidor descarta (SRTP), nada chega
+  const parts = code.split(' '), nokey = parts.slice(0, 5).join(' ');
+  const bad = spawn(BIN, ['--code', nokey, '--secs', '3', '--fps', String(FPS), '--height', String(H)], { stdio: 'ignore' });
+  await new Promise(r => bad.on('exit', r));
+  ok(await A.evaluate(() => !(+document.querySelector('.ntbig b')?.textContent > 0)), 'RTP sem criptografia (sem a chave) é descartado pelo servidor');
+  // a fonte (ffmpeg testsrc, no lugar da captura + placa) roda dentro do programa no Linux
+  tx = spawn(BIN, ['--code', code, '--secs', String(SECS), '--fps', String(FPS), '--height', String(H), '--kbps', H >= 1080 ? '16000' : '8000'], { stdio: ['ignore', 'pipe', 'pipe'] });
   let txOut = '', txErr = ''; tx.stdout.on('data', d => (txOut += d)); tx.stderr.on('data', d => (txErr += d));
   await A.waitForFunction(() => +document.querySelector('.ntbig b')?.textContent > 0, { timeout: 15000 }).catch(() => { });
   if (process.env.SHOTS) { await sleep(3000); await A.screenshot({ path: `${OUT}/01-medindo.png` }); }
   const seen = await B.waitForFunction((uid) => !!window.__lc.voice.peers.get(uid)?.streams?.screen, { timeout: 8000 }, a.id).then(() => true, () => false);
   ok(seen, 'outra pessoa na sala recebe a transmissão nativa como tela');
-  await new Promise(r => tx.on('exit', r)); ff.kill();
+  await new Promise(r => tx.on('exit', r));
   const sum = JSON.parse(txOut.trim().split('\n').filter(l => l.startsWith('{')).pop() || '{}');
   ok(sum.sentFps > FPS * 0.95, `programa enviou ~${FPS} fps`, { sentFps: sum.sentFps, mbps: sum.mbps, nacks: sum.nacks });
+  ok(sum.rtcpBad === 0, 'RTCP do servidor (SRTCP) aberto sem erro de assinatura', sum.rtcpBad);
   await A.waitForFunction(() => !!window.__lcNativeResult, { timeout: 15000 }).catch(() => { });
   const res = await A.evaluate(() => window.__lcNativeResult || '');
   console.log(res.split('\n').map(l => '      ' + l).join('\n'));
@@ -70,4 +73,4 @@ try {
   if (process.env.SHOTS) await A.screenshot({ path: `${OUT}/02-resultado.png` });
   ok((await call(a.tok, 'POST', '/native-screen/stop')).ok, 'parar é idempotente');
 } catch (e) { console.log('ERRO', e); fails++; }
-finally { tx?.kill(); ff?.kill(); await browser.close(); srv.kill(); console.log(fails ? `\n${fails} falha(s)` : '\ntudo ok'); setTimeout(() => process.exit(fails ? 1 : 0), 300); }
+finally { tx?.kill(); await browser.close(); srv.kill(); console.log(fails ? `\n${fails} falha(s)` : '\ntudo ok'); setTimeout(() => process.exit(fails ? 1 : 0), 300); }

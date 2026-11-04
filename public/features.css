@@ -885,3 +885,4 @@ select.gpucompat:focus { outline: 2px solid var(--brand, #5865f2); outline-offse
 .ntest .ntsmall { font-size: 12px; color: var(--text-muted); }
 .ntest .ntres:not(:empty) { margin-top: 12px; padding: 10px 12px; background: var(--bg-tert); border-radius: 8px; font-size: 12px; white-space: pre-wrap; user-select: text; }
 @media (max-width: 640px) { .ntest .ntview { grid-template-columns: 1fr; } .ntest .ntlive { flex-direction: row; flex-wrap: wrap; } }
+.qinfo.ok { color: var(--green, #23a55a); }

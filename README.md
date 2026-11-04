@@ -35,7 +35,7 @@ Tradução: `LIBRETRANSLATE_URL` (+ `LIBRETRANSLATE_KEY`) usa uma instância Lib
 
 Variáveis: `PORT`, `HTTPS_PORT`, `HOST`, `DATA_DIR`, `MAX_UPLOAD_MB`, `OPEN_REGISTRATION=0`, `HTTPS=0`, `TLS_KEY`/`TLS_CERT`, `TLS_SAN=IP:<ip-vpn>`, `TURN_URL`/`TURN_USER`/`TURN_PASS`.
 
-Voz (SFU): `RTC_PORT` (padrão 40000, UDP+TCP — libere no firewall), `RTC_IPS` (IPs onde escutar; padrão: todos os IPv4 das interfaces, então suba a VPN **antes** do servidor), `RTC_ANNOUNCED_IP` (em Docker: o IP da VPN do host), `RTC=0` (desliga o SFU e volta à malha P2P). `RTC_NATIVE_PORTS` (padrão `40001-40010`, UDP): teste experimental da transmissão nativa a 120 FPS (Configurações → Transmissão → Experimental; ver `docs/PASSO0-DIAGNOSTICO-FPS.md`).
+Voz (SFU): `RTC_PORT` (padrão 40000, UDP+TCP — libere no firewall), `RTC_IPS` (IPs onde escutar; padrão: todos os IPv4 das interfaces, então suba a VPN **antes** do servidor), `RTC_ANNOUNCED_IP` (em Docker: o IP da VPN do host), `RTC=0` (desliga o SFU e volta à malha P2P). `RTC_NATIVE_PORTS` (padrão `40001-40010`, UDP): transmissão a 120 FPS pelo app desktop no Windows (escolha 120 fps em "Transmitir tela"; ver `docs/TRANSMISSAO-120FPS.md`).
 
 Docker: `docker build -t localcord . && docker run -d --restart=always -p 3000:3000 -p 3443:3443 -p 40000:40000/udp -p 40000:40000/tcp -v ~/localcord-data:/data -e TLS_SAN=IP:<ip-vpn> -e RTC_ANNOUNCED_IP=<ip-vpn> localcord`
 Atualizar: reconstrua a imagem e recrie o container com o mesmo volume (o banco migra sozinho).

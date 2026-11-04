@@ -144,6 +144,7 @@ export class Voice {
   leave() {
     if (!this.channelId) return;
     playSound('selfLeave');
+    if (this.native) { this.native = null; window.lcDesktop?.nativeStop?.(); } // o servidor fecha a sessão ao sair da sala
     this.send('VOICE_LEAVE', {});
     this.sfuClose();
     for (const uid of [...this.peers.keys()]) this.drop(uid);
@@ -198,6 +199,7 @@ export class Voice {
     if (this.mic) await this.sfuProduce('mic', this.mic.getAudioTracks()[0]);
     if (this.cam) await this.sfuProduce('cam', this.cam.getVideoTracks()[0]);
     if (this.screen) await this.sfuPublishScreen();
+    if (this.screen && this.native && !this.native.pending) { window.lcDesktop?.nativeStop?.(); this.startNative().catch(() => { }); } // sessão anterior morreu com a conexão
     this.onUpdate();
   }
   sfuClose() {
@@ -253,7 +255,7 @@ export class Voice {
   }
   async sfuPublishScreen() {
     const vt = this.screen?.getVideoTracks()[0], at = this.screen?.getAudioTracks()[0];
-    if (vt) await this.sfuProduce('screen', vt);
+    if (vt && !this.native) await this.sfuProduce('screen', vt); // 120 FPS: o vídeo vai pelo programa nativo
     if (at) await this.sfuProduce('screenaudio', at);
   }
   sfuStop(source) {
@@ -279,6 +281,7 @@ export class Voice {
   }
   // lê os números reais do envio: codificador, limite (CPU/rede), fps e kbps de cada camada
   async screenStats() {
+    if (this.native) { const n = this.native.stats; return n ? [{ rid: '0', w: n.w || 0, h: n.h || 0, fps: n.fps || 0, kbps: n.kbps || 0, limit: n.busy > (this.native.busy0 ?? n.busy) ? 'cpu' : 'none', enc: 'Placa de vídeo (nativo' + (this.native.encoder ? ': ' + this.native.encoder : '') + ')' }] : []; }
     const p = this.sfu?.producers.screen; if (!p) return null;
     try {
       const layers = [], now = performance.now(); this._ss ||= new Map();
@@ -319,6 +322,7 @@ export class Voice {
     };
     this._cm = setInterval(async () => {
       if (!this.screen) return clearInterval(this._cm);
+      if (this.native) { this.captureFps = this.native.stats ? this.native.stats.fps : null; hist.length = 0; return; } // quadros que o programa nativo enviou
       let f; try { f = await read(); } catch { return; }
       if (f == null) return;
       const now = performance.now(); hist.push([now, f]); while (hist.length > 1 && now - hist[0][0] > 3500) hist.shift();
@@ -661,12 +665,83 @@ export class Voice {
     const vt = this.screen.getVideoTracks()[0];
     vt.contentHint = opts.hint; vt.onended = () => this.stopLocal('screen');
     this.screenOpts = opts;
+    const nat = await this.wantNative(opts);
+    if (nat) { this.native = { pending: true }; this.previewOnly(vt, true); }
     this.publish('screen', this.screen); playSound('selfStreamStart'); this.watchScreen(); this.meterCapture(); this.meterBlack();
+    if (nat) this.startNative().catch(() => { });
+  }
+
+  // ---------- 120 FPS: vídeo pelo programa nativo do app desktop (captura sem o limite de ~48 fps do Chromium) ----------
+  // O Chromium continua capturando a mesma fonte, mas só para o áudio do sistema e a prévia local (leve: 10 fps, 360p).
+  async nativeCapable() {
+    const d = window.lcDesktop; if (!d?.nativeCapable) return { ok: false, reason: 'Só no app desktop para Windows.' };
+    if (!this._natCap) this._natCap = d.nativeCapable().catch((e) => ({ ok: false, reason: e.message }));
+    return this._natCap;
+  }
+  async wantNative(o) { return +o.fps > 60 && !!this.sfu?.ready && !!(await this.nativeCapable()).ok; }
+  previewOnly(vt, on) {
+    if (!vt) return;
+    const o = this.screenOpts || {};
+    const c = on ? { frameRate: { ideal: 10, max: 10 }, height: { ideal: 360, max: 360 }, width: { ideal: 640 } }
+      : { frameRate: { ideal: +o.fps, max: +o.fps }, ...(o.res !== 'source' ? { height: { ideal: +o.res, max: +o.res }, width: { ideal: Math.round(+o.res * 16 / 9) } } : {}) };
+    vt.applyConstraints(c).catch(() => { });
+  }
+  async startNative() {
+    const d = window.lcDesktop, o = this.screenOpts || {}, sfu = this.sfu;
+    if (!d?.nativeStart || !sfu) return this.nativeFallback('app desktop sem suporte');
+    const my = this.native = { pending: true };
+    if (!this._natEv) { this._natEv = true; d.onNativeEvent?.((ev) => this.onNativeEvent(ev)); }
+    try {
+      const r = await this.sfuReq('native_start');
+      if (this.native !== my) return; // parou enquanto preparava
+      const res = await d.nativeStart({ ...r, host: r.host || location.hostname, fps: +o.fps, height: o.res === 'source' ? 2160 : +o.res || 1080, kbps: Math.round(bitrateFor(o.res || 1080, +o.fps, o.bitrate) / 1000) });
+      if (this.native !== my) { d.nativeStop(); return; }
+      if (!res?.ok) throw new Error(res?.error || 'falhou');
+      Object.assign(my, { pending: false, encoder: res.encoder, w: res.w, h: res.h, producerId: r.producer_id });
+      this.onUpdate();
+    } catch (e) { if (this.native === my) this.nativeFallback(e.message); }
+  }
+  onNativeEvent(ev) {
+    const n = this.native; if (!n || n.pending && ev.t === 'stats') { if (n && ev.t === 'stats') n.stats = ev; return; }
+    if (ev.t === 'stats') { n.busy0 ??= ev.busy; n.stats = ev; if (n.prevBusy != null && ev.busy > n.prevBusy) n.busy0 = n.prevBusy; n.prevBusy = ev.busy; }
+    else if (ev.t === 'error' || ev.t === 'exit') this.nativeFallback(ev.error || 'o programa de transmissão fechou');
+  }
+  // o servidor encerrou a sessão nativa (reconexão, programa parou de mandar): tenta de novo uma vez, depois volta ao normal
+  onNativeEnded(d) {
+    const n = this.native; if (!n || n.producerId !== d.producer_id || d.reason === 'replaced' || d.reason === 'stopped' && !n.stats) return;
+    if ((this._natRetry = (this._natRetry || 0) + 1) > 2) return this.nativeFallback('a conexão com o servidor caiu');
+    window.lcDesktop?.nativeStop?.(); this.startNative().catch(() => { });
+  }
+  // o caminho nativo falhou: segue transmitindo pelo Chromium (até ~48 fps), sem derrubar a transmissão
+  nativeFallback(why) {
+    if (!this.native) return;
+    this.stopNative();
+    const vt = this.screen?.getVideoTracks()[0];
+    if (!vt) return;
+    this.previewOnly(vt, false);
+    if (this.sfu) this.sfuProduce('screen', vt).catch(e => console.warn('produce', e));
+    this.error = 'Transmissão a 120 FPS indisponível (' + why + '). Continuando pelo modo normal.';
+    this.onNativeFail?.(this.error); this.onUpdate();
+  }
+  stopNative() {
+    if (!this.native) return;
+    this.native = null;
+    window.lcDesktop?.nativeStop?.();
+    this.sfuReq('native_stop').catch(() => { });
   }
   // muda resolução/fps/otimização da transmissão em andamento
   async changeScreenQuality(opts) {
     const vt = this.screen?.getVideoTracks()[0]; if (!vt) return;
-    const o = this.screenOpts = { ...this.screenOpts, ...opts };
+    const was = this.screenOpts || {}, o = this.screenOpts = { ...this.screenOpts, ...opts };
+    // entrar/sair do modo 120 FPS ou mudar a qualidade dele: reinicia o programa nativo (1-2 s)
+    const nat = await this.wantNative(o);
+    if (nat) {
+      if (!this.native) { this.sfuStop('screen'); this.native = { pending: true }; this.previewOnly(vt, true); }
+      else if (was.res === o.res && was.fps === o.fps && +was.bitrate === +o.bitrate) { this.onUpdate(); return; }
+      else window.lcDesktop?.nativeStop?.();
+      this.startNative().catch(() => { }); this.onUpdate(); return;
+    }
+    if (this.native) { this.stopNative(); this.previewOnly(vt, false); if (this.sfu) await this.sfuProduce('screen', vt).catch(e => console.warn('produce', e)); }
     const c = { frameRate: { ideal: +o.fps, max: +o.fps } };
     if (o.res !== 'source') { c.height = { ideal: +o.res, max: +o.res }; c.width = { ideal: Math.round(+o.res * 16 / 9) }; }
     try { await vt.applyConstraints(c); } catch (e) { console.warn('applyConstraints', e); }
@@ -689,7 +764,7 @@ export class Voice {
     const s = this[kind]; if (!s) return;
     if (this.sfu) { this.sfuStop(kind); if (kind === 'screen') this.sfuStop('screenaudio'); }
     else for (const p of this.peers.values()) for (const t of s.getTracks()) { const snd = p.senders[kind + t.kind]; if (snd) { try { p.pc.removeTrack(snd); } catch { } delete p.senders[kind + t.kind]; } }
-    if (kind === 'screen') { clearInterval(this._sw); clearInterval(this._bk); this.captureFps = null; this.captureBlack = false; }
+    if (kind === 'screen') { this.stopNative(); clearInterval(this._sw); clearInterval(this._bk); this.captureFps = null; this.captureBlack = false; }
     s.getTracks().forEach(t => t.stop()); this[kind] = null;
     playSound(kind === 'cam' ? 'camOff' : 'selfStreamStop');
     this.sendState(); this.onUpdate();

@@ -18,6 +18,8 @@ pub struct RtpSender {
     pub want_key: bool,
     pub stats: Stats,
     last_sr: Instant, first_ts: Option<(Instant, u32)>,
+    srtp: Option<(crate::srtp::Tx, crate::srtp::Rx)>,
+    pub rtcp_bad: u64,
 }
 
 pub fn split_annexb(buf: &[u8]) -> Vec<&[u8]> {
@@ -41,10 +43,18 @@ impl RtpSender {
         sock.connect((host, port))?;
         sock.set_nonblocking(true)?;
         Ok(Self { sock, ssrc, pt, seq: (ssrc as u16).wrapping_mul(7), sps: None, pps: None, hist: vec![None; HISTORY], want_key: false,
-            stats: Stats { packets: 0, bytes: 0, frames: 0, keyframes: 0, nacks: 0, resent: 0, plis: 0 }, last_sr: Instant::now(), first_ts: None })
+            stats: Stats { packets: 0, bytes: 0, frames: 0, keyframes: 0, nacks: 0, resent: 0, plis: 0 }, last_sr: Instant::now(), first_ts: None, srtp: None, rtcp_bad: 0 })
     }
 
+    /// Liga o SRTP: nossa chave (para o que enviamos) e a do servidor (para abrir o RTCP que ele manda).
+    pub fn set_srtp(&mut self, ours: &str, server: &str) -> Result<(), String> {
+        let (k, s) = crate::srtp::parse_key(ours).ok_or("chave SRTP invalida")?;
+        let (k2, s2) = crate::srtp::parse_key(server).ok_or("chave SRTP do servidor invalida")?;
+        self.srtp = Some((crate::srtp::Tx::new(&k, &s), crate::srtp::Rx::new(&k2, &s2)));
+        Ok(())
+    }
     fn send_raw(&mut self, pkt: Vec<u8>) {
+        let pkt = match &mut self.srtp { Some((tx, _)) => tx.protect_rtp(&pkt), None => pkt };
         let _ = self.sock.send(&pkt);
         self.stats.packets += 1; self.stats.bytes += pkt.len() as u64;
         let s = self.seq.wrapping_sub(1);
@@ -106,16 +116,19 @@ impl RtpSender {
         p.extend_from_slice(&(ntp_s as u32).to_be_bytes()); p.extend_from_slice(&(ntp_f as u32).to_be_bytes());
         p.extend_from_slice(&ts.to_be_bytes());
         p.extend_from_slice(&(self.stats.packets as u32).to_be_bytes()); p.extend_from_slice(&(self.stats.bytes as u32).to_be_bytes());
+        let p = match &mut self.srtp { Some((tx, _)) => tx.protect_rtcp(&p), None => p };
         let _ = self.sock.send(&p);
     }
 
     /// Lê o RTCP que o servidor manda de volta: NACK (reenvia), PLI/FIR (pede quadro-chave).
     pub fn poll_rtcp(&mut self) {
         let mut buf = [0u8; 1500];
-        while let Ok(n) = self.sock.recv(&mut buf) {
+        while let Ok(n0) = self.sock.recv(&mut buf) {
+            let plain: Vec<u8> = match &self.srtp { Some((_, rx)) => match rx.unprotect_rtcp(&buf[..n0]) { Some(v) => v, None => { self.rtcp_bad += 1; continue; } }, None => buf[..n0].to_vec() };
+            let n = plain.len();
             let mut off = 0;
             while off + 4 <= n {
-                let b = &buf[off..n];
+                let b = &plain[off..n];
                 let fmt = b[0] & 0x1F; let pt = b[1]; let len = (u16::from_be_bytes([b[2], b[3]]) as usize + 1) * 4;
                 if len > b.len() { break; }
                 if pt == 205 && fmt == 1 && len >= 16 { // NACK genérico: PID + BLP

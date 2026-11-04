@@ -1,4 +1,5 @@
 const remote = require('./remote');
+const native = require('./native');
 const { app, BrowserWindow, Tray, Menu, ipcMain, desktopCapturer, session, shell, globalShortcut, nativeImage, dialog, screen } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -79,7 +80,7 @@ function createWindow(forceShow) {
   });
   win.removeMenu(); Menu.setApplicationMenu(null);
   // a página recarregou, navegou ou travou: a sessão no servidor já acabou, então o controle remoto desarma aqui também
-  for (const ev of ['did-navigate', 'render-process-gone', 'unresponsive']) win.webContents.on(ev, () => remote.stop());
+  for (const ev of ['did-navigate', 'render-process-gone', 'unresponsive']) win.webContents.on(ev, () => { remote.stop(); if (ev !== 'unresponsive') native.stop(); });
   const CSS = 'html.lc-fs #lc-titlebar{display:none} html.lc-desk .fsbox video{will-change:auto;transform:none} :fullscreen{margin:0!important;border:0!important;border-radius:0!important;transform:none!important;animation:none!important} html.lc-desk #app{margin-top:28px;height:calc(100vh - 28px)} html.lc-desk #settings{top:28px} html.lc-desk #settings .close{top:40px} body.lc-connect{padding-top:28px} #lc-titlebar{position:fixed;top:0;left:0;right:0;height:28px;z-index:2147483000;-webkit-app-region:drag;background:#1e1f22;display:flex;align-items:center;padding-left:12px;font:600 12px "Segoe UI",sans-serif;color:#b5bac1;user-select:none}#lc-upd{display:none;-webkit-app-region:no-drag;margin-left:auto;margin-right:150px;width:28px;height:20px;padding:0;border:0;border-radius:4px;background:#248046;color:#fff;cursor:pointer;align-items:center;justify-content:center}#lc-upd:hover{background:#1a6334}#lc-upd.on{display:flex}#lc-upd svg{width:14px;height:14px;fill:currentColor}';
   win.webContents.on('dom-ready', () => {
     win.webContents.insertCSS(CSS).catch(() => { });
@@ -209,7 +210,12 @@ ipcMain.handle('remote-start', (_e, o) => remote.start(o || {}));
 ipcMain.on('remote-input', (_e, ev) => remote.input(ev));
 ipcMain.on('remote-stop', () => remote.stop());
 remote.onRemoteEvent((k) => { if (win && !win.isDestroyed()) win.webContents.send('remote-event', k); });
-app.on('before-quit', () => remote.shutdown());
+app.on('before-quit', () => { remote.shutdown(); native.shutdown(); });
+// transmissão a 120 FPS (desktop/native.js): o renderer pede a sessão ao servidor e passa as chaves para cá
+ipcMain.handle('native-capable', () => native.capable());
+ipcMain.handle('native-start', (_e, o) => native.start({ ...(o || {}), sourceId: (o && o.sourceId) || pickedSource }));
+ipcMain.on('native-stop', () => native.stop());
+native.onNativeEvent((ev) => { if (win && !win.isDestroyed()) win.webContents.send('native-event', ev); });
 // modo leve: deixa o Chromium desacelerar a página escondida (o renderer só liga fora de chamada)
 ipcMain.on('set-throttle', (_e, on) => { if (win && !win.isDestroyed()) win.webContents.setBackgroundThrottling(!!on); });
 ipcMain.handle('get-settings', () => ({ ...cfg, version: app.getVersion(), gpuCompatActive: gpuCompat, gpuName: gpuName }));

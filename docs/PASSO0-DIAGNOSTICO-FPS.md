@@ -142,11 +142,11 @@ Peças (tudo fora do botão "Transmitir tela" normal):
 - **App** (`public/nativetest.js`, Configurações → Transmissão → Experimental): gera o código, assiste a **própria**
   transmissão pelo servidor (`voice.watchProducer`) e mede por segundo: quadros recebidos, decodificados, exibidos
   (`requestVideoFrameCallback`), banda, perda e atraso do buffer. Os outros da sala também recebem como tela.
-- **Programa** (`spikes/native-stream`, binário `transmitir.exe`): WGC com `MinUpdateInterval = 0` → BGRA→NV12 com escala
+- **Programa** (hoje `native/lc-stream`; no pacote de teste, `transmitir.exe`): WGC com `MinUpdateInterval = 0` → BGRA→NV12 com escala
   no `ID3D11VideoProcessor` → codificador H.264 de **hardware** do Media Foundation (assíncrono, texturas D3D11, CBR,
   baixa latência, GOP 2 s, sem quadros B; escolhe o da mesma placa pela LUID) → RTP (FU-A, SPS/PPS antes de todo IDR,
   reenvio por NACK, quadro-chave por PLI/FIR, SR a cada 1 s). Ritmo limitado ao fps pedido; se o codificador não pediu
-  entrada, o quadro é descartado e contado. Pacote: `spikes/native-stream/pacote` (`montar.sh`).
+  entrada, o quadro é descartado e contado. Pacote: `native/lc-stream/pacote` (`montar.sh`).
 
 Validação sem Windows (`node scripts/native-test.mjs`, `H=1080` opcional): ffmpeg gera H.264 a 120 fps no lugar da
 captura+placa; o mesmo empacotador RTP envia ao servidor; o app mede. 720p: 120,0 recebidos / 120,1 decodificados,
@@ -176,4 +176,4 @@ abaixo de 50 % da mediana). "Exibidos" um pouco abaixo é o compositor da janela
 decodificado; a tela só mostra o que cabe no ciclo do monitor).
 
 **Conclusão do Spike B:** captura nativa + NVENC + RTP + SFU entregam **1080p a 120 fps de ponta a ponta** no PC do
-diagnóstico, contra 48 fps do caminho do Chromium. O caminho nativo é viável para o produto.
+diagnóstico, contra 48 fps do caminho do Chromium. O caminho nativo é viável para o produto. Integrado ao botão "Transmitir tela" do app desktop: ver `TRANSMISSAO-120FPS.md`.

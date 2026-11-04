@@ -20,9 +20,9 @@ Write-Host '  2. Configuracoes > Transmissao > "Teste: transmissao a 120 FPS" > 
 Write-Host '     (o codigo e copiado sozinho)'
 Write-Host ''
 $code = ''
-while ($code -notmatch '^LC120 \S+ \d+ \d+ \d+$') {
+while ($code -notmatch '^LC120 \S+ \d+ \d+ \d+( \S+ \S+)?$') {
   $code = (Read-Host '  3. Cole o codigo aqui (botao direito do mouse cola) e aperte Enter').Trim()
-  if ($code -notmatch '^LC120 \S+ \d+ \d+ \d+$') { Write-Host '     Codigo invalido: ele comeca com LC120. Tente de novo.' -ForegroundColor Yellow }
+  if ($code -notmatch '^LC120 \S+ \d+ \d+ \d+( \S+ \S+)?$') { Write-Host '     Codigo invalido: ele comeca com LC120. Tente de novo.' -ForegroundColor Yellow }
 }
 
 # animacao (muda a cada quadro) na metade esquerda da tela; o LocalCord fica na metade direita

@@ -1,6 +1,6 @@
 {
   "name": "localcord-desktop",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "description": "LocalCord Desktop — cliente do seu servidor LocalCord",
   "main": "main.js",
   "author": "LocalCord",
@@ -25,7 +25,8 @@
       "build/icon.png",
       "build/tray.png",
       "remote.js",
-      "build/icon.ico"
+      "build/icon.ico",
+      "native.js"
     ],
     "win": {
       "target": [
@@ -48,6 +49,10 @@
       {
         "from": "native/lc-input.exe",
         "to": "lc-input.exe"
+      },
+      {
+        "from": "native/lc-stream.exe",
+        "to": "lc-stream.exe"
       }
     ]
   },

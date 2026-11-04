@@ -1,6 +1,7 @@
 // SFU (mediasoup): cada pessoa envia áudio/vídeo uma vez ao servidor, que repassa aos outros.
 // Se o mediasoup não carregar (ou RTC=0), o gateway cai para a malha P2P antiga.
 import os from 'node:os';
+import crypto from 'node:crypto';
 
 const PORT = Number(process.env.RTC_PORT || 40000);
 const SOURCES = ['mic', 'cam', 'screen', 'screenaudio'];
@@ -121,7 +122,10 @@ export const NATIVE_PT = 102;
 export async function sfuAttachNative(cid, uid) {
   const r = rooms.get(cid), peer = r?.peers.get(uid);
   if (!peer) throw new Error('fora da sala');
-  const t = await r.router.createPlainTransport({ listenInfo: nativeListen(), rtcpMux: true, comedia: true, enableSctp: false });
+  // SRTP: só quem recebeu a chave (o app de quem transmite, pelo gateway autenticado) consegue mandar vídeo nesta porta
+  const t = await r.router.createPlainTransport({ listenInfo: nativeListen(), rtcpMux: true, comedia: true, enableSctp: false, enableSrtp: true, srtpCryptoSuite: 'AES_CM_128_HMAC_SHA1_80' });
+  const key = crypto.randomBytes(30).toString('base64');
+  try { await t.connect({ srtpParameters: { cryptoSuite: 'AES_CM_128_HMAC_SHA1_80', keyBase64: key } }); } catch (e) { t.close(); throw e; }
   const ssrc = 1000000 + Math.floor(Math.random() * 1e8);
   let p;
   try {
@@ -134,7 +138,7 @@ export async function sfuAttachNative(cid, uid) {
   peer.transports.set(t.id, t);
   t.observer.on('close', () => peer.transports.delete(t.id));
   registerProducer(r, peer, 'screen', p);
-  return { transport: t, producer: p, port: t.tuple.localPort, ip: t.tuple.localAddress, ssrc, payloadType: NATIVE_PT,
+  return { transport: t, producer: p, port: t.tuple.localPort, ip: t.tuple.localAddress, ssrc, payloadType: NATIVE_PT, key, serverKey: t.srtpParameters.keyBase64,
     close: () => { try { p.close(); } catch { } try { t.close(); } catch { } } };
 }
 

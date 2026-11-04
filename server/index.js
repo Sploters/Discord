@@ -1049,25 +1049,32 @@ function endNative(uid, why) {
   natives.delete(uid); clearInterval(n.timer); n.close();
   dispatch([uid], 'NATIVE_SCREEN_END', { producer_id: n.producer.id, reason: why });
 }
+// live: transmissão de verdade (o programa repete o último quadro com a tela parada, então 6 s sem pacotes = parou)
+// test: o pacote de teste (código colado à mão): até 10 min para começar e no máximo 30 min
+async function startNative(uid, cid, live) {
+  endNative(uid, 'replaced');
+  const n = await sfuAttachNative(cid, uid);
+  n.host = process.env.RTC_ANNOUNCED_IP ? process.env.RTC_ANNOUNCED_IP.split(',')[0].trim() : (n.ip && n.ip !== '0.0.0.0' ? n.ip : null);
+  n.started = 0; n.last = 0; n.bytes = 0; n.t0 = Date.now();
+  n.timer = setInterval(async () => {
+    if (n.producer.closed) return endNative(uid, 'closed');
+    const st = await n.producer.getStats().catch(() => []), b = st.reduce((x, e) => x + (e.byteCount || 0), 0), now = Date.now();
+    if (b > n.bytes) { n.bytes = b; n.last = now; if (!n.started) n.started = now; }
+    if (!n.started && now - n.t0 > (live ? 60_000 : 10 * 60_000)) endNative(uid, 'timeout');
+    else if (n.started && now - n.last > 6000) endNative(uid, 'stopped');
+    else if (!live && now - n.t0 > 30 * 60_000) endNative(uid, 'limit');
+  }, 2000);
+  natives.set(uid, n);
+  n.producer.observer.on('close', () => { if (natives.get(uid) === n) endNative(uid, 'closed'); });
+  return n;
+}
+const nativeOut = (n, host) => ({ producer_id: n.producer.id, host: n.host || host, port: n.port, ssrc: n.ssrc, pt: n.payloadType, key: n.key, serverKey: n.serverKey });
 app.post('/api/native-screen', auth, (req, res) => (async () => {
   const cid = currentVoice(req.uid);
   if (!cid) return bad(res, 'Entre numa sala de voz primeiro');
   if (!sfuEnabled()) return bad(res, 'O servidor de voz (SFU) está desligado');
-  endNative(req.uid, 'replaced');
-  const n = await sfuAttachNative(cid, req.uid);
-  const host = process.env.RTC_ANNOUNCED_IP ? process.env.RTC_ANNOUNCED_IP.split(',')[0].trim() : (n.ip && n.ip !== '0.0.0.0' ? n.ip : req.hostname);
-  n.started = 0; n.last = 0; n.bytes = 0; n.t0 = Date.now();
-  n.timer = setInterval(async () => {
-    if (n.producer.closed) return endNative(req.uid, 'closed');
-    const st = await n.producer.getStats().catch(() => []), b = st.reduce((x, e) => x + (e.byteCount || 0), 0), now = Date.now();
-    if (b > n.bytes) { n.bytes = b; n.last = now; if (!n.started) n.started = now; }
-    if (!n.started && now - n.t0 > 10 * 60_000) endNative(req.uid, 'timeout');
-    else if (n.started && now - n.last > 6000) endNative(req.uid, 'stopped');
-    else if (now - n.t0 > 30 * 60_000) endNative(req.uid, 'limit');
-  }, 2000);
-  natives.set(req.uid, n);
-  n.producer.observer.on('close', () => { if (natives.get(req.uid) === n) endNative(req.uid, 'closed'); });
-  res.json({ code: `LC120 ${host} ${n.port} ${n.ssrc} ${n.payloadType}`, producer_id: n.producer.id, host, port: n.port, ssrc: n.ssrc });
+  const o = nativeOut(await startNative(req.uid, cid, false), req.hostname);
+  res.json({ ...o, code: `LC120 ${o.host} ${o.port} ${o.ssrc} ${o.pt} ${o.key} ${o.serverKey}` });
 })().catch(e => { console.error('native-screen', e); if (!res.headersSent) bad(res, 'Não consegui preparar a transmissão: ' + e.message, 500); }));
 app.post('/api/native-screen/stop', auth, (req, res) => { endNative(req.uid, 'stopped'); res.json({ ok: true }); });
 
@@ -1266,6 +1273,11 @@ wss.on('connection', (ws) => {
         case 'SFU': { // sinalização do SFU: requisição/resposta
           const c = currentVoice(uid), rid = d.rid;
           if (!c || voice.get(c).get(uid).ws !== ws) return send(ws, 'SFU_RES', { rid, error: 'fora da sala' });
+          if (d.op === 'native_start') { // transmissão a 120 fps pelo programa nativo do app desktop (só o vídeo; áudio segue pelo WebRTC)
+            startNative(uid, c, true).then(n => send(ws, 'SFU_RES', { rid, data: nativeOut(n, null) }), e => send(ws, 'SFU_RES', { rid, error: e.message }));
+            break;
+          }
+          if (d.op === 'native_stop') { endNative(uid, 'stopped'); send(ws, 'SFU_RES', { rid, data: {} }); break; }
           sfuRequest(c, uid, String(d.op), d).then(data => send(ws, 'SFU_RES', { rid, data }), e => send(ws, 'SFU_RES', { rid, error: e.message }));
           break;
         }

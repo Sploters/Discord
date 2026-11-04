@@ -109,6 +109,8 @@ function onEvent(t, d) {
       if (!voice) { initBoard((t, d) => voice?.active && voice.send(t, d)); initCode((t, d) => voice?.active && voice.send(t, d)); }
       if (!voice) voice = new Voice({ send: gwSend, ice: S.ice, myId: S.me.id, prefs: S.prefs, onUpdate: (speakOnly) => renderVoiceUI(speakOnly) });
       voice.onAutoAdjust = (msg) => toast(msg);
+      voice.onNativeFail = (msg) => toast(msg, true);
+      if (S.nativeOk === undefined) { S.nativeOk = null; voice.nativeCapable().then(r => { S.nativeOk = !!r.ok; S.nativeWhy = r.reason || ''; }); }
       voice.onBlackCapture = (black) => { if (black) toast('Sua transmissão está saindo preta. Se for um jogo, coloque-o em "Janela sem bordas" (tela cheia exclusiva e alguns anti-cheats bloqueiam a captura).', true); renderVoiceUI(); };
       voice.ice = S.ice;
       if (!ready) buildShell(); ready = true;
@@ -210,7 +212,7 @@ function onEvent(t, d) {
     case 'PONG': wsPings.get(d.n)?.(); break;
     case 'SFU_NEW_PRODUCER': voice.onSfuProducer(d); break;
     case 'SFU_CONSUMER_CLOSED': voice.onSfuConsumerClosed(d); break;
-    case 'NATIVE_SCREEN_END': nativeEnded(d); break;
+    case 'NATIVE_SCREEN_END': nativeEnded(d); voice?.onNativeEnded(d); break;
     case 'TYPING': {
       let m = S.typing.get(d.channel_id); if (!m) S.typing.set(d.channel_id, m = new Map());
       m.set(d.user_id, Date.now() + 8000); renderTyping(); previewTyping(); setTimeout(() => { renderTyping(); previewTyping(); }, 8100); break;
@@ -1717,7 +1719,7 @@ const pipCtx = {
 };
 function liveShareModal() {
   const o = { ...voice.screenOpts };
-  const settings = h('div.qinfo'), net = h('div.qinfo'), blk = h('div.qinfo.warn'), updInfo = () => { blk.textContent = voice.captureBlack ? 'A transmissão está saindo PRETA. Se for um jogo (ex.: Valorant), coloque-o em "Janela sem bordas" nas opções de vídeo do jogo e transmita a tela inteira. Tela cheia exclusiva e alguns anti-cheats bloqueiam a captura, e o LocalCord não contorna isso.' : ''; blk.style.display = voice.captureBlack ? '' : 'none'; const st = voice.screen?.getVideoTracks()[0]?.getSettings?.() || {}; const cf = voice.captureFps, want = +o.fps || 0; settings.textContent = `${want} FPS solicitados · ${cf == null ? 'medindo…' : cf + ' FPS capturados'} — ${st.width || '?'}×${st.height || '?'} — ${qualityLabel(o)}`; settings.classList.toggle('warn', cf != null && want > 0 && cf < want * 0.85); voice.screenStats().then(L => { if (!L?.length) return; const t = L[0], why = { cpu: 'limitado pelo processador', bandwidth: 'limitado pela sua internet (upload)', none: 'sem limitação', other: 'limitado' }[t.limit] || t.limit; net.textContent = `Enviando: ${t.w}×${t.h} a ${t.fps} fps, ${(t.kbps / 1000).toFixed(1)} Mbps — ${why}${/hw|h264|video toolbox|nvenc|media/i.test(t.enc) ? ' (placa de vídeo)' : t.enc ? ' (' + t.enc + ')' : ''}`; }); };
+  const settings = h('div.qinfo'), net = h('div.qinfo'), blk = h('div.qinfo.warn'), updInfo = () => { blk.textContent = voice.captureBlack ? 'A transmissão está saindo PRETA. Se for um jogo (ex.: Valorant), coloque-o em "Janela sem bordas" nas opções de vídeo do jogo e transmita a tela inteira. Tela cheia exclusiva e alguns anti-cheats bloqueiam a captura, e o LocalCord não contorna isso.' : ''; blk.style.display = voice.captureBlack ? '' : 'none'; const st = voice.screen?.getVideoTracks()[0]?.getSettings?.() || {}; const cf = voice.captureFps, want = +o.fps || 0; settings.textContent = `${want} FPS solicitados · ${cf == null ? 'medindo…' : cf + ' FPS capturados'} — ${voice.native?.w ? voice.native.w + '×' + voice.native.h + ' (modo 120 FPS, placa de vídeo)' : (st.width || '?') + '×' + (st.height || '?')} — ${qualityLabel(o)}`; settings.classList.toggle('warn', cf != null && want > 0 && cf < want * 0.85); voice.screenStats().then(L => { if (!L?.length) return; const t = L[0], why = { cpu: 'limitado pelo processador', bandwidth: 'limitado pela sua internet (upload)', none: 'sem limitação', other: 'limitado' }[t.limit] || t.limit; net.textContent = `Enviando: ${t.w}×${t.h} a ${t.fps} fps, ${(t.kbps / 1000).toFixed(1)} Mbps — ${why}${/nativo/.test(t.enc) ? ' (' + t.enc + ')' : /hw|h264|video toolbox|nvenc|media/i.test(t.enc) ? ' (placa de vídeo)' : t.enc ? ' (' + t.enc + ')' : ''}`; }); };
   updInfo(); const iv = setInterval(() => { if (!document.body.contains(settings)) return clearInterval(iv); updInfo(); }, 1000);
   const body = h('div', blk, settings, net, qualityPanel(o, async (n) => { await voice.changeScreenQuality(n); S.prefs.screen = { ...S.prefs.screen, res: n.res, fps: n.fps, hint: n.hint, bitrate: n.bitrate || 0 }; savePrefs(); setTimeout(updInfo, 400); }),
     h('div', { style: { fontSize: '14px', color: 'var(--text-muted)' } }, `${[...S.voice.values()].filter(v => v.channel_id === voice.channelId).length - 1} pessoa(s) na sala podem assistir.`));
