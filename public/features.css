@@ -920,3 +920,16 @@ select.gpucompat:focus { outline: 2px solid var(--brand, #5865f2); outline-offse
 .gifmsg img { max-width: 100%; max-height: 300px; border-radius: 6px; display: block; cursor: zoom-in; margin: 0 !important; }
 .gifmsg .gtag { position: absolute; left: 6px; bottom: 6px; font-size: 10px; font-weight: 800; color: #fff; background: rgba(0,0,0,.6); border-radius: 4px; padding: 1px 5px; opacity: 0; }
 .gifmsg.paused .gtag { opacity: 1; }
+
+/* ---------- efeitos de voz ---------- */
+.fxpicker { width: 330px; padding: 4px 2px; }
+.fxpicker .fxhead { display: flex; flex-direction: column; gap: 2px; padding: 4px 6px 10px; } .fxpicker .fxhead small, .fxpicker .fxrow small { color: var(--text-muted); font-size: 12px; }
+.fxpicker .fxgrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; padding: 0 4px; }
+.fxpicker .fxopt { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 2px 6px; border: 0; border-radius: 8px; background: var(--bg-tert); color: var(--text); font-size: 11px; cursor: pointer; line-height: 1.15; }
+.fxpicker .fxopt:hover { background: var(--bg-mod-hover, rgba(255,255,255,.06)); } .fxpicker .fxopt.on { background: var(--brand); color: #fff; }
+.fxpicker .fxe { font-size: 22px; line-height: 1; }
+.fxpicker .fxrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 6px 0; }
+.fxpicker .fxfoot { font-size: 12px; color: var(--text-muted); padding: 12px 6px 2px; } .fxpicker .fxfoot kbd { font-size: 11px; }
+.fxb { font-size: 13px; line-height: 1; margin-left: 2px; }
+.roundbtn.fxon, #voice-panel .row button.fxon { color: #fff; background: var(--brand) !important; }
+.fxpicker .fxfoot kbd { white-space: nowrap; }

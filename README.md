@@ -47,6 +47,9 @@ Variáveis: `MUSIC_IDLE_MIN`, `MUSIC_ALLOW_ANY=1` (libera qualquer site), `YTDLP
 ### GIFs
 Botão **GIF** no campo de mensagem: busca, "Em alta", Favoritos (por pessoa) e "Do grupo" (GIFs já mandados nos chats que a pessoa vê). A busca usa a **KLIPY** (gratuita; a API da Tenor foi desligada pelo Google em 2026) ou a **GIPHY**. Crie uma chave de API de desenvolvedor no site do serviço e coloque-a num arquivo na pasta de dados do servidor: `~/localcord-data/klipy.key` (ou `giphy.key`), depois reinicie o container (`sh deploy/umbrel.sh`). Também vale a variável `KLIPY_API_KEY` / `GIPHY_API_KEY`. Sem chave, o botão mostra só Favoritos e "Do grupo". O servidor só busca a lista (com cache de 10 min e um id anônimo por pessoa); os GIFs carregam direto do serviço. No modo leve, os GIFs do chat ficam parados e animam ao passar o mouse.
 
+### Efeitos de voz
+Na call, o botão de máscara (painel de voz e controles da sala) abre 9 efeitos: Robô, Voz grossa, Esquilo, Monstro, Alien, Rádio, Megafone, Eco e Estádio. Atalho: `Ctrl+Shift+E` liga/desliga o último efeito. A voz vai **normal** pela rede junto com o nome do efeito, e o app de **quem ouve** aplica o efeito (`public/voicefx.js` + worklet `public/fx-pitch.js`). Por isso cada pessoa pode ouvir sem efeito: todo mundo (Configurações → Voz e vídeo, ou no próprio seletor) ou só alguém (clique direito → "Ouvir sem efeito de voz"). Quem está com efeito aparece com o emoji dele ao lado do nome. Os volumes são calibrados para ficar perto da voz normal, com limitador no fim. "Ouvir minha voz" toca o próprio microfone com o efeito (use fone).
+
 ### Cortar clipe
 No menu de clipes da transmissão, **Salvar e cortar…** abre os últimos 60 s numa linha do tempo para escolher o trecho; na galeria, **Cortar (cria uma cópia)…** faz o mesmo com um clipe já salvo. O corte não recomprime o vídeo (instantâneo, sem perda): o início encaixa no quadro-chave anterior (até ~1 s antes) e o fim é exato.
 

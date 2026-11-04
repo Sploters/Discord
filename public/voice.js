@@ -3,6 +3,7 @@
 // Microfone passa por uma cadeia WebAudio: high-pass → denoise (RNNoise/GTCRN) → noise gate → ganho.
 
 import { playSound } from './sounds.js';
+import { createFx, loadFx, FX_IDS } from './voicefx.js';
 
 const NS = '/vendor/ns';
 const loadedModules = new WeakMap();
@@ -108,7 +109,7 @@ export class Voice {
   async buildMic() {
     this.micGraph?.dispose(); this.analysers.get(this.myId)?.src.disconnect(); this.analysers.delete(this.myId);
     const g = await createMic(this.prefs, this.getCtx());
-    this.micGraph = g; this.mic = g.stream;
+    this.micGraph = g; this.mic = g.stream; this.updateMonitor?.();
     this.error = g.error;
     this.analysers.set(this.myId, { src: { disconnect() { } }, an: g.analyser, buf: new Uint8Array(g.analyser.fftSize), level: 0 });
     this.applyMute();
@@ -145,6 +146,7 @@ export class Voice {
     if (!this.channelId) return;
     playSound('selfLeave');
     if (this.native) { this.native = null; window.lcDesktop?.nativeStop?.(); } // o servidor fecha a sessão ao sair da sala
+    this.monitorOn = false; this.updateMonitor();
     this.send('VOICE_LEAVE', {});
     this.sfuClose();
     for (const uid of [...this.peers.keys()]) this.drop(uid);
@@ -597,22 +599,63 @@ export class Voice {
     const a = p[key]; if (!a) return;
     // ensurdecer silencia as vozes, mas não as transmissões (só ficam mudas se a transmissão foi fechada)
     a.muted = key === 'screenAudioEl' ? this.closedStreams.has(p.uid) : this.deafened;
-    const b = p[key + 'Boost'];
-    if (f <= 1 && !b) { a.volume = f; return; }
+    const fx = key === 'audioEl' ? this.fxFor(p.uid) : null;
+    let b = p[key + 'Boost'];
+    if (f <= 1 && !b && !fx) { a.volume = f; return; }
     if (!b) {
+      // até 100% sem efeito usa o volume do elemento; acima disso, ou com efeito de voz, o áudio passa pelo WebAudio (limitador no fim: nunca estoura)
       try {
         const ctx = this.getCtx(), src = ctx.createMediaStreamSource(a.raw), gain = ctx.createGain(), lim = ctx.createDynamicsCompressor(), dest = ctx.createMediaStreamDestination();
         lim.threshold.value = -3; lim.knee.value = 3; lim.ratio.value = 20; lim.attack.value = .002; lim.release.value = .15;
-        src.connect(gain).connect(lim).connect(dest);
+        src.connect(gain); gain.connect(lim).connect(dest);
         // o Chrome só entrega o áudio remoto ao WebAudio se o fluxo original estiver tocando em algum elemento (mudo)
         const hold = document.createElement('audio'); hold.muted = true; hold.srcObject = a.raw; hold.play?.().catch(() => { });
-        p[key + 'Boost'] = { src, gain, hold };
+        b = p[key + 'Boost'] = { src, gain, hold, fx: null, fxNode: null };
         a.srcObject = dest.stream; a.play?.().catch(() => { });
       } catch { a.volume = Math.min(1, f); return; }
     }
-    a.volume = 1; p[key + 'Boost'].gain.gain.value = f;
+    if (b.fx !== fx) this.rewireFx(p, b, fx);
+    a.volume = 1; b.gain.gain.value = f;
   }
-  unboost(p, key) { const b = p[key + 'Boost']; if (!b) return; b.src.disconnect(); b.hold.srcObject = null; delete p[key + 'Boost']; }
+  // efeito que ESTE app deve aplicar na voz de uid: o que a pessoa escolheu, a menos que eu tenha desligado
+  fxFor(uid) {
+    const id = this.fxLookup?.(uid); // estado de voz da pessoa (S.voice), mantido pelo app
+    if (!id || this.prefs.hearFx === false || this.prefs.noFxUsers?.[uid]) return null;
+    return FX_IDS.includes(id) ? id : null;
+  }
+  rewireFx(p, b, fx) {
+    const ctx = this.getCtx();
+    b.src.disconnect(); b.fxNode?.stop(); b.fxNode = null; b.fx = fx;
+    if (!fx) { b.src.connect(b.gain); return; }
+    loadFx(ctx).then(() => {
+      if (b.fx !== fx || b.fxNode) return; // mudou enquanto carregava
+      b.src.disconnect();
+      const n = createFx(ctx, fx); b.fxNode = n; b.src.connect(n.input); n.output.connect(b.gain);
+    });
+    b.src.connect(b.gain); // até carregar: voz normal
+  }
+  // efeito escolhido por outra pessoa mudou (VOICE_STATE): refaz o caminho do áudio dela
+  setPeerFx(uid) { if (this.peers.has(uid)) this.applyVolume(uid); }
+  // meu efeito: todo mundo que deixou os efeitos ligados ouve
+  setFx(id) {
+    this.fx = FX_IDS.includes(id) ? id : null;
+    if (this.fx) this.prefs.lastFx = this.fx;
+    this.sendState(); this.updateMonitor(); this.onUpdate();
+  }
+  // ouvir a própria voz com o efeito (use fone): o microfone que vai para a sala passa pelo mesmo efeito
+  setMonitor(on) { this.monitorOn = !!on; this.updateMonitor(); }
+  updateMonitor() {
+    const m = this._mon; if (m) { m.src.disconnect(); m.node?.stop(); this._mon = null; }
+    if (!this.monitorOn || !this.fx || !this.mic) return;
+    const ctx = this.getCtx(), fx = this.fx;
+    loadFx(ctx).then(() => {
+      if (!this.monitorOn || this.fx !== fx || this._mon || !this.mic) return;
+      const src = ctx.createMediaStreamSource(this.mic), node = createFx(ctx, fx), g = ctx.createGain(); g.gain.value = .8;
+      src.connect(node.input); node.output.connect(g).connect(ctx.destination);
+      this._mon = { src, node: { stop: () => { node.stop(); g.disconnect(); } } };
+    });
+  }
+  unboost(p, key) { const b = p[key + 'Boost']; if (!b) return; b.src.disconnect(); b.fxNode?.stop(); b.hold.srcObject = null; delete p[key + 'Boost']; }
   // volumes por usuário ficam nas preferências (salvas e sincronizadas)
   get volumes() { return (this.prefs.userVolumes ||= {}); }
   get streamVolumes() { return (this.prefs.streamVolumes ||= {}); }
@@ -645,7 +688,7 @@ export class Voice {
   toggleMute() { const wasDeaf = this.deafened; this.muted = !this.muted; if (!this.muted && this.deafened) this.deafened = false; playSound(wasDeaf && !this.deafened ? 'undeafen' : this.muted ? 'mute' : 'unmute'); this.afterAudioChange(); }
   toggleDeaf() { this.deafened = !this.deafened; this.muted = this.deafened; playSound(this.deafened ? 'deafen' : 'undeafen'); this.afterAudioChange(); }
   afterAudioChange() { this.applyMute(); for (const uid of this.peers.keys()) this.applyVolume(uid); this.sendState(); this.onUpdate(); }
-  sendState() { if (!this.channelId) return; this.send('VOICE_STATE', { mute: this.muted || this.deafened, deaf: this.deafened, video: !!this.cam, screen: !!this.screen }); }
+  sendState() { if (!this.channelId) return; this.send('VOICE_STATE', { mute: this.muted || this.deafened, deaf: this.deafened, video: !!this.cam, screen: !!this.screen, fx: this.fx || null }); }
 
   async toggleCam() {
     if (this.cam) return this.stopLocal('cam');

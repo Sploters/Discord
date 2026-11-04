@@ -1,4 +1,6 @@
 import { nativeEnded } from './nativetest.js';
+import { openFxPicker, fxBadge } from './fxui.js';
+import { fxInfo } from './voicefx.js';
 import { gifPicker, gifEl, isGifMessage, toggleFav as toggleGifFav, isFav as isGifFav } from './gifs.js';
 import { h, icon, avatar, fsVideo, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyEmoji, isImageUrl, SHORT, inviteCodes, callCodes, stripInvites, inviteText, parsePos, framePos, initials } from './util.js';
 import { S, api, tryApi, user, guild, channelById, member, nameOf, roleColor, can, perms, PERM, dmPeer, relType, toast, modal, confirmBox, promptBox, menu, popout, emojiPicker, lightbox, closeFloating, beep, notify, notifPolicy, channelMuted, desktop, applyTheme, emojiUrl, allEmojis, savePrefs, relite } from './state.js';
@@ -111,6 +113,7 @@ function onEvent(t, d) {
       if (!voice) voice = new Voice({ send: gwSend, ice: S.ice, myId: S.me.id, prefs: S.prefs, onUpdate: (speakOnly) => renderVoiceUI(speakOnly) });
       voice.onAutoAdjust = (msg) => toast(msg);
       voice.onNativeFail = (msg) => toast(msg, true);
+      voice.fxLookup = (uid) => S.voice.get(uid)?.channel_id === voice.channelId ? S.voice.get(uid)?.fx : null;
       if (S.nativeOk === undefined) { S.nativeOk = null; voice.nativeCapable().then(r => { S.nativeOk = !!r.ok; S.nativeWhy = r.reason || ''; }); }
       voice.onBlackCapture = (black) => { if (black) toast('Sua transmissão está saindo preta. Se for um jogo, coloque-o em "Janela sem bordas" (tela cheia exclusiva e alguns anti-cheats bloqueiam a captura).', true); renderVoiceUI(); };
       voice.ice = S.ice;
@@ -170,6 +173,7 @@ function onEvent(t, d) {
     case 'VOICE_STATE': {
       const prevVs = S.voice.get(d.user_id), before = prevVs?.channel_id, mineCh = voice.channelId;
       if (d.channel_id) S.voice.set(d.user_id, d); else S.voice.delete(d.user_id);
+      if (d.user_id !== S.me.id && (prevVs?.fx || null) !== (d.fx || null)) voice?.setPeerFx(d.user_id);
       if (S.view.kind === 'home') { setTimeout(renderActiveNow); setTimeout(refreshFeedView); }
       if (d.user_id === S.me.id && !d.channel_id) musicOnState({ active: false });
       if (d.user_id === S.me.id && !d.channel_id && voice.active && voice.channelId === d.prev_channel_id) voice.leave();
@@ -494,7 +498,7 @@ function vuserRow(g, v) {
   const u = user(v.user_id);
   const row = h('div.vuser', { 'data-uid': v.user_id, oncontextmenu: (e) => userMenu(e, v.user_id, g.id), onclick: (e) => profile(e.currentTarget, v.user_id, g.id) },
     (() => { const a = avatar(u, 24, { status: false }); if (voice?.speaking.has(v.user_id)) a.classList.add('speaking'); if (voice?.sbActive.has(v.user_id)) a.classList.add('sbplay'); a.dataset.uid = v.user_id; return a; })(),
-    h('span.nm', nameOf(v.user_id, g.id)), v.screen && h('span.live', 'Ao vivo'),
+    h('span.nm', nameOf(v.user_id, g.id), fxBadge(v.fx)), v.screen && h('span.live', 'Ao vivo'),
     h('span.ico', v.video && icon('video', 14), muteIco(v), v.deaf && icon('headoff', 14)));
   if (v.screen) { const mine = v.user_id === S.me.id; streamHover(row, { uid: v.user_id, mine, getStream: () => (mine ? voice.screen : voice.peers.get(v.user_id)?.streams.screen), onWatch: () => watchFromList(v) }); }
   return row;
@@ -535,10 +539,22 @@ function voicePanel() {
     h('div.row',
       h('button' + (voice.cam ? '.on' : ''), { title: 'Câmera', onclick: () => voiceAct(() => voice.toggleCam()) }, icon('video', 20)),
       h('button' + (voice.screen ? '.on' : ''), { title: 'Transmitir tela', onclick: startShare }, icon('screen', 20)),
+      fxButton(20, false),
       h('button', { title: voice.deafened ? 'Soundboard indisponível (ensurdecido)' : 'Soundboard', disabled: voice.deafened, style: voice.deafened ? { opacity: .4, cursor: 'not-allowed' } : null, onclick: (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) }) }, icon('voice', 20)),
       h('button', { title: 'Música (bot) — indisponível', disabled: true, style: { opacity: .4, cursor: 'not-allowed' } }, icon('music', 20))));
 }
 const voiceAct = (fn) => Promise.resolve().then(fn).catch(e => toast(e.message, true));
+// botão de efeitos de voz (painel de voz e controles da sala): com efeito ligado mostra o emoji dele
+function fxButton(size, round) {
+  const f = fxInfo(voice?.fx);
+  return h('button' + (round ? '.roundbtn' : '') + (f ? '.fxon' : ''), { title: f ? `Efeito de voz: ${f.label} (clique para trocar)` : 'Efeitos de voz', onclick: (e) => openFxPicker(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) }) },
+    f ? h('span', { style: { fontSize: size - 2 + 'px', lineHeight: 1 } }, f.emoji) : icon('mask', size));
+}
+function fxHotkey() {
+  if (!voice?.active) return toast('Entre numa sala de voz para usar efeitos.', true);
+  const next = voice.fx ? null : (S.prefs.lastFx || 'robo'); voice.setFx(next); savePrefs();
+  toast(next ? `Efeito de voz: ${fxInfo(next).emoji} ${fxInfo(next).label}` : 'Efeito de voz desligado');
+}
 // botão "Assistir" do feed: entra na sala (se preciso) e abre a transmissão da pessoa em destaque
 function watchFriend(uid, ch) {
   const g = ch.type === 1 ? null : guild(ch.guild_id);
@@ -744,6 +760,7 @@ function callUserMenu(e, uid, gid) {
     '-',
     { label: 'Mute', checked: isLocalMuted(uid), fn: () => toggleLocalMute(uid) },
     { label: 'Silenciar Soundboard', checked: flag('sbMutedUsers'), fn: () => flip('sbMutedUsers') },
+    S.voice.get(uid)?.fx && { label: `Ouvir sem efeito de voz (${fxInfo(S.voice.get(uid).fx)?.label || ''})`, checked: flag('noFxUsers'), fn: () => flip('noFxUsers') },
     { label: 'Desativar Vídeo', checked: flag('hiddenVideo'), fn: () => flip('hiddenVideo') },
     { label: 'Convidar para Servidor', sub: invites.length ? invites.map(x => ({ label: x.name, fn: () => sendServerInvite(x, uid) })) : [{ label: 'Já está em todos os seus servidores', fn: () => { } }] },
     rt === 1 ? { label: 'Remover Amizade', danger: true, fn: async () => { if (await confirmBox('Remover amizade', `Remover ${user(uid).display_name} dos seus amigos?`, 'Remover')) tryApi('DELETE', `/relationships/${uid}`); } }
@@ -1617,7 +1634,7 @@ function renderVoiceUI(speakOnly) {
     if (cam && v.video) live.add(ckey);
     const t = h('div.tile.utile' + (voice.speaking.has(uid) ? '.speaking' : '') + (voice.sbActive.has(uid) ? '.sbplay' : ''), { 'data-uid': uid, 'data-key': ckey, oncontextmenu: (e) => userMenu(e, uid, gid), onclick: () => { S.focus = S.focus === ckey ? null : ckey; renderVoiceUI(); } },
       cam && v.video ? videoFor(ckey, cam) : avatar(user(uid), 96, { status: false }),
-      h('div.label', muteIco(v), v.deaf && icon('headoff', 14), styleName(h('span', nm(uid)), user(uid).name_style)));
+      h('div.label', muteIco(v), v.deaf && icon('headoff', 14), styleName(h('span', nm(uid)), user(uid).name_style), fxBadge(v.fx)));
     tiles.push(paintTile(t, user(uid)));
   }
   const room = S.room?.cid === voice.channelId ? S.room : null;
@@ -1643,6 +1660,7 @@ function renderVoiceUI(speakOnly) {
     btn(voice.deafened ? 'headoff' : 'headset', 'Ensurdecer', voice.deafened, () => voiceToggle('deaf')),
     btn('video', 'Câmera', !!voice.cam, () => voiceAct(() => voice.toggleCam())),
     btn('screen', voice.screen ? 'Parar transmissão' : 'Transmitir tela', !!voice.screen, startShare),
+    fxButton(24, true),
     abtn('edit', room?.wb ? 'Fechar a lousa' : 'Lousa compartilhada', !!room?.wb, () => voice.send('ROOM_ACT', { act: 'wb', on: !room?.wb })),
     abtn('code', room?.code ? 'Fechar o editor de código' : 'Editor de código compartilhado', !!room?.code, () => voice.send('ROOM_ACT', { act: 'code', on: !room?.code })),
     h('button.roundbtn', { title: voice.deafened ? 'Soundboard indisponível (ensurdecido)' : 'Soundboard', disabled: voice.deafened, style: voice.deafened ? { opacity: .4, cursor: 'not-allowed' } : null, onclick: (e) => openSoundboard(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) }) }, icon('voice', 24)),
@@ -1861,6 +1879,7 @@ function setupDesktop() {
     if (c && c === (S.prefs.keyMute || 'Ctrl+Shift+KeyM')) { e.preventDefault(); voiceToggle('mute'); }
     if (c && c === (S.prefs.keyDeafen || 'Ctrl+Shift+KeyD')) { e.preventDefault(); voiceToggle('deaf'); }
     if (c && c === (S.prefs.keyClip || 'Ctrl+Alt+KeyC')) { e.preventDefault(); clipHotkey(); }
+    if (c && c === (S.prefs.keyFx || 'Ctrl+Shift+KeyE')) { e.preventDefault(); fxHotkey(); }
   });
   addEventListener('keyup', (e) => { if (e.code === S.prefs.pttKey) voice?.setPtt(false); });
   addEventListener('blur', () => voice?.setPtt(false));
