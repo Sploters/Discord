@@ -162,5 +162,18 @@ de teste fica em 35-50 (sem GPU); não vale como medida.
 | Descartados por codificador ocupado | 0 |
 | Banda | 16,2 Mbps (CBR pedido: 16) |
 | Quadros-chave / NACK / PLI | 31 (GOP 2 s) / 0 / 0 |
-Sem erros de conversão nem de entrada. A parte Windows funcionou na primeira execução. Falta o lado de quem assiste
-(resultado do app) para fechar a medida fim a fim.
+Sem erros de conversão nem de entrada. A parte Windows funcionou na primeira execução.
+
+### Lado de quem assiste (o mesmo PC, app do LocalCord, vídeo indo e voltando pelo Umbrel), 60 s
+| Medida | média | mediana | pior segundo* |
+|---|---|---|---|
+| Recebidos | 119,0 | 120 | 119 |
+| Decodificados | 119,0 | 120 | ~119 |
+| Exibidos (`requestVideoFrameCallback`) | 114,7 | 117 | 60 |
+1920×1080, 15,8 Mbps, **0 pacotes perdidos**, atraso do buffer de recepção 11 ms.
+\* o último segundo (62) era o segundo incompleto em que o programa parou; o app agora o descarta (antes só descartava
+abaixo de 50 % da mediana). "Exibidos" um pouco abaixo é o compositor da janela/monitor de 143 Hz (o quadro chega e é
+decodificado; a tela só mostra o que cabe no ciclo do monitor).
+
+**Conclusão do Spike B:** captura nativa + NVENC + RTP + SFU entregam **1080p a 120 fps de ponta a ponta** no PC do
+diagnóstico, contra 48 fps do caminho do Chromium. O caminho nativo é viável para o produto.

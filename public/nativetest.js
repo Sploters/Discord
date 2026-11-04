@@ -68,7 +68,7 @@ export function openNativeTest() {
   function finish() {
     if (!timer) return;
     clearInterval(timer); timer = null;
-    { const md = med(rows.map(r => r.rx)); while (rows.length > 1 && rows.at(-1).rx < md * 0.5) rows.pop(); } // último segundo incompleto (o programa parou no meio dele)
+    { const md = med(rows.map(r => r.rx)); while (rows.length > 1 && rows.at(-1).rx < md * 0.9) rows.pop(); } // último segundo incompleto (o programa parou no meio dele)
     const rx = rows.map(r => r.rx), dec = rows.map(r => r.dec), shown = rows.map(r => r.shown);
     const f = (v) => v.toFixed(1).replace('.', ',');
     const txt = [
