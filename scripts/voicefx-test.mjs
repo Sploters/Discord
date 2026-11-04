@@ -61,9 +61,9 @@ try {
   if (process.env.SHOTS) await A.screenshot({ path: `${OUT}/01-seletor.png` });
   await B.waitForFunction((uid) => window.__lc.S.voice.get(uid)?.fx === 'robo', { timeout: 5000 }, a.id).catch(() => { });
   await sleep(800);
-  const st1 = await B.evaluate((uid) => { const p = window.__lc.voice.peers.get(uid), bo = p?.audioElBoost; return { fx: bo?.fx, node: !!bo?.fxNode, badge: [...document.querySelectorAll('.vuser')].find(r => r.dataset.uid === uid)?.querySelector('.fxb')?.textContent }; }, a.id);
-  ok(st1.fx === 'robo' && st1.node && st1.badge === '🤖', 'bruno ouve alice com o efeito (aplicado no app dele) e vê o 🤖 ao lado do nome', st1);
-  ok(await A.evaluate(() => document.querySelector('#voice-panel .row button.fxon')?.textContent) === '🤖', 'botão da alice mostra o efeito ligado');
+  const st1 = await B.evaluate((uid) => { const p = window.__lc.voice.peers.get(uid), bo = p?.audioElBoost; return { fx: bo?.fx, node: !!bo?.fxNode, badge: [...document.querySelectorAll('.vuser')].find(r => r.dataset.uid === uid)?.querySelector('.fxb svg.fxicon') ? 'icone' : null }; }, a.id);
+  ok(st1.fx === 'robo' && st1.node && st1.badge === 'icone', 'bruno ouve alice com o efeito (aplicado no app dele) e vê o ícone do efeito ao lado do nome', st1);
+  ok(await A.evaluate(() => !!document.querySelector('#voice-panel .row button.fxon svg.fxicon')) === true, 'botão da alice mostra o efeito ligado');
   // bruno desliga só a alice
   await B.evaluate((uid) => [...document.querySelectorAll('.vuser')].find(r => r.dataset.uid === uid).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 300, clientY: 300 })), a.id); await sleep(300);
   if (process.env.SHOTS) await B.screenshot({ path: `${OUT}/02-menu-ouvir-sem.png` });

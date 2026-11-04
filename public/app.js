@@ -2,6 +2,7 @@ import { nativeEnded } from './nativetest.js';
 import { setNewsActions, maybeShowNews, markSeen as markNewsSeen } from './changelog.js';
 import { openFxPicker, fxBadge } from './fxui.js';
 import { fxInfo } from './voicefx.js';
+import { fxIcon } from './fxicons.js';
 import { gifPicker, gifEl, isGifMessage, toggleFav as toggleGifFav, isFav as isGifFav } from './gifs.js';
 import { h, icon, avatar, fsVideo, whenGone, thumbUrl, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyEmoji, isImageUrl, SHORT, inviteCodes, callCodes, stripInvites, inviteText, parsePos, framePos, initials } from './util.js';
 import { S, api, tryApi, user, guild, channelById, member, nameOf, roleColor, can, perms, PERM, dmPeer, relType, toast, modal, confirmBox, promptBox, menu, popout, emojiPicker, lightbox, closeFloating, beep, notify, notifPolicy, channelMuted, desktop, applyTheme, emojiUrl, allEmojis, savePrefs, relite } from './state.js';
@@ -559,16 +560,16 @@ const newsActions = {
   settings: () => openSettings('news', ctxSettings()),
   ping: () => { const b = $('#vp-ping'); if (b) b.click(); else toast('Entre numa sala de voz e clique no ícone de sinal do painel de voz.'); },
 };
-// botão de efeitos de voz (painel de voz e controles da sala): com efeito ligado mostra o emoji dele
+// botão de efeitos de voz (painel de voz e controles da sala): com efeito ligado mostra o ícone dele
 function fxButton(size, round, cls = '') {
   const f = fxInfo(voice?.fx);
   return h('button' + (round ? '.roundbtn' : '') + (f ? '.fxon' : '') + cls, { title: f ? `Efeito de voz: ${f.label} (clique para trocar)` : 'Efeitos de voz', onclick: (e) => openFxPicker(e.currentTarget, voice, { openSettings: (k) => openSettings(k, ctxSettings()) }) },
-    f ? h('span', { style: { fontSize: size - 2 + 'px', lineHeight: 1 } }, f.emoji) : icon('mask', size));
+    f ? fxIcon(f.id, size) : icon('mask', size));
 }
 function fxHotkey() {
   if (!voice?.active) return toast('Entre numa sala de voz para usar efeitos.', true);
   const next = voice.fx ? null : (S.prefs.lastFx || 'robo'); voice.setFx(next); savePrefs();
-  toast(next ? `Efeito de voz: ${fxInfo(next).emoji} ${fxInfo(next).label}` : 'Efeito de voz desligado');
+  toast(next ? `Efeito de voz: ${fxInfo(next).label}` : 'Efeito de voz desligado');
 }
 // botão "Assistir" do feed: entra na sala (se preciso) e abre a transmissão da pessoa em destaque
 function watchFriend(uid, ch) {
