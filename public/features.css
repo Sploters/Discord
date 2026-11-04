@@ -886,3 +886,18 @@ select.gpucompat:focus { outline: 2px solid var(--brand, #5865f2); outline-offse
 .ntest .ntres:not(:empty) { margin-top: 12px; padding: 10px 12px; background: var(--bg-tert); border-radius: 8px; font-size: 12px; white-space: pre-wrap; user-select: text; }
 @media (max-width: 640px) { .ntest .ntview { grid-template-columns: 1fr; } .ntest .ntlive { flex-direction: row; flex-wrap: wrap; } }
 .qinfo.ok { color: var(--green, #23a55a); }
+
+/* ---------- cortar clipe ---------- */
+.trimmer .trvid { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 8px; display: block; }
+.trimmer .trtrack { position: relative; height: 56px; margin: 14px 8px 8px; border-radius: 6px; background: var(--bg-tert); cursor: pointer; touch-action: none; user-select: none; }
+.trimmer .trstrip { position: absolute; inset: 0; display: flex; overflow: hidden; border-radius: 6px; opacity: .55; }
+.trimmer .trstrip > * { flex: 1; min-width: 0; height: 100%; object-fit: cover; display: block; }
+.trimmer .trstrip > canvas { width: 10%; height: 100%; }
+.trimmer .trsel { position: absolute; top: 0; bottom: 0; border: 2px solid var(--yellow, #f0b232); border-radius: 6px; box-shadow: 0 0 0 9999px rgba(0,0,0,.45); pointer-events: none; box-sizing: border-box; }
+.trimmer .trtrack { overflow: hidden; }
+.trimmer .trhead { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #fff; pointer-events: none; transform: translateX(-1px); }
+.trimmer .trhandle { position: absolute; top: 0; bottom: 0; width: 14px; transform: translateX(-7px); background: var(--yellow, #f0b232); border-radius: 4px; cursor: ew-resize; z-index: 2; }
+.trimmer .trhandle::after { content: ''; position: absolute; left: 5px; top: 18px; bottom: 18px; width: 4px; border-left: 1px solid rgba(0,0,0,.5); border-right: 1px solid rgba(0,0,0,.5); }
+.trimmer .trlab { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; color: var(--text-muted); margin: 6px 8px; } .trimmer .trlab b { color: var(--header); font-variant-numeric: tabular-nums; }
+.trimmer .trrow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 8px 0; } .trimmer .trplay { display: flex; align-items: center; gap: 6px; }
+.trimmer .trhandle.s { transform: none; border-radius: 4px 0 0 4px; } .trimmer .trhandle.e { transform: translateX(-100%); border-radius: 0 4px 4px 0; }

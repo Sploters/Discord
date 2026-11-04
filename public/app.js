@@ -13,7 +13,7 @@ import { zoomControls, pruneZoom } from './zoom.js';
 import { refreshFreeze } from './freeze.js';
 import { initBoard, boardState, onDraw, boardCanvas, boardTools, clearBoard } from './board.js';
 import { initCode, codeSet, codeReset, codeTile, keepEditorFocus } from './code.js';
-import { startBuffer, stopAllBuffers, pruneBuffers, clipping, saveClip, clipLengths, clipKeys } from './clips.js';
+import { startBuffer, stopAllBuffers, pruneBuffers, clipping, saveClip, saveClipTrim, clipLengths, clipKeys } from './clips.js';
 import { syncThrottle } from './lite.js';
 import { initRemote, onRemoteEvent, tileButton as remoteTileButton, controlling as remoteControlling } from './remote.js';
 import { pollModal, pollCard } from './polls.js';
@@ -1671,7 +1671,8 @@ function clipHotkey() {
 const clipsAuto = (mine) => (mine ? S.prefs.clipsOn === true : S.prefs.clipsOn !== false);
 function clipMenu(e, key, who) {
   if (!clipping(key)) return menu(e, [{ label: 'Ativar clipes', hint: 'Grava os últimos 60s das transmissões em segundo plano', fn: () => { S.prefs.clipsOn = true; savePrefs(); renderVoiceUI(); toast('Clipes ativados: em alguns segundos já dá para salvar'); } }]);
-  menu(e, [...clipLengths.map(n => ({ label: `Salvar os últimos ${n}s`, hint: 'Posta no chat da sala', fn: () => saveClip(key, n, { channelId: voice.channelId, who }) })), '-',
+  menu(e, [...clipLengths.map(n => ({ label: `Salvar os últimos ${n}s`, hint: 'Posta no chat da sala', fn: () => saveClip(key, n, { channelId: voice.channelId, who }) })),
+    { label: 'Salvar e cortar…', hint: 'Escolhe o trecho dos últimos 60s antes de postar', fn: () => saveClipTrim(key, { channelId: voice.channelId, who }) }, '-',
     { label: 'Desativar clipes', danger: true, fn: () => { S.prefs.clipsOn = false; savePrefs(); stopAllBuffers(); renderVoiceUI(); } }]);
 }
 const ctxSettings = () => ({ voice, logout, go });

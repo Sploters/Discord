@@ -2,6 +2,8 @@
 // Abas Todos / Meus / Favoritos, busca, prévia que só carrega quando aparece na tela, player com anterior/próximo,
 // renomear, favoritar, baixar, ir para a mensagem e apagar. Atualiza em tempo real (CLIP_CREATE/UPDATE/DELETE).
 import { h, icon, fsVideo } from './util.js';
+import { openTrimmer } from './cliptrim.js';
+import { postClip } from './clips.js';
 import { S, tryApi, toast, menu, modal, confirmBox, promptBox, can, PERM, guild, nameOf } from './state.js';
 
 let ctx = {}; // injetado por app.js: go(gid, cid), jumpTo(mid)
@@ -48,11 +50,19 @@ function moreMenu(e, c) {
     { label: 'Assistir', fn: () => player(st.clips.findIndex(x => x.id === c.id)) },
     canEdit(c) && { label: 'Renomear…', fn: () => rename(c) },
     { label: c.fav ? 'Tirar dos favoritos' : 'Favoritar', fn: () => toggleFav(c) },
+    /\.webm\//.test(c.url) && { label: 'Cortar (cria uma cópia)…', fn: () => trimCopy(c) },
     { label: 'Ir para a mensagem', fn: () => { ctx.go(c.guild_id, c.channel_id); setTimeout(() => ctx.jumpTo?.(c.message_id), 600); } },
     { label: 'Copiar link do vídeo', fn: () => { navigator.clipboard?.writeText(location.origin + c.url); toast('Link copiado'); } },
     canEdit(c) && '-',
     canEdit(c) && { label: 'Apagar clipe', danger: true, fn: () => remove(c) },
   ]);
+}
+// corta um clipe da galeria: o original fica; a cópia cortada vira um clipe novo no mesmo canal
+async function trimCopy(c) {
+  toast('Abrindo o clipe…');
+  let bytes; try { const r = await fetch(c.url); if (!r.ok) throw new Error('HTTP ' + r.status); bytes = new Uint8Array(await r.arrayBuffer()); } catch (e) { return toast('Não consegui abrir o vídeo: ' + e.message, true); }
+  openTrimmer(bytes, { title: (c.title + ' (cortado)').slice(0, 100), action: 'Salvar cópia cortada',
+    onSave: ({ blob, secs, title }) => postClip(blob, { channelId: c.channel_id, secs, streamerId: c.streamer?.id, hasAudio: c.has_audio, title, who: c.streamer ? who(c.streamer) : 'clipe' }) });
 }
 async function rename(c) {
   const t = await promptBox('Renomear clipe', 'Nome', c.title); if (t == null || !t.trim() || t.trim() === c.title) return;
