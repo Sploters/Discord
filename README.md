@@ -47,6 +47,9 @@ Variáveis: `MUSIC_IDLE_MIN`, `MUSIC_ALLOW_ANY=1` (libera qualquer site), `YTDLP
 ### Novidades
 Depois de uma atualização, quem já usava o app vê uma vez a janela "Novidades" (o que mudou, com botões "Experimentar"); fica gravado na conta, então não repete em outro aparelho. Conta nova não recebe a lista. Histórico em Configurações → Novidades e no menu do perfil. Para anunciar uma atualização: acrescente uma entrada no topo de `NEWS` em `public/changelog.js` com um id novo (a data).
 
+### Banda e latência
+Voz no automático em 64 kbps mono (até 80% menos banda que antes), diagnóstico de conexão no ícone de sinal do painel de voz, e `sh deploy/conexoes.sh` para ver quem liga direto ou por relay na Tailscale. Detalhes e como baixar o ping de quem está longe: `docs/BANDA-E-LATENCIA.md`.
+
 ### Desempenho
 A interface é entregue comprimida e com cache longo (versão do servidor no endereço dos arquivos; ver `docs/AUDITORIA-DESEMPENHO.md`). `STATIC_OFF=1` desliga isso em caso de problema. Medição: `node scripts/perf-audit.mjs <rótulo>`.
 

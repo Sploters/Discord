@@ -19,7 +19,10 @@ export const SCREEN_PRESETS = {
   res: { 720: '720p', 1080: '1080p', 1440: '1440p', source: 'Fonte (original)' },
   fps: { 15: '15 fps', 30: '30 fps', 60: '60 fps', 120: '120 fps' },
 };
-export const VOICE_BITRATES = [['auto', 'Automático'], [64, '64 kbps'], [128, '128 kbps'], [256, '256 kbps'], [384, '384 kbps']];
+export const VOICE_BITRATES = [['auto', 'Automático'], [32, '32 kbps'], [64, '64 kbps'], [128, '128 kbps'], [256, '256 kbps'], [384, '384 kbps']];
+// voz é mono: 48-64 kbps já soam perfeitos. Acima disso só faz sentido para música (e pesa no upload do servidor:
+// cada voz é repassada para todos os outros da sala)
+export const AUTO_MAX = 64, AUTO_STEPS = [32, 48, 64];
 const OPUS_MAX = 384; // teto anunciado no SDP; a taxa real é limitada por encodings[].maxBitrate
 // pede Opus em estéreo e até 384 kbps ao outro lado (mono do Opus para em ~256 kbps)
 const opusHi = (sdp) => {
@@ -76,7 +79,7 @@ export async function createMic(prefs, ctx) {
   // alguns filtros de ruído só preenchem o canal esquerdo: pega o canal 0 e o destino estéreo repete nos dois lados
   g.channelCount = 1; g.channelCountMode = 'explicit'; g.channelInterpretation = 'discrete'; chain(g);
   const analyser = ctx.createAnalyser(); analyser.fftSize = 512; g.connect(analyser); nodes.push(analyser);
-  const dest = ctx.createMediaStreamDestination(); g.connect(dest); nodes.push(dest);
+  const dest = ctx.createMediaStreamDestination(); dest.channelCount = 1; dest.channelCountMode = 'explicit'; g.connect(dest); nodes.push(dest); // trilha mono
   out.stream = dest.stream; out.analyser = analyser; out.gain = g;
   // Escuta própria: força mono -> mesmo sinal nos dois canais (alguns nós de redução de ruído só preenchem o esquerdo)
   const mono = ctx.createGain(); mono.channelCount = 1; mono.channelCountMode = 'explicit'; mono.channelInterpretation = 'speakers';
@@ -98,7 +101,7 @@ export const newAudioContext = () => new (window.AudioContext || window.webkitAu
 export class Voice {
   constructor({ send, ice, myId, onUpdate, prefs }) {
     this.send = send; this.ice = ice; this.myId = myId; this.onUpdate = onUpdate; this.prefs = prefs;
-    this.autoKbps = 128; // nível escolhido pelo modo automático
+    this.autoKbps = AUTO_MAX; // nível escolhido pelo modo automático (32-64 kbps, voz mono)
     this.channelId = null; this.peers = new Map(); this.micGraph = null; this.mic = null; this.cam = null; this.screen = null;
     this.closedStreams = new Set(); this.muted = false; this.deafened = false; this.ptt = false; this.speaking = new Set(); this.sbActive = new Set();
     this.ctx = null; this.analysers = new Map(); this.timer = null; this.screenOpts = null;
@@ -244,7 +247,8 @@ export class Voice {
     const cur = s.producers[source];
     if (cur && !cur.closed) return cur.replaceTrack({ track });
     const opts = { track, appData: { source }, encodings: this.sfuEncodings(source, source === 'screen'), stopTracks: false };
-    if (source === 'mic') opts.codecOptions = { opusStereo: true, opusDtx: true, opusFec: true, opusMaxAverageBitrate: OPUS_MAX * 1000 };
+    // microfone é mono: anunciar estéreo fazia o Opus gastar bits com dois canais iguais
+    if (source === 'mic') opts.codecOptions = { opusStereo: false, opusDtx: true, opusFec: true, opusMaxAverageBitrate: OPUS_MAX * 1000 };
     if (source === 'screenaudio') opts.codecOptions = { opusStereo: true, opusFec: true, opusMaxAverageBitrate: 128000 };
     if (source === 'screen') {
       // começa já perto do bitrate alvo: com a partida baixa o Chromium só liga as camadas grandes depois de minutos
@@ -483,11 +487,12 @@ export class Voice {
     // a voz não deve passar de ~1/4 da banda (vídeo e tela dividem o mesmo link).
     // A estimativa de banda começa baixa e sobe nos primeiros segundos: só vale depois de 10 s e se repetir duas leituras seguidas
     const share = avail === Infinity || now - this.adaptFrom < 10000 ? Infinity : avail / 4000;
-    const byBw = [384, 256, 128, 64].find(k => k <= share) || 64, bwLow = byBw < this.autoKbps && this.bwLowPrev;
+    const byBw = [...AUTO_STEPS].reverse().find(k => k <= share) || AUTO_STEPS[0], bwLow = byBw < this.autoKbps && this.bwLowPrev;
     this.bwLowPrev = byBw < this.autoKbps;
-    const want = loss > .08 || rtt > 400 ? 64 : loss > .03 || rtt > 250 ? 128 : bwLow || byBw >= this.autoKbps ? byBw : this.autoKbps;
+    // perda ou ping alto: menos bits por pacote ajuda a voz a chegar inteira (a correção de erros do Opus usa a folga)
+    const want = loss > .08 || rtt > 400 ? 32 : loss > .03 || rtt > 250 ? 48 : bwLow || byBw >= this.autoKbps ? Math.min(byBw, AUTO_MAX) : this.autoKbps;
     // sobe um nível por vez e só depois de estabilizar; desce na hora
-    const next = want < this.autoKbps ? want : want > this.autoKbps && now - (this.autoAt || 0) > 10000 ? [64, 128, 256, 384].find(k => k > this.autoKbps) : this.autoKbps;
+    const next = want < this.autoKbps ? want : want > this.autoKbps && now - (this.autoAt || 0) > 10000 ? AUTO_STEPS.find(k => k > this.autoKbps) : this.autoKbps;
     if (next !== this.autoKbps) { this.autoKbps = next; this.autoAt = now; this.retuneAudio(); }
     else if (want <= this.autoKbps) this.autoAt = now;
   }
@@ -836,6 +841,27 @@ export class Voice {
     if (this.sfu) { await read(this.sfu.send); if (!rtts.length && this.sfu.recv) await read(this.sfu.recv); return rtts.length ? Math.min(...rtts) : null; }
     for (const p of this.peers.values()) if (p.pc) await read(p.pc);
     return rtts.length ? Math.max(...rtts) : null;
+  }
+  // diagnóstico da conexão com o servidor: protocolo (UDP é o ideal; TCP = UDP bloqueado, mais atraso), perda de pacotes
+  // nos dois sentidos e oscilação (jitter) da voz que chega. Deltas desde a última leitura.
+  async connInfo() {
+    const s = this.sfu; if (!s?.send) return null;
+    const out = { proto: null, candidate: null, sendLoss: null, recvLoss: null, jitterMs: null };
+    let lost = 0, recv = 0, jit = [];
+    for (const t of [s.send, s.recv].filter(Boolean)) {
+      try {
+        const rep = await t.getStats(), byId = new Map([...rep.values()].map(r => [r.id, r]));
+        for (const r of rep.values()) {
+          if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded' && !out.proto) { const lc = byId.get(r.localCandidateId); out.proto = lc?.protocol || null; out.candidate = lc?.candidateType || null; }
+          if (r.type === 'remote-inbound-rtp' && r.kind === 'audio' && r.fractionLost != null) out.sendLoss = Math.max(out.sendLoss ?? 0, r.fractionLost);
+          if (r.type === 'inbound-rtp' && r.kind === 'audio') { lost += Math.max(0, r.packetsLost || 0); recv += r.packetsReceived || 0; if (r.jitter != null) jit.push(r.jitter * 1000); }
+        }
+      } catch { }
+    }
+    const prev = this._ci; this._ci = { lost, recv };
+    if (prev && recv > prev.recv) { const dl = lost - prev.lost, dr = recv - prev.recv; out.recvLoss = Math.max(0, dl) / (Math.max(0, dl) + dr); }
+    if (jit.length) out.jitterMs = Math.round(Math.max(...jit));
+    return out;
   }
   // estatísticas simples de qualidade (para o painel de conexão)
   async stats() {

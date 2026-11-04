@@ -17,6 +17,7 @@ let worker = null, webRtcServer = null;
 // Piso da banda estimada de cada espectador. Sem ele o consumidor começa na camada MENOR (480x270) e leva 10-25 s (às vezes nunca) para subir,
 // porque a estimativa de banda no servidor fica em ~0,3-0,5 Mbps enquanto só a camada pequena é enviada. 0 desliga (internet muito lenta).
 const MIN_OUT_KBPS = process.env.SFU_MIN_OUT_KBPS != null ? Math.max(0, +process.env.SFU_MIN_OUT_KBPS || 0) : 6000;
+const WEAK_KBPS = 800; // piso para quem mostrou perda (a camada leve da transmissão + voz cabem)
 const rooms = new Map(); // channelId -> { router, peers: Map<userId, Peer> }
 
 // IPs anunciados: RTC_ANNOUNCED_IP (Docker/NAT) ou todos os IPv4 das interfaces (inclui a da VPN)
@@ -177,6 +178,9 @@ export async function sfuRequest(cid, uid, op, d) {
       if (!r.router.canConsume({ producerId: pid, rtpCapabilities: d.rtpCapabilities })) throw new Error('não é possível consumir');
       const c = await t.consume({ producerId: pid, rtpCapabilities: d.rtpCapabilities, paused: true });
       peer.consumers.set(c.id, c);
+      // conexão fraca de quem recebe: a nota (0-10) do que chega até ela cai com perda. Aí o piso de banda deixa de valer
+      // para essa pessoa (senão o servidor seguia mandando vídeo acima do que a internet dela aguenta e a voz picotava)
+      c.on('score', (sc) => { if (sc.score < 7 && !t.appData.weak && MIN_OUT_KBPS > WEAK_KBPS) { t.appData.weak = true; t.setMinOutgoingBitrate(WEAK_KBPS * 1000).catch(() => { }); } });
       const drop = () => { if (peer.consumers.delete(c.id)) peer.notify('SFU_CONSUMER_CLOSED', { consumer_id: c.id }); };
       c.on('producerclose', drop); c.on('transportclose', () => peer.consumers.delete(c.id));
       return { id: c.id, producer_id: pid, kind: c.kind, rtpParameters: c.rtpParameters };

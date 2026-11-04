@@ -557,6 +557,7 @@ const newsActions = {
   stream: () => openSettings('stream', ctxSettings()),
   poll: () => { const ch = channelById(S.view.cid); if (ch && $('#composer')) pollModal(ch); else toast('Abra um chat e use o + do campo de mensagem → "Criar enquete".'); },
   settings: () => openSettings('news', ctxSettings()),
+  ping: () => { const b = $('#vp-ping'); if (b) b.click(); else toast('Entre numa sala de voz e clique no ícone de sinal do painel de voz.'); },
 };
 // botão de efeitos de voz (painel de voz e controles da sala): com efeito ligado mostra o emoji dele
 function fxButton(size, round, cls = '') {
@@ -1821,7 +1822,7 @@ function paintAbr(el) {
 }
 function openAbrPicker(anchor) {
   const body = h('div.qpop', h('h4', 'Qualidade da voz'), seg(VOICE_BITRATES, isAutoAbr() ? 'auto' : S.prefs.voiceBitrate, (v) => { S.prefs.voiceBitrate = v; savePrefs(); voice.retuneAudio(); paintAbr(anchor); }),
-    h('div.hintline', 'Automático começa em 128 kbps e sobe ou desce conforme a rede. Mais kbps = voz mais fiel, usando mais banda.'));
+    h('div.hintline', 'Automático: voz mono a 64 kbps (já soa perfeita), descendo para 48 ou 32 se a sua conexão piorar. 128 kbps ou mais só vale para música, e pesa para todos: o servidor repassa a sua voz para cada pessoa da sala.'));
   const el = popout(anchor, body, 'up'); el.classList.add('quick', 'abrpop');
 }
 setInterval(() => {
@@ -1832,9 +1833,9 @@ function openPingChart(anchor) {
   const W = 300, H = 120, L = 34, R = 8, T = 10, B = 20;
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('class', 'pchart'); svg.setAttribute('role', 'img');
-  const avgEl = h('b'), lastEl = h('b'), rangeEl = h('b'), tip = h('div.ptip.hidden');
+  const avgEl = h('b'), lastEl = h('b'), rangeEl = h('b'), tip = h('div.ptip.hidden'), connBox = h('div.pconn');
   const body = h('div.qpop.pingpop', h('h4', 'Ping até o servidor — último minuto'), h('div.pwrap', svg, tip),
-    h('div.pstats', h('div', h('small', 'Último'), lastEl), h('div', h('small', 'Média'), avgEl), h('div', h('small', 'Mín – máx'), rangeEl)));
+    h('div.pstats', h('div', h('small', 'Último'), lastEl), h('div', h('small', 'Média'), avgEl), h('div', h('small', 'Mín – máx'), rangeEl)), connBox);
   const ns = (tag, attrs) => { const e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
   let pts = [];
   const draw = () => {
@@ -1855,7 +1856,24 @@ function openPingChart(anchor) {
     lastEl.textContent = vals.length ? `${vals.at(-1)} ms` : '—'; avgEl.textContent = avg != null ? `${avg} ms` : '—';
     rangeEl.textContent = vals.length ? `${Math.min(...vals)} – ${Math.max(...vals)} ms` : '—';
     svg.setAttribute('aria-label', `Ping no último minuto: média ${avg ?? '—'} ms, último ${vals.at(-1) ?? '—'} ms`);
+    paintConn(vals);
   };
+  // diagnóstico: protocolo, perda, oscilação e o que fazer
+  let ci = null; const readConn = () => voice?.connInfo?.().then(x => { ci = x; paintConn(pingHist.filter(s => Date.now() - s.t <= 60000).map(s => s.ms)); }).catch(() => { });
+  const paintConn = (vals) => {
+    if (!ci) return connBox.replaceChildren(h('small', 'Analisando a conexão…'));
+    const loss = Math.max(ci.sendLoss ?? 0, ci.recvLoss ?? 0), spread = vals.length > 5 ? Math.max(...vals) - Math.min(...vals) : 0, avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    const tips = [];
+    if (ci.proto === 'tcp') tips.push(['bad', 'A conexão de voz está indo por TCP: o UDP parece bloqueado na sua rede (ou na VPN). TCP atrasa a voz quando há qualquer perda. Peça para liberar a porta 40000/UDP do servidor.']);
+    if (loss > .02) tips.push(['bad', `Perda de pacotes de ${(loss * 100).toFixed(1)}%: a voz pode picotar. Wi-Fi fraco ou rede congestionada são as causas mais comuns; cabo de rede ajuda muito.`]);
+    if (spread > 80 || (ci.jitterMs ?? 0) > 30) tips.push(['mid', 'Ping instável (variando muito): costuma ser Wi-Fi, download pesado na mesma rede ou a VPN passando por um relay em vez de ligar direto.']);
+    if (avg > 120) tips.push(['mid', `Ping alto (${Math.round(avg)} ms). Se a VPN (Tailscale) estiver usando um relay, uma conexão direta reduz bastante: no seu computador, rode tailscale ping ${location.hostname} — se aparecer "via DERP", a ligação não está direta.`]);
+    connBox.replaceChildren(
+      h('div.pcrow', h('span', 'Conexão'), h('b', ci.proto ? ci.proto.toUpperCase() + (ci.proto === 'udp' ? ' ✓' : '') : '—'), h('span', 'Perda'), h('b', `${(loss * 100).toFixed(1)}%`), h('span', 'Oscilação'), h('b', ci.jitterMs != null ? `${ci.jitterMs} ms` : '—')),
+      ...(tips.length ? tips.map(([k, t]) => h('div.ptipline.' + k, t)) : [h('div.ptipline.good', 'Conexão boa e estável.')]));
+  };
+  readConn();
+  document.addEventListener('ping-sample', readConn); queueMicrotask(() => whenGone(body, () => document.removeEventListener('ping-sample', readConn)));
   // dica ao passar o mouse: amostra mais próxima
   svg.addEventListener('mousemove', (e) => {
     if (!pts.length) return;

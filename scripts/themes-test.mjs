@@ -137,7 +137,7 @@ try {
   for (const page of [A, B]) await page.evaluate(() => [...document.querySelectorAll('#stage .btn')].find(b => /Entrar/.test(b.textContent))?.click());
   await sleep(3000);
   await B.waitForSelector('#vp-abr', { timeout: 8000 }).catch(async () => console.log('  diag', JSON.stringify(await B.evaluate(() => ({ active: window.__lc.voice?.active, ch: window.__lc.voice?.channelId, err: window.__lc.voice?.error, vp: !!document.getElementById('voice-panel'), html: document.getElementById('voice-panel')?.outerHTML.slice(0, 300) })))));
-  ok((await B.$eval('#vp-abr', e => e.textContent).catch(() => '')).startsWith('Auto · 128k'), 'painel de voz mostra "Auto · 128k"');
+  ok((await B.$eval('#vp-abr', e => e.textContent).catch(() => '')).startsWith('Auto · 64k'), 'painel de voz mostra "Auto · 64k"');
   await sleep(4000);
   await B.click('#vp-abr'); await sleep(300);
   await clickText(B, '.qpop .seg button', '384 kbps'); await sleep(1500);
