@@ -75,8 +75,7 @@ try {
   const cards = await A.evaluate(() => [...document.querySelectorAll('#clipsview .clipcard .ctitle')].map(x => x.textContent));
   ok(JSON.stringify(cards) === JSON.stringify(['Clipe de alice', 'Clipe de bruno', 'Clipe de alice']), 'galeria mostra os clipes, mais novos primeiro', cards);
   ok(await A.evaluate(() => /3 clipes em Jogatina/.test(document.querySelector('#clipsview #topbar').textContent)), 'cabeçalho com a contagem');
-  await A.waitForFunction(() => [...document.querySelectorAll('#clipsview .cthumb video')].every(v => v.readyState >= 1), { timeout: 8000 }).catch(() => { });
-  ok(await A.evaluate(() => [...document.querySelectorAll('#clipsview .cthumb video')].every(v => v.src && v.readyState >= 1)), 'prévias carregadas (só ao aparecer na tela)');
+  ok(await A.evaluate(() => [...document.querySelectorAll('#clipsview .cthumb video')].every(v => v.poster && !v.getAttribute('src'))), 'galeria mostra miniaturas sem baixar os vídeos');
   if (process.env.SHOTS) { await sleep(800); await A.screenshot({ path: `${OUT}/01-galeria.png` }); }
   // ao vivo: bruno salva outro clipe e ele aparece na galeria aberta da alice
   await makeClip(B, vch.id, a.id, 'Ace!', 300);
@@ -121,7 +120,7 @@ try {
   await sleep(300); ok((await fetch(BASE + url)).status === 404, 'arquivo do vídeo removido do servidor');
   // chat da sala: a mensagem do clipe com o vídeo
   await A.evaluate((gid, cid) => window.__lc.go(gid, cid), g.id, vch.id); await sleep(1000);
-  ok(await A.evaluate(() => document.querySelectorAll('#msgs video, #chat video').length) >= 2, 'clipes continuam no chat da sala');
+  ok(await A.evaluate(() => document.querySelectorAll('#msgs .clipmsg, #chat .clipmsg').length) >= 2, 'clipes continuam no chat da sala (cartão leve)');
   // de ponta a ponta: alice transmite, bruno assiste e salva os últimos 5 s pelo menu de clipes
   for (const P of [A, B]) {
     await P.evaluate((gid, cid) => window.__lc.go(gid, cid), g.id, vch.id); await sleep(300);

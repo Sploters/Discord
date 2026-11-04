@@ -38,3 +38,22 @@ de uma VPN simulada: 40 ms de ida e volta, 20 Mbps). CPU = tempo de tarefas na t
 - Parado no chat o app praticamente não usa CPU; o servidor ocioso usa ~0,5%.
 - Timers fixos: poucos e leves (ping 1 s, qualidade da voz 3 s, relógios da call 1 s).
 - Não valeu a pena carregar módulos sob demanda: com compressão e cache, o ganho seria de poucos ms.
+
+## Clipes no chat (2026-11-04)
+Relatado: abrir o chat da sala de voz num notebook fraco no Wi-Fi demorava, carregando os clipes do mais antigo ao mais
+novo. Causa: cada clipe era um player de vídeo com `preload=metadata`; os clipes gravados pelo app não têm índice interno
+(Cues), então o navegador baixava o arquivo **inteiro** de cada um para saber a duração.
+
+Medido (`node scripts/clips-chat-test.mjs`, 12 clipes reais de ~3 MB + 1 vídeo comum):
+| Ao abrir o chat da sala | Antes | Depois |
+|---|---|---|
+| Vídeo baixado | 79 MB | 0 |
+| Miniaturas | — | 88 KB |
+| Processamento | 740 ms | 250 ms |
+| Players de vídeo | 13 | 1 (o vídeo comum, sem baixar) |
+
+- `server/thumbs.js`: miniatura de cada vídeo gerada uma vez pelo ffmpeg (fila de 1 em 1), em `/thumbs/<arquivo>`.
+- Clipes antigos (só mensagem no chat) entram na galeria ao iniciar o servidor (idempotente; quem transmitiu é achado pelo
+  nome quando é único no servidor).
+- Mensagem de clipe no chat = cartão leve (miniatura, título, "Ver na galeria"); o vídeo toca ali mesmo ao clicar.
+- Vídeos comuns no chat: `preload=none` + miniatura. Galeria: miniaturas; o vídeo só baixa ao passar o mouse (prévia).

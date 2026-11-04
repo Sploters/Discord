@@ -15,6 +15,7 @@ import { createActivityService } from './activity.js';
 import { createCallInvites } from './callinvites.js';
 import { createRemote } from './remote.js';
 import { mountStatic } from './static.js';
+import { createThumbs } from './thumbs.js';
 import { mountGifs } from './gifs.js';
 import { mountLfg } from './lfg.js';
 import { translate, translateEnabled, engineName } from './translate.js';
@@ -138,7 +139,13 @@ function messageObj(m) {
     attachments: JSON.parse(m.attachments || '[]'),
     reply: reply ? { id: reply.id, content: (reply.content || '').slice(0, 120), author: userPub(reply.author_id) } : (m.reply_to ? { id: m.reply_to, deleted: true } : null),
     reactions: Object.entries(rx).map(([emoji, users]) => ({ emoji, users })),
-    ...((m.content || '').startsWith('📊') ? { poll: pollObj(get('SELECT * FROM polls WHERE message_id=?', m.id)) } : {}) };
+    ...((m.content || '').startsWith('📊') ? { poll: pollObj(get('SELECT * FROM polls WHERE message_id=?', m.id)) } : {}),
+    ...(m.attachments && m.attachments.includes('video/') ? clipOfMessage(m.id) : {}) };
+}
+// mensagem de clipe: o chat mostra um cartão leve (miniatura + título) em vez do player; o vídeo fica na galeria
+function clipOfMessage(mid) {
+  const c = get('SELECT id, title, secs, url, has_audio, streamer_id FROM clips WHERE message_id=?', mid);
+  return c ? { clip: { id: c.id, title: c.title, secs: c.secs, url: c.url, has_audio: !!c.has_audio, streamer_id: c.streamer_id } } : {};
 }
 // enquete: opções com quem votou em cada uma; encerrada pelo autor/moderador ou pelo prazo
 function pollObj(p) {
@@ -904,7 +911,7 @@ function unlinkIfUnused(url) {
   const fname = path.basename(String(url).split('/')[2] || '');
   const like = '%' + fname.replace(/[%_\\]/g, '\\$&') + '%', used = (sql) => get(sql + " LIKE ? ESCAPE '\\'", like);
   if (fname && !used('SELECT 1 x FROM messages WHERE attachments') && !used('SELECT 1 x FROM users WHERE avatar') && !used('SELECT 1 x FROM users WHERE banner') && !used('SELECT 1 x FROM users WHERE settings')
-    && !used('SELECT 1 x FROM emojis WHERE url') && !used('SELECT 1 x FROM sounds WHERE url') && !used('SELECT 1 x FROM guilds WHERE icon') && !used('SELECT 1 x FROM guilds WHERE banner') && !used('SELECT 1 x FROM clips WHERE url')) fs.unlink(path.join(UPLOAD_DIR, fname), () => { });
+    && !used('SELECT 1 x FROM emojis WHERE url') && !used('SELECT 1 x FROM sounds WHERE url') && !used('SELECT 1 x FROM guilds WHERE icon') && !used('SELECT 1 x FROM guilds WHERE banner') && !used('SELECT 1 x FROM clips WHERE url')) { fs.unlink(path.join(UPLOAD_DIR, fname), () => { }); thumbs.remove(fname); }
 }
 function setPin(req, res, v) {
   const ch = channelFor(req, res); if (!ch) return;
@@ -1035,6 +1042,29 @@ app.post('/api/upload', auth, (req, res) => {
 });
 const SAFE_INLINE = /^(image\/(png|jpe?g|gif|webp|avif|bmp)|video\/(mp4|webm|ogg)|audio\/(mpeg|ogg|wav|webm|mp4)|text\/plain|application\/pdf)$/;
 const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.avif': 'image/avif', '.bmp': 'image/bmp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.ogg': 'audio/ogg', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.pdf': 'application/pdf', '.txt': 'text/plain' };
+const thumbs = createThumbs(UPLOAD_DIR);
+// Clipes antigos (de antes da galeria) que só existiam como mensagem no chat da sala: entram na galeria do servidor.
+// Roda ao iniciar; idempotente (pula mensagem que já tem clipe). O chat passa a mostrar o cartão leve deles.
+function migrateOldClips() {
+  const rows = all(`SELECT m.* FROM messages m JOIN channels c ON c.id = m.channel_id WHERE c.guild_id IS NOT NULL
+    AND m.content LIKE '🎬 Clipe de %' AND m.attachments LIKE '%video/%' AND NOT EXISTS (SELECT 1 FROM clips k WHERE k.message_id = m.id)`);
+  let n = 0;
+  for (const m of rows) {
+    const ch = get('SELECT * FROM channels WHERE id=?', m.channel_id); if (!ch) continue;
+    const att = JSON.parse(m.attachments || '[]').find(a => CLIP_URL.test(String(a.url || ''))); if (!att) continue;
+    const mm = String(m.content).match(/^🎬 Clipe de (\d+)s da transmissão de (.+)$/), who = mm?.[2]?.trim() || '';
+    // de quem era a transmissão: membro do servidor com esse nome (apelido, nome de exibição ou usuário), se for único
+    const cands = who ? all(`SELECT u.id FROM members mb JOIN users u ON u.id = mb.user_id WHERE mb.guild_id=? AND (mb.nickname=? OR u.display_name=? OR u.username=?)`, ch.guild_id, who, who, who) : [];
+    run('INSERT INTO clips(id,guild_id,channel_id,message_id,author_id,streamer_id,title,url,size,secs,has_audio,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+      newId(), ch.guild_id, ch.id, m.id, m.author_id, cands.length === 1 ? cands[0].id : null, (who ? `Clipe de ${who}` : 'Clipe').slice(0, 100), att.url, +att.size || 0, +(mm?.[1] || 0), 1, m.created_at);
+    n++;
+  }
+  if (n) console.log(`  Clipes: ${n} clipe(s) antigo(s) do chat entraram na galeria`);
+  return n;
+}
+migrateOldClips();
+
+app.get('/thumbs/:f', (req, res) => thumbs.route(req, res)); // miniatura de vídeo (server/thumbs.js)
 app.get('/files/:f/:name?', (req, res) => {
   const f = path.basename(req.params.f), p = path.join(UPLOAD_DIR, f);
   if (!fs.existsSync(p)) return res.sendStatus(404);

@@ -216,3 +216,6 @@ export function whenGone(el, fn) {
     goneObs.observe(document.body, { childList: true, subtree: true });
   }
 }
+
+// miniatura de um vídeo enviado (/files/<id>.webm/...): imagem pequena gerada pelo servidor (server/thumbs.js)
+export const thumbUrl = (url) => { const m = /^\/files\/([a-f0-9]{24}\.(?:webm|mp4))\//.exec(String(url || '')); return m ? `/thumbs/${m[1]}` : null; };

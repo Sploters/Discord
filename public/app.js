@@ -3,7 +3,7 @@ import { setNewsActions, maybeShowNews, markSeen as markNewsSeen } from './chang
 import { openFxPicker, fxBadge } from './fxui.js';
 import { fxInfo } from './voicefx.js';
 import { gifPicker, gifEl, isGifMessage, toggleFav as toggleGifFav, isFav as isGifFav } from './gifs.js';
-import { h, icon, avatar, fsVideo, whenGone, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyEmoji, isImageUrl, SHORT, inviteCodes, callCodes, stripInvites, inviteText, parsePos, framePos, initials } from './util.js';
+import { h, icon, avatar, fsVideo, whenGone, thumbUrl, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyEmoji, isImageUrl, SHORT, inviteCodes, callCodes, stripInvites, inviteText, parsePos, framePos, initials } from './util.js';
 import { S, api, tryApi, user, guild, channelById, member, nameOf, roleColor, can, perms, PERM, dmPeer, relType, toast, modal, confirmBox, promptBox, menu, popout, emojiPicker, lightbox, closeFloating, beep, notify, notifPolicy, channelMuted, desktop, applyTheme, emojiUrl, allEmojis, savePrefs, relite } from './state.js';
 import { Voice, SCREEN_PRESETS, VOICE_BITRATES } from './voice.js';
 import { playSound } from './sounds.js';
@@ -959,6 +959,7 @@ function msgEl(m, prev) {
     let shown = shared ? stripThemeCodes(m.content) : m.content; // o código do tema não aparece, só o bloco
     if (invites.length || calls.length) shown = stripInvites(shown); // o link do convite também vira só o cartão
     if (m.poll) shown = ''; // enquete: o cartão mostra a pergunta
+    if (m.clip) shown = ''; // clipe: o cartão mostra o título
     const gifOnly = !m.poll && !shared && isGifMessage(shown); if (gifOnly) shown = ''; // só um GIF: mostra a imagem, sem o link
     if (shown) body.innerHTML = md(shown, ctxFor(gid));
     if (shown && onlyEmoji(shown.replace(/<:\w+:\d+>/g, '😀'))) body.classList.add('emoji-big');
@@ -1079,13 +1080,24 @@ function appendAttachments(el, m, canDel) {
   const imgs = atts.filter(a => isImg(a.f));
   if (imgs.length) el.append(h('div.mgrid.n' + Math.min(imgs.length, 5), imgs.map(({ f, i }) =>
     h('div.mtile', h('img', { src: f.url, alt: f.name, title: f.size ? `${f.name} • ${bytes(f.size)}` : f.name, 'data-size': f.size || '', loading: 'lazy', onclick: () => lightbox(f.url) }), del(f, i)))));
-  for (const { f } of atts.filter(a => !isImg(a.f))) { const a = attachEl(f); a.classList.add('mtile'); el.append(a); } // áudio/arquivo: excluir fica na barra da mensagem
+  if (m.clip) el.append(clipMsgCard(m)); // clipe: cartão leve no lugar do player (o vídeo fica na galeria)
+  for (const { f } of atts.filter(a => !isImg(a.f) && !(m.clip && a.f.url === m.clip.url))) { const a = attachEl(f); a.classList.add('mtile'); el.append(a); } // áudio/arquivo: excluir fica na barra da mensagem
+}
+// cartão do clipe no chat: miniatura pequena + título; o vídeo só carrega ao clicar em assistir
+function clipMsgCard(m) {
+  const c = m.clip, ch = channelById(m.channel_id), gid = ch?.guild_id;
+  const who = c.streamer_id ? nameOf(c.streamer_id, gid) || user(c.streamer_id).display_name : null;
+  const thumb = h('div.cmthumb', { title: 'Assistir aqui', onclick: () => { thumb.replaceWith(fsVideo({ src: c.url, autoplay: true, preload: 'auto', poster: thumbUrl(c.url) || undefined }, '.cmvideo')); } },
+    thumbUrl(c.url) && h('img', { src: thumbUrl(c.url), loading: 'lazy', alt: '', onerror: (e) => e.target.remove() }), h('span.cmplay', icon('play', 22)), c.secs ? h('span.cmdur', c.secs + 's') : null);
+  return h('div.clipmsg', thumb, h('div.cminfo', h('b', c.title), h('small', [who && `transmissão de ${who}`, !c.has_audio && 'sem áudio'].filter(Boolean).join(' · ') || 'clipe'),
+    gid && h('button.btn.link.sm', { onclick: () => go(gid, 'clips') }, icon('clip', 14), 'Ver na galeria')));
 }
 function attachEl(f) {
   const ext = (f.name.split('.').pop() || '').toLowerCase(), url = f.url;
   if (f.voice) return voiceEl(f);
   if (isImg(f)) return h('div.attach', h('img', { src: url, alt: f.name, 'data-size': f.size || '', loading: 'lazy', onclick: () => lightbox(url) }));
-  if (/^(mp4|webm)$/.test(ext)) return h('div.attach', fsVideo({ src: url, preload: 'metadata' }));
+  // o vídeo só baixa no play (antes cada vídeo do chat começava a baixar ao abrir o canal); a miniatura vem do servidor
+  if (/^(mp4|webm)$/.test(ext)) return h('div.attach', fsVideo({ src: url, preload: 'none', ...(thumbUrl(url) ? { poster: thumbUrl(url) } : {}) }));
   if (/^(mp3|ogg|wav|m4a)$/.test(ext)) return h('div.attach', h('audio', { src: url, controls: true, preload: 'none' }));
   return h('div.file', icon('file', 32), h('div', h('a.fn', { href: url + '?download=1', download: f.name }, f.name), h('div.fs', bytes(f.size))), h('a.ibtn', { href: url + '?download=1', download: f.name, style: { marginLeft: 'auto' } }, icon('dl')));
 }

@@ -1,7 +1,7 @@
 // Galeria de clipes do servidor: todos os clipes salvos nas salas de voz, num só lugar.
 // Abas Todos / Meus / Favoritos, busca, prévia que só carrega quando aparece na tela, player com anterior/próximo,
 // renomear, favoritar, baixar, ir para a mensagem e apagar. Atualiza em tempo real (CLIP_CREATE/UPDATE/DELETE).
-import { h, icon, fsVideo, whenGone } from './util.js';
+import { h, icon, fsVideo, whenGone, thumbUrl } from './util.js';
 import { openTrimmer } from './cliptrim.js';
 import { postClip } from './clips.js';
 import { S, tryApi, toast, menu, modal, confirmBox, promptBox, can, PERM, guild, nameOf } from './state.js';
@@ -17,7 +17,7 @@ const who = (u) => (u ? nameOf(u.id, st.gid) || u.display_name : 'alguém');
 const fileName = (c) => c.title.replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) + (c.url.includes('.mp4') ? '.mp4' : '.webm');
 
 // a prévia (primeiro quadro) só é baixada quando o cartão entra na tela
-const lazy = new IntersectionObserver((es) => { for (const e of es) if (e.isIntersecting) { const v = e.target; if (!v.src) { v.preload = 'metadata'; v.src = v.dataset.src + '#t=0.1'; } lazy.unobserve(v); } }, { rootMargin: '200px' });
+// miniatura (imagem pequena do servidor) no lugar do vídeo; o vídeo só começa a baixar quando o mouse passa por cima (prévia)
 
 async function load(reset) {
   if (st.loading) return; st.loading = true;
@@ -31,9 +31,9 @@ async function load(reset) {
 }
 
 function card(c, i) {
-  const v = h('video', { muted: true, playsInline: true, preload: 'none', disablePictureInPicture: true, 'data-src': c.url });
-  v.muted = true; lazy.observe(v);
-  const thumb = h('div.cthumb', { title: 'Assistir', onclick: () => player(i), onmouseenter: () => { if (v.src) { v.currentTime = 0; v.play().catch(() => { }); } }, onmouseleave: () => { v.pause(); if (v.src) v.currentTime = .1; } },
+  const v = h('video', { muted: true, playsInline: true, preload: 'none', disablePictureInPicture: true, poster: thumbUrl(c.url) || undefined });
+  v.muted = true;
+  const thumb = h('div.cthumb', { title: 'Assistir', onclick: () => player(i), onmouseenter: () => { if (!v.src) v.src = c.url; v.currentTime = 0; v.play().catch(() => { }); }, onmouseleave: () => { v.pause(); try { v.currentTime = 0; } catch { } } },
     v, h('span.cdur', `${c.secs}s`), !c.has_audio && h('span.cmute', { title: 'Sem áudio' }, icon('micoff', 14)), h('span.cplay', icon('play', 28)));
   const fav = h('button.ibtn' + (c.fav ? '.on' : ''), { title: c.fav ? 'Tirar dos favoritos' : 'Favoritar', onclick: (e) => { e.stopPropagation(); toggleFav(c); } }, icon('star', 18));
   return h('div.clipcard', { 'data-id': c.id, oncontextmenu: (e) => moreMenu(e, c) }, thumb,
@@ -82,13 +82,13 @@ function upsert(c) { const i = st.clips.findIndex(x => x.id === c.id); if (i >= 
 function player(i) {
   if (i < 0 || !st.clips[i]) return;
   let cur = i;
-  const vbox = fsVideo({ autoplay: true }, '.pvid'), v = vbox.video;
+  const vbox = fsVideo({ autoplay: true, preload: 'auto' }, '.pvid'), v = vbox.video;
   const title = h('b.pttl'), meta = h('div.pmeta'), prev = h('button.pnav.prev', { title: 'Anterior (←)', onclick: () => show(cur - 1) }, icon('chevl', 28)), next = h('button.pnav.next', { title: 'Próximo (→)', onclick: () => show(cur + 1) }, icon('chevr', 28));
   const dl = h('a.btn.grey', { download: '' }, icon('dl', 16), 'Baixar');
   const box = h('div.clipplayer', h('div.pstage', prev, vbox, next), h('div.pbar', h('div.ptxt', title, meta), dl));
   const show = (k) => {
     if (k < 0 || k >= st.clips.length) return; cur = k; const c = st.clips[k];
-    v.src = c.url; v.play().catch(() => { });
+    v.poster = thumbUrl(c.url) || ''; v.src = c.url; v.play().catch(() => { });
     title.textContent = c.title; meta.textContent = `${c.streamer ? 'de ' + who(c.streamer) + ' · ' : ''}clipado por ${who(c.author)} · ${ago(c.created_at)} · ${c.secs}s${c.has_audio ? '' : ' · sem áudio'}`;
     dl.href = c.url; dl.download = fileName(c);
     prev.disabled = k === 0; next.disabled = k === st.clips.length - 1;
