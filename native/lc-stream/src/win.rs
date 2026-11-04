@@ -2,7 +2,7 @@
 //! (ID3D11VideoProcessor) -> codificador H.264 de hardware do Media Foundation (NVENC/AMF/QuickSync, modo assíncrono,
 //! texturas D3D11 direto, sem passar pela CPU) -> RTP.
 //! Mensagens no console só em ASCII (o console do PowerShell estraga acentos).
-use crate::{emit, sender, summary, Meter, Opts, Source};
+use crate::{emit, sender, summary, Layer, Meter, Opts, Source};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
@@ -201,6 +201,63 @@ fn fit(w: u32, h: u32, ow: u32, oh: u32) -> RECT {
     RECT { left: x, top: y, right: x + dw, bottom: y + dh }
 }
 
+/// Uma camada: conversor (escala + NV12) e codificador próprios, ritmo próprio.
+struct WinLayer {
+    enc: Encoder, vproc: ID3D11VideoProcessor, venum: ID3D11VideoProcessorEnumerator,
+    ring: Vec<(ID3D11Texture2D, ID3D11VideoProcessorOutputView)>, ow: u32, oh: u32, fps: u32,
+    need: u32, next_due: f64, slot: usize, last_slot: Option<usize>, last_input: f64, last_st: i64,
+    inflight: HashMap<i64, Instant>, inputs: u64,
+}
+
+fn make_layer(device: &ID3D11Device, vdev: &ID3D11VideoDevice, vctx: &ID3D11VideoContext, luid: u64, cw: u32, ch: u32, l: &Layer, verbose: bool) -> R<WinLayer> {
+    let oh = (l.height.min(ch) / 2) * 2; let ow = ((cw as u64 * oh as u64 / ch as u64) as u32 / 2 * 2).max(2);
+    let rate = DXGI_RATIONAL { Numerator: l.fps, Denominator: 1 };
+    // o enumerador aceita entradas de outros tamanhos (a janela pode crescer): declara um teto generoso
+    let cdesc = D3D11_VIDEO_PROCESSOR_CONTENT_DESC { InputFrameFormat: D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE, InputFrameRate: rate, InputWidth: cw.max(3840), InputHeight: ch.max(2160), OutputFrameRate: rate, OutputWidth: ow, OutputHeight: oh, Usage: D3D11_VIDEO_USAGE_OPTIMAL_SPEED };
+    let venum = e(unsafe { vdev.CreateVideoProcessorEnumerator(&cdesc) }, "VideoProcessorEnumerator")?;
+    let vproc = e(unsafe { vdev.CreateVideoProcessor(&venum, 0) }, "VideoProcessor")?;
+    unsafe {
+        // entrada RGB 0-255; saída YCbCr BT.709 16-235 (o que o navegador espera de H.264 sem metadados de cor)
+        vctx.VideoProcessorSetStreamColorSpace(&vproc, 0, &D3D11_VIDEO_PROCESSOR_COLOR_SPACE { _bitfield: 0 });
+        vctx.VideoProcessorSetOutputColorSpace(&vproc, &D3D11_VIDEO_PROCESSOR_COLOR_SPACE { _bitfield: (1 << 2) | (1 << 4) });
+        vctx.VideoProcessorSetStreamFrameFormat(&vproc, 0, D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE);
+        vctx.VideoProcessorSetOutputTargetRect(&vproc, true, Some(&RECT { left: 0, top: 0, right: ow as i32, bottom: oh as i32 }));
+        vctx.VideoProcessorSetOutputBackgroundColor(&vproc, false, &D3D11_VIDEO_COLOR { Anonymous: D3D11_VIDEO_COLOR_0 { RGBA: D3D11_VIDEO_COLOR_RGBA { R: 0.0, G: 0.0, B: 0.0, A: 1.0 } } });
+        vctx.VideoProcessorSetStreamAutoProcessingMode(&vproc, 0, false);
+    }
+    let mut ring = Vec::new();
+    for _ in 0..NV12_RING {
+        let td = D3D11_TEXTURE2D_DESC { Width: ow, Height: oh, MipLevels: 1, ArraySize: 1, Format: DXGI_FORMAT_NV12, SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 }, Usage: D3D11_USAGE_DEFAULT, BindFlags: D3D11_BIND_RENDER_TARGET.0 as u32, CPUAccessFlags: 0, MiscFlags: 0 };
+        let mut t: Option<ID3D11Texture2D> = None;
+        let td2 = D3D11_TEXTURE2D_DESC { BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_VIDEO_ENCODER.0) as u32, ..td };
+        if unsafe { device.CreateTexture2D(&td2, None, Some(&mut t)) }.is_err() { e(unsafe { device.CreateTexture2D(&td, None, Some(&mut t)) }, "textura NV12")?; }
+        let t = t.unwrap();
+        let od = D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC { ViewDimension: D3D11_VPOV_DIMENSION_TEXTURE2D, Anonymous: D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC_0 { Texture2D: D3D11_TEX2D_VPOV { MipSlice: 0 } } };
+        let mut ov: Option<ID3D11VideoProcessorOutputView> = None;
+        e(unsafe { vdev.CreateVideoProcessorOutputView(&t, &venum, &od, Some(&mut ov)) }, "OutputView")?;
+        ring.push((t, ov.unwrap()));
+    }
+    let enc = make_encoder(device, luid, ow, oh, l.fps, l.kbps, verbose)?;
+    Ok(WinLayer { enc, vproc, venum, ring, ow, oh, fps: l.fps, need: 0, next_due: 0.0, slot: 0, last_slot: None, last_input: 0.0, last_st: 0, inflight: HashMap::new(), inputs: 0 })
+}
+
+impl WinLayer {
+    fn set_rects(&self, vctx: &ID3D11VideoContext, w: u32, h: u32) { unsafe {
+        vctx.VideoProcessorSetStreamSourceRect(&self.vproc, 0, true, Some(&RECT { left: 0, top: 0, right: w as i32, bottom: h as i32 }));
+        vctx.VideoProcessorSetStreamDestRect(&self.vproc, 0, true, Some(&fit(w, h, self.ow, self.oh)));
+    } }
+    /// entrega uma textura NV12 ao codificador
+    fn feed(&mut self, slot: usize, t: i64) -> windows::core::Result<()> { unsafe {
+        let buf = MFCreateDXGISurfaceBuffer(&ID3D11Texture2D::IID, &self.ring[slot].0, 0, false)?;
+        if let Ok(b2) = buf.cast::<IMF2DBuffer>() { if let Ok(l) = b2.GetContiguousLength() { let _ = buf.SetCurrentLength(l); } }
+        let s = MFCreateSample()?; s.AddBuffer(&buf)?;
+        s.SetSampleTime(t)?; s.SetSampleDuration(10_000_000 / self.fps as i64)?;
+        self.inflight.insert(t, Instant::now());
+        if self.inflight.len() > 512 { self.inflight.clear(); }
+        self.enc.mft.ProcessInput(0, &s, 0)
+    } }
+}
+
 pub fn run(o: &Opts) -> R<()> {
     unsafe { let _ = RoInitialize(RO_INIT_MULTITHREADED); e(MFStartup(MF_VERSION, MFSTARTUP_FULL), "MFStartup")?; }
     let say = |s: String| if !o.app { eprintln!("{s}"); };
@@ -226,9 +283,6 @@ pub fn run(o: &Opts) -> R<()> {
     { let c = closed.clone(); let _ = item.Closed(&TypedEventHandler::new(move |_, _| { c.store(true, Ordering::Relaxed); Ok(()) })); }
     let mut size = e(item.Size(), "Size")?;
     let (cw, ch) = (size.Width.max(2) as u32, size.Height.max(2) as u32);
-    // saída: altura pedida (sem ampliar), proporção da fonte, dimensões pares
-    let oh = (o.height.min(ch) / 2) * 2; let ow = ((cw as u64 * oh as u64 / ch as u64) as u32 / 2 * 2).max(2);
-    say(format!("  fonte {}x{} -> envio {}x{} a {} fps", cw, ch, ow, oh, o.fps));
     let pool = e(Direct3D11CaptureFramePool::CreateFreeThreaded(&d3d, DirectXPixelFormat::B8G8R8A8UIntNormalized, 3, size), "FramePool")?;
     let session = e(pool.CreateCaptureSession(&item), "CaptureSession")?;
     let _ = session.SetIsCursorCaptureEnabled(true);
@@ -239,88 +293,53 @@ pub fn run(o: &Opts) -> R<()> {
     let sig2 = signal.clone();
     e(pool.FrameArrived(&TypedEventHandler::new(move |_, _| { let (m, c) = &*sig2; *m.lock().unwrap() = true; c.notify_one(); Ok(()) })), "FrameArrived")?;
 
-    // conversão BGRA -> NV12 (com escala e barras pretas) na GPU
+    // camadas: a última é a cheia; se a placa não abrir uma sessão extra para a leve, segue só com a cheia
     let vdev: ID3D11VideoDevice = e(device.cast(), "ID3D11VideoDevice")?;
     let vctx: ID3D11VideoContext = e(ctx.cast(), "ID3D11VideoContext")?;
-    let rate = DXGI_RATIONAL { Numerator: o.fps, Denominator: 1 };
-    // o enumerador aceita entradas de outros tamanhos (a janela pode crescer): declara um teto generoso
-    let cdesc = D3D11_VIDEO_PROCESSOR_CONTENT_DESC { InputFrameFormat: D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE, InputFrameRate: rate, InputWidth: cw.max(3840), InputHeight: ch.max(2160), OutputFrameRate: rate, OutputWidth: ow, OutputHeight: oh, Usage: D3D11_VIDEO_USAGE_OPTIMAL_SPEED };
-    let venum = e(unsafe { vdev.CreateVideoProcessorEnumerator(&cdesc) }, "VideoProcessorEnumerator")?;
-    let vproc = e(unsafe { vdev.CreateVideoProcessor(&venum, 0) }, "VideoProcessor")?;
-    let set_rects = |w: u32, h: u32| unsafe {
-        vctx.VideoProcessorSetStreamSourceRect(&vproc, 0, true, Some(&RECT { left: 0, top: 0, right: w as i32, bottom: h as i32 }));
-        vctx.VideoProcessorSetStreamDestRect(&vproc, 0, true, Some(&fit(w, h, ow, oh)));
-    };
-    unsafe {
-        // entrada RGB 0-255; saída YCbCr BT.709 16-235 (o que o navegador espera de H.264 sem metadados de cor)
-        vctx.VideoProcessorSetStreamColorSpace(&vproc, 0, &D3D11_VIDEO_PROCESSOR_COLOR_SPACE { _bitfield: 0 });
-        vctx.VideoProcessorSetOutputColorSpace(&vproc, &D3D11_VIDEO_PROCESSOR_COLOR_SPACE { _bitfield: (1 << 2) | (1 << 4) });
-        vctx.VideoProcessorSetStreamFrameFormat(&vproc, 0, D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE);
-        vctx.VideoProcessorSetOutputTargetRect(&vproc, true, Some(&RECT { left: 0, top: 0, right: ow as i32, bottom: oh as i32 }));
-        vctx.VideoProcessorSetOutputBackgroundColor(&vproc, false, &D3D11_VIDEO_COLOR { Anonymous: D3D11_VIDEO_COLOR_0 { RGBA: D3D11_VIDEO_COLOR_RGBA { R: 0.0, G: 0.0, B: 0.0, A: 1.0 } } });
-        vctx.VideoProcessorSetStreamAutoProcessingMode(&vproc, 0, false);
+    let top_i = o.layers.len() - 1;
+    let top = make_layer(&device, &vdev, &vctx, luid, cw, ch, &o.layers[top_i], !o.app)?;
+    let mut layers: Vec<(usize, WinLayer)> = Vec::new(); // (índice do fluxo RTP, camada)
+    let mut layer_err = String::new();
+    for (i, l) in o.layers.iter().enumerate().take(top_i) {
+        match make_layer(&device, &vdev, &vctx, luid, cw, ch, l, !o.app) { Ok(x) => layers.push((i, x)), Err(x) => { layer_err = format!("camada {}p{}: {x}", l.height, l.fps); say(format!("  {layer_err}")); } }
     }
-    set_rects(cw, ch);
-    let mut ring: Vec<(ID3D11Texture2D, ID3D11VideoProcessorOutputView)> = Vec::new();
-    for _ in 0..NV12_RING {
-        let td = D3D11_TEXTURE2D_DESC { Width: ow, Height: oh, MipLevels: 1, ArraySize: 1, Format: DXGI_FORMAT_NV12, SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 }, Usage: D3D11_USAGE_DEFAULT, BindFlags: D3D11_BIND_RENDER_TARGET.0 as u32, CPUAccessFlags: 0, MiscFlags: 0 };
-        let mut t: Option<ID3D11Texture2D> = None;
-        let td2 = D3D11_TEXTURE2D_DESC { BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_VIDEO_ENCODER.0) as u32, ..td };
-        if unsafe { device.CreateTexture2D(&td2, None, Some(&mut t)) }.is_err() { e(unsafe { device.CreateTexture2D(&td, None, Some(&mut t)) }, "textura NV12")?; }
-        let t = t.unwrap();
-        let od = D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC { ViewDimension: D3D11_VPOV_DIMENSION_TEXTURE2D, Anonymous: D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC_0 { Texture2D: D3D11_TEX2D_VPOV { MipSlice: 0 } } };
-        let mut ov: Option<ID3D11VideoProcessorOutputView> = None;
-        e(unsafe { vdev.CreateVideoProcessorOutputView(&t, &venum, &od, Some(&mut ov)) }, "OutputView")?;
-        ring.push((t, ov.unwrap()));
-    }
-    let ivd = D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC { FourCC: 0, ViewDimension: D3D11_VPIV_DIMENSION_TEXTURE2D, Anonymous: D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC_0 { Texture2D: D3D11_TEX2D_VPIV { MipSlice: 0, ArraySlice: 0 } } };
-
-    let enc = make_encoder(&device, luid, ow, oh, o.fps, o.kbps, !o.app)?;
-    say(format!("  codificador em uso: {}", enc.name));
+    layers.push((top_i, top));
+    for (_, l) in &layers { l.set_rects(&vctx, cw, ch); }
+    let (ow, oh) = (layers.last().unwrap().1.ow, layers.last().unwrap().1.oh);
+    say(format!("  fonte {}x{} -> {}", cw, ch, layers.iter().map(|(_, l)| format!("{}x{}@{}", l.ow, l.oh, l.fps)).collect::<Vec<_>>().join(" + ")));
+    say(format!("  codificador em uso: {}", layers.last().unwrap().1.enc.name));
     let mut tx = sender(o)?;
-    if let Some(h) = enc.seq_header() { tx.set_params(&h); }
-    let mut inputs = 0u64;
+    for (i, l) in &layers { if let Some(h) = l.enc.seq_header() { tx.set_params(*i, &h); } }
 
     let mut m = Meter::new(o); m.size = (ow, oh);
-    let iv = 1.0 / o.fps as f64;
-    let (mut next_due, mut need, mut slot) = (0.0f64, 0u32, 0usize);
-    let mut last_slot: Option<usize> = None; let mut last_input = 0.0f64; let mut last_st: i64 = 0;
-    let start_qpc = Instant::now();
-    let mut inflight: HashMap<i64, Instant> = HashMap::new();
     let (mut blt_err, mut in_err) = (None::<String>, None::<String>);
+    let ivd = D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC { FourCC: 0, ViewDimension: D3D11_VPIV_DIMENSION_TEXTURE2D, Anonymous: D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC_0 { Texture2D: D3D11_TEX2D_VPIV { MipSlice: 0, ArraySlice: 0 } } };
     e(session.StartCapture(), "StartCapture")?;
-    if o.app { emit(serde_json::json!({ "t": "started", "w": ow, "h": oh, "encoder": enc.name, "gpu": gpu, "minUpdateInterval": iv_note })); }
+    if o.app { emit(serde_json::json!({ "t": "started", "w": ow, "h": oh, "encoder": layers.last().unwrap().1.enc.name, "gpu": gpu, "minUpdateInterval": iv_note,
+        "layers": layers.iter().map(|(_, l)| format!("{}p{}", l.oh, l.fps)).collect::<Vec<_>>(), "layerError": layer_err })); }
     say("  transmitindo... (nao feche esta janela)".into());
-
-    // entrega uma textura NV12 ao codificador
-    let feed = |slot: usize, t: i64, inflight: &mut HashMap<i64, Instant>| -> windows::core::Result<()> { unsafe {
-        let buf = MFCreateDXGISurfaceBuffer(&ID3D11Texture2D::IID, &ring[slot].0, 0, false)?;
-        if let Ok(b2) = buf.cast::<IMF2DBuffer>() { if let Ok(l) = b2.GetContiguousLength() { let _ = buf.SetCurrentLength(l); } }
-        let s = MFCreateSample()?; s.AddBuffer(&buf)?;
-        s.SetSampleTime(t)?; s.SetSampleDuration(10_000_000 / o.fps as i64)?;
-        inflight.insert(t, Instant::now());
-        enc.mft.ProcessInput(0, &s, 0)
-    } };
 
     while !m.done() {
         if closed.load(Ordering::Relaxed) { return Err("a janela transmitida foi fechada".into()); }
-        // eventos do codificador (sem bloquear)
-        loop {
-            let ev = match unsafe { enc.events.GetEvent(MF_EVENT_FLAG_NO_WAIT) } { Ok(ev) => ev, Err(_) => break };
-            let typ = unsafe { ev.GetType() }.unwrap_or(0);
-            if typ == METransformNeedInput.0 as u32 { need += 1; }
-            else if typ == METransformHaveOutput.0 as u32 {
-                if let Some((data, t)) = enc.take_output()? {
-                    if let Some(at) = inflight.remove(&t) { m.enc_ms.push(at.elapsed().as_secs_f64() * 1000.0); }
-                    let ts = (t.max(0) as u64 * 9 / 1000) as u32; // 100 ns -> 90 kHz
-                    if !tx.has_params() { if let Some(h) = enc.seq_header() { tx.set_params(&h); } }
-                    let before = tx.stats.bytes; tx.send_frame(&data, ts); m.sent((tx.stats.bytes - before) as usize);
-                }
-            } else if typ == MEError.0 as u32 { return Err(format!("o codificador avisou erro: 0x{:08X}", unsafe { ev.GetStatus() }.map(|h| h.0 as u32).unwrap_or(0))); }
+        // eventos dos codificadores (sem bloquear)
+        for (i, l) in layers.iter_mut() {
+            loop {
+                let ev = match unsafe { l.enc.events.GetEvent(MF_EVENT_FLAG_NO_WAIT) } { Ok(ev) => ev, Err(_) => break };
+                let typ = unsafe { ev.GetType() }.unwrap_or(0);
+                if typ == METransformNeedInput.0 as u32 { l.need += 1; }
+                else if typ == METransformHaveOutput.0 as u32 {
+                    if let Some((data, t)) = l.enc.take_output()? {
+                        if *i == top_i { if let Some(at) = l.inflight.remove(&t) { m.enc_ms.push(at.elapsed().as_secs_f64() * 1000.0); } } else { l.inflight.remove(&t); }
+                        let ts = (t.max(0) as u64 * 9 / 1000) as u32; // 100 ns -> 90 kHz, mesmo relógio para as camadas
+                        if !tx.has_params(*i) { if let Some(h) = l.enc.seq_header() { tx.set_params(*i, &h); } }
+                        let before = tx.streams[*i].stats.bytes; tx.send_frame(*i, &data, ts); m.sent(*i, (tx.streams[*i].stats.bytes - before) as usize);
+                    }
+                } else if typ == MEError.0 as u32 { return Err(format!("o codificador avisou erro: 0x{:08X}", unsafe { ev.GetStatus() }.map(|h| h.0 as u32).unwrap_or(0))); }
+            }
         }
         tx.poll_rtcp();
-        if tx.want_key { tx.want_key = false; enc.force_key(); }
-        m.tick(&tx.stats);
+        for (i, l) in &layers { if tx.streams[*i].want_key { tx.streams[*i].want_key = false; l.enc.force_key(); } }
+        m.tick(&tx.total());
 
         // quadro novo da tela? (pega só o mais recente)
         let mut latest: Option<Direct3D11CaptureFrame> = None;
@@ -328,10 +347,12 @@ pub fn run(o: &Opts) -> R<()> {
         let now = m.elapsed();
         let Some(frame) = latest else {
             // tela parada: repete o último quadro ~10x/s (quem entra depois recebe imagem e o servidor sabe que segue vivo)
-            if let Some(ls) = last_slot { if now - last_input > 0.1 && need > 0 {
-                last_st += ((now - last_input) * 1e7) as i64; last_input = now;
-                if feed(ls, last_st, &mut inflight).is_ok() { need -= 1; m.repeats += 1; }
-            } }
+            for (_, l) in layers.iter_mut() {
+                if let Some(ls) = l.last_slot { if now - l.last_input > 0.1 && l.need > 0 {
+                    l.last_st += ((now - l.last_input) * 1e7) as i64; l.last_input = now;
+                    let st = l.last_st; if l.feed(ls, st).is_ok() { l.need -= 1; m.repeats += 1; }
+                } }
+            }
             let (mx, cv) = &*signal; let g = mx.lock().unwrap();
             let (mut g, _) = cv.wait_timeout(g, Duration::from_millis(1)).unwrap(); *g = false;
             continue;
@@ -339,32 +360,41 @@ pub fn run(o: &Opts) -> R<()> {
         // janela mudou de tamanho: recria o pool e reposiciona (barras pretas mantêm a proporção)
         if let Ok(cs) = frame.ContentSize() {
             if cs.Width != size.Width || cs.Height != size.Height {
-                if cs.Width > 0 && cs.Height > 0 { size = cs; let _ = pool.Recreate(&d3d, DirectXPixelFormat::B8G8R8A8UIntNormalized, 3, size); set_rects(size.Width as u32, size.Height as u32); }
+                if cs.Width > 0 && cs.Height > 0 { size = cs; let _ = pool.Recreate(&d3d, DirectXPixelFormat::B8G8R8A8UIntNormalized, 3, size); for (_, l) in &layers { l.set_rects(&vctx, size.Width as u32, size.Height as u32); } }
                 continue;
             }
         }
-        if now + iv * 0.3 < next_due { continue; } // acima do fps pedido: descarta
-        next_due = if next_due < now - iv { now + iv } else { next_due + iv };
-        if need == 0 { m.skipped_busy += 1; continue; } // codificador ainda ocupado
-        let _ = start_qpc;
+        // quais camadas querem este quadro (cada uma no seu fps)
         let st = (now * 1e7) as i64;
+        let mut want: Vec<usize> = Vec::new();
+        for (k, (i, l)) in layers.iter_mut().enumerate() {
+            let iv = 1.0 / l.fps as f64;
+            if now + iv * 0.3 < l.next_due { continue; } // acima do fps desta camada: descarta
+            l.next_due = if l.next_due < now - iv { now + iv } else { l.next_due + iv };
+            if l.need == 0 { if *i == top_i { m.skipped_busy += 1; } continue; } // codificador ainda ocupado
+            want.push(k);
+        }
+        if want.is_empty() { continue; }
         let Ok(surf) = frame.Surface() else { continue };
         let Ok(acc) = surf.cast::<IDirect3DDxgiInterfaceAccess>() else { continue };
         let Ok(tex) = (unsafe { acc.GetInterface::<ID3D11Texture2D>() }) else { continue };
-        let cur = slot % NV12_RING; slot += 1;
-        let mut inview: Option<ID3D11VideoProcessorInputView> = None;
-        if let Err(x) = unsafe { vdev.CreateVideoProcessorInputView(&tex, &venum, &ivd, Some(&mut inview)) } { blt_err.get_or_insert(format!("InputView: {}", x.message())); continue; }
-        let mut stream = D3D11_VIDEO_PROCESSOR_STREAM { Enable: true.into(), pInputSurface: ManuallyDrop::new(inview), ..Default::default() };
-        let r = unsafe { vctx.VideoProcessorBlt(&vproc, &ring[cur].1, 0, std::slice::from_ref(&stream)) };
-        unsafe { ManuallyDrop::drop(&mut stream.pInputSurface); }
+        for k in want {
+            let l = &mut layers[k].1;
+            let cur = l.slot % NV12_RING; l.slot += 1;
+            let mut inview: Option<ID3D11VideoProcessorInputView> = None;
+            if let Err(x) = unsafe { vdev.CreateVideoProcessorInputView(&tex, &l.venum, &ivd, Some(&mut inview)) } { blt_err.get_or_insert(format!("InputView: {}", x.message())); continue; }
+            let mut stream = D3D11_VIDEO_PROCESSOR_STREAM { Enable: true.into(), pInputSurface: ManuallyDrop::new(inview), ..Default::default() };
+            let r = unsafe { vctx.VideoProcessorBlt(&l.vproc, &l.ring[cur].1, 0, std::slice::from_ref(&stream)) };
+            unsafe { ManuallyDrop::drop(&mut stream.pInputSurface); }
+            if let Err(x) = r { blt_err.get_or_insert(format!("VideoProcessorBlt: {}", x.message())); continue; }
+            match l.feed(cur, st) { Ok(()) => { l.need -= 1; l.inputs += 1; l.last_slot = Some(cur); l.last_input = now; l.last_st = st; } Err(x) => { in_err.get_or_insert(format!("ProcessInput: {} (0x{:08X})", x.message(), x.code().0 as u32)); } }
+        }
         drop(frame);
-        if let Err(x) = r { blt_err.get_or_insert(format!("VideoProcessorBlt: {}", x.message())); continue; }
-        match feed(cur, st, &mut inflight) { Ok(()) => { need -= 1; inputs += 1; last_slot = Some(cur); last_input = now; last_st = st; } Err(x) => { in_err.get_or_insert(format!("ProcessInput: {} (0x{:08X})", x.message(), x.code().0 as u32)); } }
-        if inflight.len() > 512 { inflight.clear(); }
-        if inputs > 60 && tx.stats.frames == 0 { return Err(format!("nenhum quadro saiu do codificador. {} {}", blt_err.unwrap_or_default(), in_err.unwrap_or_default())); }
+        let t = &layers.last().unwrap().1;
+        if t.inputs > 60 && tx.streams[top_i].stats.frames == 0 { return Err(format!("nenhum quadro saiu do codificador. {} {}", blt_err.unwrap_or_default(), in_err.unwrap_or_default())); }
     }
     let _ = session.Close(); let _ = pool.Close();
-    unsafe { let _ = enc.mft.ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0); }
-    summary(&m, &tx.stats, serde_json::json!({ "encoder": enc.name, "size": format!("{ow}x{oh}"), "screen": format!("{cw}x{ch}"), "minUpdateInterval": iv_note, "bltError": blt_err.unwrap_or_default(), "inputError": in_err.unwrap_or_default(), "repeats": m.repeats, "rtcpBad": tx.rtcp_bad }));
+    for (_, l) in &layers { unsafe { let _ = l.enc.mft.ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0); } }
+    summary(&m, &tx.total(), serde_json::json!({ "encoder": layers.last().unwrap().1.enc.name, "size": format!("{ow}x{oh}"), "screen": format!("{cw}x{ch}"), "minUpdateInterval": iv_note, "bltError": blt_err.unwrap_or_default(), "inputError": in_err.unwrap_or_default(), "repeats": m.repeats, "rtcpBad": tx.rtcp_bad, "layers": layers.len(), "layerError": layer_err }));
     Ok(())
 }

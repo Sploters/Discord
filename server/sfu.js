@@ -119,26 +119,28 @@ function nativeListen() {
   return { protocol: 'udp', ip: '0.0.0.0', portRange: NATIVE_PORTS };
 }
 export const NATIVE_PT = 102;
-export async function sfuAttachNative(cid, uid) {
+// layers: quantas camadas (simulcast por ssrc, da mais leve para a cheia); o SFU escolhe para cada espectador a que cabe na banda dele
+export async function sfuAttachNative(cid, uid, layers = 1) {
   const r = rooms.get(cid), peer = r?.peers.get(uid);
   if (!peer) throw new Error('fora da sala');
   // SRTP: só quem recebeu a chave (o app de quem transmite, pelo gateway autenticado) consegue mandar vídeo nesta porta
   const t = await r.router.createPlainTransport({ listenInfo: nativeListen(), rtcpMux: true, comedia: true, enableSctp: false, enableSrtp: true, srtpCryptoSuite: 'AES_CM_128_HMAC_SHA1_80' });
   const key = crypto.randomBytes(30).toString('base64');
   try { await t.connect({ srtpParameters: { cryptoSuite: 'AES_CM_128_HMAC_SHA1_80', keyBase64: key } }); } catch (e) { t.close(); throw e; }
-  const ssrc = 1000000 + Math.floor(Math.random() * 1e8);
+  const n = Math.max(1, Math.min(3, layers | 0)), base = 1000000 + Math.floor(Math.random() * 1e8);
+  const ssrcs = Array.from({ length: n }, (_, i) => base + i * 7919), ssrc = ssrcs[n - 1];
   let p;
   try {
-    p = await t.produce({ kind: 'video', appData: { source: 'screen', native: true }, rtpParameters: {
+    p = await t.produce({ kind: 'video', appData: { source: 'screen', native: true, layers: n }, rtpParameters: {
       codecs: [{ mimeType: 'video/H264', payloadType: NATIVE_PT, clockRate: 90000,
         parameters: { 'packetization-mode': 1, 'profile-level-id': '42e01f', 'level-asymmetry-allowed': 1 },
         rtcpFeedback: [{ type: 'nack' }, { type: 'nack', parameter: 'pli' }, { type: 'ccm', parameter: 'fir' }] }],
-      encodings: [{ ssrc }] } });
+      encodings: ssrcs.map(x => ({ ssrc: x })) } });
   } catch (e) { t.close(); throw e; }
   peer.transports.set(t.id, t);
   t.observer.on('close', () => peer.transports.delete(t.id));
   registerProducer(r, peer, 'screen', p);
-  return { transport: t, producer: p, port: t.tuple.localPort, ip: t.tuple.localAddress, ssrc, payloadType: NATIVE_PT, key, serverKey: t.srtpParameters.keyBase64,
+  return { transport: t, producer: p, port: t.tuple.localPort, ip: t.tuple.localAddress, ssrc, ssrcs, payloadType: NATIVE_PT, key, serverKey: t.srtpParameters.keyBase64,
     close: () => { try { p.close(); } catch { } try { t.close(); } catch { } } };
 }
 

@@ -1045,15 +1045,15 @@ app.get('/files/:f/:name?', (req, res) => {
 // manda o H.264 para lá. O app de quem gerou assiste a própria transmissão pelo servidor e mede os FPS. ----
 const natives = new Map(); // uid -> sessão
 function endNative(uid, why) {
-  const n = natives.get(uid); if (!n) return;
+  const n = natives.get(uid); if (process.env.DEBUG_NATIVE) console.log('endNative', uid, why, n?.producer.id); if (!n) return;
   natives.delete(uid); clearInterval(n.timer); n.close();
   dispatch([uid], 'NATIVE_SCREEN_END', { producer_id: n.producer.id, reason: why });
 }
 // live: transmissão de verdade (o programa repete o último quadro com a tela parada, então 6 s sem pacotes = parou)
 // test: o pacote de teste (código colado à mão): até 10 min para começar e no máximo 30 min
-async function startNative(uid, cid, live) {
+async function startNative(uid, cid, live, layers = 1) {
   endNative(uid, 'replaced');
-  const n = await sfuAttachNative(cid, uid);
+  const n = await sfuAttachNative(cid, uid, layers);
   n.host = process.env.RTC_ANNOUNCED_IP ? process.env.RTC_ANNOUNCED_IP.split(',')[0].trim() : (n.ip && n.ip !== '0.0.0.0' ? n.ip : null);
   n.started = 0; n.last = 0; n.bytes = 0; n.t0 = Date.now();
   n.timer = setInterval(async () => {
@@ -1064,11 +1064,11 @@ async function startNative(uid, cid, live) {
     else if (n.started && now - n.last > 6000) endNative(uid, 'stopped');
     else if (!live && now - n.t0 > 30 * 60_000) endNative(uid, 'limit');
   }, 2000);
-  natives.set(uid, n);
+  natives.set(uid, n); if (process.env.DEBUG_NATIVE) console.log('startNative', uid, n.producer.id);
   n.producer.observer.on('close', () => { if (natives.get(uid) === n) endNative(uid, 'closed'); });
   return n;
 }
-const nativeOut = (n, host) => ({ producer_id: n.producer.id, host: n.host || host, port: n.port, ssrc: n.ssrc, pt: n.payloadType, key: n.key, serverKey: n.serverKey });
+const nativeOut = (n, host) => ({ producer_id: n.producer.id, host: n.host || host, port: n.port, ssrc: n.ssrc, ssrcs: n.ssrcs, pt: n.payloadType, key: n.key, serverKey: n.serverKey });
 app.post('/api/native-screen', auth, (req, res) => (async () => {
   const cid = currentVoice(req.uid);
   if (!cid) return bad(res, 'Entre numa sala de voz primeiro');
@@ -1274,10 +1274,10 @@ wss.on('connection', (ws) => {
           const c = currentVoice(uid), rid = d.rid;
           if (!c || voice.get(c).get(uid).ws !== ws) return send(ws, 'SFU_RES', { rid, error: 'fora da sala' });
           if (d.op === 'native_start') { // transmissão a 120 fps pelo programa nativo do app desktop (só o vídeo; áudio segue pelo WebRTC)
-            startNative(uid, c, true).then(n => send(ws, 'SFU_RES', { rid, data: nativeOut(n, null) }), e => send(ws, 'SFU_RES', { rid, error: e.message }));
+            startNative(uid, c, true, Math.max(1, Math.min(3, d.layers | 0 || 1))).then(n => send(ws, 'SFU_RES', { rid, data: nativeOut(n, null) }), e => send(ws, 'SFU_RES', { rid, error: e.message }));
             break;
           }
-          if (d.op === 'native_stop') { endNative(uid, 'stopped'); send(ws, 'SFU_RES', { rid, data: {} }); break; }
+          if (d.op === 'native_stop') { if (!d.producer_id || natives.get(uid)?.producer.id === String(d.producer_id)) endNative(uid, 'stopped'); send(ws, 'SFU_RES', { rid, data: {} }); break; }
           sfuRequest(c, uid, String(d.op), d).then(data => send(ws, 'SFU_RES', { rid, data }), e => send(ws, 'SFU_RES', { rid, error: e.message }));
           break;
         }

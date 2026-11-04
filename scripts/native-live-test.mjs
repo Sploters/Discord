@@ -12,7 +12,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 execFileSync('cargo', ['build', '--release', '--quiet'], { cwd: 'native/lc-stream', stdio: 'inherit' });
 const BIN = 'native/lc-stream/target/release/lc-stream';
 fs.rmSync('.testdata14', { recursive: true, force: true }); fs.mkdirSync(OUT, { recursive: true });
-const srv = spawn('node', ['server/index.js'], { env: { ...process.env, PORT, HTTPS: '0', DATA_DIR: './.testdata14', RTC_PORT: '41010', RTC_IPS: '127.0.0.1', RTC_NATIVE_PORTS: '41011-41015' }, stdio: 'ignore' });
+const srv = spawn('node', ['server/index.js'], { env: { ...process.env, PORT, HTTPS: '0', DATA_DIR: './.testdata14', RTC_PORT: '41010', RTC_IPS: '127.0.0.1', RTC_NATIVE_PORTS: '41011-41015' }, stdio: process.env.DEBUG_NATIVE ? ['ignore', 'inherit', 'inherit'] : 'ignore' });
 for (let i = 0; i < 150; i++) { try { await fetch(BASE + '/api/server-info'); break; } catch { await sleep(200); } }
 const call = (tok, m, p, b) => fetch(BASE + '/api' + p, { method: m, headers: { 'content-type': 'application/json', ...(tok ? { authorization: 'Bearer ' + tok } : {}) }, body: b ? JSON.stringify(b) : undefined }).then(r => r.json());
 const reg = async (name) => { const r = await call('', 'POST', '/register', { username: name, password: 'senha123' }); const me = await call(r.token, 'PATCH', '/me', {}); return { tok: r.token, id: me.id }; };
@@ -57,9 +57,11 @@ async function page(tok, desk) {
 }
 // fps decodificado da transmissão de tela no espectador, medido em 4 s
 const viewerFps = (B, uid) => B.evaluate(async (uid) => {
-  const v = window.__lc.voice, e = [...v.sfu.consumers.values()].find(x => x.uid === uid && x.source === 'screen'); if (!e) return -1;
-  const rd = async () => { let s; (await e.c.getStats()).forEach(r => { if (r.type === 'inbound-rtp' && r.kind === 'video') s = r; }); return s; };
-  const a = await rd(); await new Promise(r => setTimeout(r, 4000)); const b = await rd();
+  const v = window.__lc.voice, find = () => [...v.sfu.consumers.values()].filter(x => x.uid === uid && x.source === 'screen' && !x.c.closed).at(-1);
+  const rd = async (e) => { let s; (await e.c.getStats()).forEach(r => { if (r.type === 'inbound-rtp' && r.kind === 'video') s = r; }); return s; };
+  let e, a; for (let i = 0; i < 40 && !(e = find(), a = e && await rd(e)); i++) await new Promise(r => setTimeout(r, 250)); // a transmissão pode ter acabado de recomeçar
+  if (!a) return -1;
+  await new Promise(r => setTimeout(r, 4000)); const b = await rd(e);
   return Math.round((b.framesDecoded - a.framesDecoded) / 4);
 }, uid);
 const serverNative = async (tok) => (await call(tok, 'POST', '/native-screen/stop')).ok; // só para limpar
@@ -84,7 +86,7 @@ try {
   ok(/capturada e comprimida pelo próprio app/.test(await A.evaluate(() => document.querySelector('.modal .qinfo.ok')?.textContent || '')), 'acima de 60 FPS o seletor explica o modo nativo');
   if (process.env.SHOTS) await A.screenshot({ path: `${OUT}/10-seletor-120.png` });
   await A.evaluate(() => [...document.querySelectorAll('.modal .btn')].find(x => /^Transmitir$/.test(x.textContent.trim())).click());
-  await A.waitForFunction(() => window.__lc.voice.native && !window.__lc.voice.native.pending, { timeout: 15000 }).catch(() => { });
+  await A.waitForFunction(() => window.__lc.voice.native && !window.__lc.voice.native.pending && window.__lc.voice.sfu.producers.screenaudio, { timeout: 15000 }).catch(() => { });
   const st = await A.evaluate(() => ({ native: !!window.__lc.voice.native, picked: window.__picked, prod: Object.keys(window.__lc.voice.sfu.producers), dm: window.__dmc?.video?.frameRate }));
   ok(st.native && st.picked === 'window:1234:0', 'modo nativo ligado com a janela escolhida', st);
   ok(!st.prod.includes('screen') && st.prod.includes('screenaudio'), 'vídeo NÃO vai pelo Chromium; o áudio do sistema vai', st.prod);
@@ -95,12 +97,31 @@ try {
   // espectador: palco normal
   await B.waitForFunction((uid) => !!document.querySelector(`.tile.cstream[data-key="s:${uid}"] .btn`) || !!document.querySelector(`.tile.screen[data-sid="${uid}"]`), { timeout: 15000 }, a.id);
   await B.evaluate((uid) => document.querySelector(`.tile.cstream[data-key="s:${uid}"] .btn`)?.click(), a.id);
-  await B.waitForFunction((uid) => document.querySelector(`.tile.screen[data-sid="${uid}"] video`)?.videoWidth > 0, { timeout: 15000 }, a.id).catch(() => { });
+  // o servidor começa pela camada leve e sobe para a cheia quando a banda do espectador permite (alguns segundos)
+  await B.waitForFunction((uid) => document.querySelector(`.tile.screen[data-sid="${uid}"] video`)?.videoWidth >= 1280, { timeout: 20000 }, a.id).catch(() => { });
   const vw = await B.evaluate((uid) => { const v = document.querySelector(`.tile.screen[data-sid="${uid}"] video`); return [v?.videoWidth, v?.videoHeight]; }, a.id);
-  ok(vw[0] === 1280 && vw[1] === 720, 'quem assiste vê a transmissão nativa no palco (1280x720)', vw);
+  ok(vw[0] === 1280 && vw[1] === 720, 'quem assiste vê a transmissão nativa no palco e sobe para a camada cheia (1280x720)', vw);
   const f1 = await viewerFps(B, a.id);
   ok(f1 > 100, 'e recebe/decodifica ~120 fps', f1);
   ok(await B.evaluate((uid) => !!window.__lc.voice.peers.get(uid)?.screenAudioEl, a.id), 'o áudio do sistema chega junto (pelo WebRTC)');
+  // versão leve (internet fraca): o servidor tem as duas camadas; o espectador pede a leve e depois volta à cheia
+  const cfg0 = helpers[0].cfg;
+  ok(cfg0.layers?.length === 2 && cfg0.layers[0].height === 360 && cfg0.layers[0].fps === 60 && cfg0.layers[1].height === 720 && cfg0.layers[1].fps === 120 && cfg0.layers[0].ssrc !== cfg0.layers[1].ssrc, 'programa recebe 2 camadas: 360p60 (leve) e 720p120 (cheia)', cfg0.layers);
+  const layer = (sp) => B.evaluate(async (uid, sp) => { const v = window.__lc.voice, e = [...v.sfu.consumers.values()].find(x => x.uid === uid && x.source === 'screen'); await v.sfuReq('layers', { consumer_id: e.c.id, spatial: sp }); }, a.id, sp);
+  const recv = () => B.evaluate(async (uid) => {
+    const v = window.__lc.voice, e = [...v.sfu.consumers.values()].find(x => x.uid === uid && x.source === 'screen');
+    const rd = async () => { let s; (await e.c.getStats()).forEach(r => { if (r.type === 'inbound-rtp' && r.kind === 'video') s = r; }); return s; };
+    const a = await rd(); await new Promise(r => setTimeout(r, 3000)); const b = await rd();
+    return { h: b.frameHeight, fps: Math.round((b.framesDecoded - a.framesDecoded) / 3) };
+  }, a.id);
+  await layer(0); await sleep(2500);
+  const lo = await recv();
+  ok(lo.h === 360 && lo.fps >= 50 && lo.fps <= 70, 'espectador na camada leve: 360p a ~60 fps', lo);
+  await layer(2); await sleep(2500);
+  const hi = await recv();
+  ok(hi.h === 720 && hi.fps > 100, 'de volta à camada cheia: 720p a ~120 fps', hi);
+  const lst = await A.evaluate(() => window.__lc.voice.native?.stats?.layers);
+  ok(Array.isArray(lst) && lst[0] >= 50 && lst[0] <= 70 && lst[1] > 100, 'programa informa os fps de cada camada', lst);
   await sleep(1200);
   const ss = await A.evaluate(() => window.__lc.voice.screenStats());
   ok(ss?.[0]?.fps > 100 && /nativo/.test(ss[0].enc), 'painel de quem transmite mostra os fps do programa nativo', ss?.[0]);
@@ -111,13 +132,17 @@ try {
   const s60 = await A.evaluate(() => ({ native: !!window.__lc.voice.native, prod: Object.keys(window.__lc.voice.sfu.producers) }));
   ok(!s60.native && s60.prod.includes('screen') && helpers[0].stopped, 'mudar para 60 fps: programa parado e vídeo volta ao Chromium', s60);
   await B.waitForFunction((uid) => document.querySelector(`.tile.screen[data-sid="${uid}"] video`)?.videoWidth > 0, { timeout: 15000 }, a.id).catch(() => { });
-  ok(await viewerFps(B, a.id) > 15, 'espectador continua recebendo (agora pelo Chromium)');
+  const f60 = await viewerFps(B, a.id);
+  ok(f60 > 15, 'espectador continua recebendo (agora pelo Chromium)', f60);
   await A.evaluate(() => window.__lc.voice.changeScreenQuality({ fps: 120 }));
   await A.waitForFunction(() => window.__lc.voice.native && !window.__lc.voice.native.pending, { timeout: 15000 }).catch(() => { });
   await sleep(1500);
   const s120 = await A.evaluate(() => ({ native: !!window.__lc.voice.native, prod: Object.keys(window.__lc.voice.sfu.producers) }));
   ok(s120.native && !s120.prod.includes('screen') && helpers.length === 2, 'voltar para 120 fps: programa nativo de novo', s120);
-  ok(await viewerFps(B, a.id) > 100, 'espectador volta a receber ~120 fps');
+  // nova sessão: o servidor recomeça pela camada leve e sobe quando a banda permite
+  await B.waitForFunction((uid) => document.querySelector(`.tile.screen[data-sid="${uid}"] video`)?.videoHeight >= 720, { timeout: 20000 }, a.id).catch(() => { });
+  const f3 = await viewerFps(B, a.id);
+  ok(f3 > 100, 'espectador volta a receber ~120 fps (camada cheia)', f3);
   // o programa cai (ex.: placa de vídeo ocupada): segue transmitindo pelo modo normal
   helpers[1].proc.kill('SIGKILL'); await sleep(2500);
   const sf = await A.evaluate(() => ({ native: !!window.__lc.voice.native, prod: Object.keys(window.__lc.voice.sfu.producers), screen: !!window.__lc.voice.screen, toast: document.getElementById('toast')?.textContent || '' }));
@@ -127,7 +152,8 @@ try {
   await A.waitForFunction(() => window.__lc.voice.native && !window.__lc.voice.native.pending, { timeout: 15000 }).catch(() => { });
   await A.evaluate(() => window.__lc.voice.toggleScreen()); await sleep(1500);
   ok(helpers.every(h => h.stopped || h.proc.exitCode !== null), 'parar a transmissão para o programa nativo');
-  ok(await B.evaluate((uid) => !window.__lc.voice.peers.get(uid)?.streams?.screen, a.id), 'espectador deixa de ver a transmissão');
+  const gone = await B.waitForFunction((uid) => !window.__lc.voice.peers.get(uid)?.streams?.screen, { timeout: 8000 }, a.id).then(() => true, () => false);
+  ok(gone, 'espectador deixa de ver a transmissão', gone || await B.evaluate((uid) => [...window.__lc.voice.sfu.consumers.values()].filter(x => x.uid === uid).map(x => x.source + ':' + x.c.producerId), a.id));
   void serverNative;
 } catch (e) { console.log('ERRO', e); fails++; }
 finally { for (const h of helpers) try { h.proc.kill(); } catch { } await browser.close(); srv.kill(); console.log(fails ? `\n${fails} falha(s)` : '\ntudo ok'); setTimeout(() => process.exit(fails ? 1 : 0), 300); }

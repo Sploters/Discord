@@ -371,6 +371,7 @@ export class Voice {
       const r = await this.sfuReq('consume', { transport_id: s.recv.id, producer_id, rtpCapabilities: s.device.rtpCapabilities });
       const c = await s.recv.consume({ id: r.id, producerId: r.producer_id, kind: r.kind, rtpParameters: r.rtpParameters });
       if (this.sfu !== s) return c.close();
+      if (s.closedEarly?.delete(r.id)) { c.close(); s.seen.delete(producer_id); return; } // a transmissão acabou enquanto preparava
       const p = this.ensurePeer(user_id), stream = new MediaStream([c.track]);
       s.consumers.set(c.id, { c, uid: user_id, source });
       p.consumers.set(c.id, source); p.layer = undefined;
@@ -391,7 +392,8 @@ export class Voice {
     return { track: c.track, consumer: c, close: () => { try { c.close(); } catch { } } };
   }
   onSfuConsumerClosed({ consumer_id }) {
-    const e = this.sfu?.consumers.get(consumer_id); if (!e) return;
+    const e = this.sfu?.consumers.get(consumer_id);
+    if (!e) { if (this.sfu) (this.sfu.closedEarly ||= new Set()).add(consumer_id); return; } // ainda chegando (onSfuProducer)
     this.sfu.consumers.delete(consumer_id); e.c.close();
     const p = this.peers.get(e.uid); if (!p) return;
     p.consumers.delete(consumer_id);
@@ -692,12 +694,16 @@ export class Voice {
     const my = this.native = { pending: true };
     if (!this._natEv) { this._natEv = true; d.onNativeEvent?.((ev) => this.onNativeEvent(ev)); }
     try {
-      const r = await this.sfuReq('native_start');
-      if (this.native !== my) return; // parou enquanto preparava
-      const res = await d.nativeStart({ ...r, host: r.host || location.hostname, fps: +o.fps, height: o.res === 'source' ? 2160 : +o.res || 1080, kbps: Math.round(bitrateFor(o.res || 1080, +o.fps, o.bitrate) / 1000) });
-      if (this.native !== my) { d.nativeStop(); return; }
+      // duas camadas: a cheia e uma leve (540p ou 360p a 60 fps) que o servidor manda a quem não tem banda para a cheia
+      const topH = o.res === 'source' ? 2160 : +o.res || 1080, lowH = topH >= 1080 ? 540 : 360;
+      const top = { height: topH, fps: +o.fps, kbps: Math.round(bitrateFor(o.res || 1080, +o.fps, o.bitrate) / 1000) }, low = { height: lowH, fps: 60, kbps: lowH >= 540 ? 2500 : 1200 };
+      const r = await this.sfuReq('native_start', { layers: 2 });
+      if (this.native !== my) { this.sfuReq('native_stop', { producer_id: r.producer_id }).catch(() => { }); return; } // parou enquanto preparava: fecha só esta sessão
+      const ss = r.ssrcs || [r.ssrc], layers = ss.length > 1 ? [{ ...low, ssrc: ss[0] }, { ...top, ssrc: ss[ss.length - 1] }] : [{ ...top, ssrc: ss[0] }];
+      const res = await d.nativeStart({ ...r, host: r.host || location.hostname, ...top, layers });
+      if (this.native !== my) { if (!this.native) d.nativeStop(); this.sfuReq('native_stop', { producer_id: r.producer_id }).catch(() => { }); return; }
       if (!res?.ok) throw new Error(res?.error || 'falhou');
-      Object.assign(my, { pending: false, encoder: res.encoder, w: res.w, h: res.h, producerId: r.producer_id });
+      Object.assign(my, { pending: false, encoder: res.encoder, w: res.w, h: res.h, producerId: r.producer_id, layers: res.layers || [], layerError: res.layerError || '' });
       this.onUpdate();
     } catch (e) { if (this.native === my) this.nativeFallback(e.message); }
   }
@@ -724,10 +730,11 @@ export class Voice {
     this.onNativeFail?.(this.error); this.onUpdate();
   }
   stopNative() {
-    if (!this.native) return;
+    const n = this.native; if (!n) return;
     this.native = null;
     window.lcDesktop?.nativeStop?.();
-    this.sfuReq('native_stop').catch(() => { });
+    // ainda preparando: a sessão é fechada quando a resposta chegar (startNative); senão fecha esta
+    if (!n.pending) this.sfuReq('native_stop', { producer_id: n.producerId }).catch(() => { });
   }
   // muda resolução/fps/otimização da transmissão em andamento
   async changeScreenQuality(opts) {

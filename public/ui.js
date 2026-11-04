@@ -36,7 +36,7 @@ export function qualityPanel(o, onChange) {
     h('label.f', 'Taxa de quadros (FPS)', seg(SCREEN_PRESETS.fps, o.fps, v => { o.fps = v; draw(); onChange?.(o); })),
     h('label.f', 'Otimizar para', seg({ motion: 'Movimento (jogos/vídeo)', detail: 'Nitidez (texto/apresentação)' }, o.hint, v => { o.hint = v; draw(); onChange?.(o); })),
     h('label.f', 'Taxa de dados (bitrate)', seg({ 0: 'Automática', 8: '8 Mbps', 16: '16 Mbps', 24: '24 Mbps', 32: '32 Mbps', 50: '50 Mbps' }, +o.bitrate || 0, v => { o.bitrate = +v; draw(); onChange?.(o); })),
-    +o.fps > 60 && (S.nativeOk ? h('div.qinfo.ok', 'Acima de 60 FPS a imagem é capturada e comprimida pelo próprio app (placa de vídeo), sem o limite de ~48 FPS do navegador. O áudio e a prévia continuam como sempre. Quem assiste recebe a taxa cheia: precisa de internet compatível.')
+    +o.fps > 60 && (S.nativeOk ? h('div.qinfo.ok', 'Acima de 60 FPS a imagem é capturada e comprimida pelo próprio app (placa de vídeo), sem o limite de ~48 FPS do navegador. O áudio e a prévia continuam como sempre. Quem tem internet mais fraca recebe automaticamente uma versão leve (540p a 60 FPS).')
       : h('div.qinfo.warn', (S.nativeWhy ? `Modo 120 FPS indisponível: ${S.nativeWhy} ` : 'Pelo navegador, ') + 'o capturador de tela do Chromium não passa de ~48 FPS, mesmo pedindo mais. Durante a transmissão o painel mostra os FPS realmente capturados.')),
     h('div.qinfo', `Taxa de dados ${+o.bitrate > 0 ? 'fixa' : 'estimada'}: ~${estMbps(o)} Mbps por espectador${+o.bitrate >= 24 ? ' — exige upload e placa de vídeo fortes; quem assiste precisa de banda parecida' : ''}`));
   draw(); return box;
