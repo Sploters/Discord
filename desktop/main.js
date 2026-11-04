@@ -15,13 +15,16 @@ let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; } catch { /* primeira execução */ }
 const saveCfg = () => { try { fs.mkdirSync(path.dirname(cfgPath()), { recursive: true }); fs.writeFileSync(cfgPath(), JSON.stringify(cfg, null, 2)); } catch (e) { console.error(e); } };
 
-// Vídeo em tela cheia escuro/com cores estouradas em alguns PCs: o Windows passa o vídeo direto para a placa
-// (sobreposição de hardware) e o driver aplica realce/HDR automático (RTX Video, Intel VSR). Tudo desligado:
-// o vídeo é desenhado junto com a página, igual fora da tela cheia.
-app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,DirectCompositionVideoOverlays,DirectCompositionVideoOverlaySupport,DirectCompositionVideoSwapChainForFullscreen,NvidiaVpSuperResolution,NvidiaVpTrueHDR,IntelVpSuperResolution,DirectCompositionLetterboxVideoOptimization');
-app.commandLine.appendSwitch('disable-direct-composition-video-overlays');
-// bug do Chromium no Windows: a janela deixa de repintar até trocar de programa (CalculateNativeWinOcclusion, acima)
+// Vídeo: por padrão o app desenha igual ao Chrome/Edge (mesmas opções de GPU). Antes ele desligava a sobreposição de
+// vídeo da placa e os recursos de vídeo dos drivers para todo mundo, e justo no PC em que isso devia ajudar o vídeo
+// ficava escuro e piscando no app, enquanto no navegador (sem essas mudanças) ficava normal. Esses desligamentos agora
+// só entram com "Compatibilidade de vídeo" ligada (abaixo).
+// bug do Chromium no Windows: a janela deixa de repintar até trocar de programa
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+// PC com duas placas (vídeo integrado do processador + placa dedicada): usa a dedicada. Se o app rodasse na integrada
+// com o monitor ligado na dedicada, cada quadro teria que passar de uma placa para a outra (piscadas, cores erradas)
+app.commandLine.appendSwitch('force_high_performance_gpu');
 if (cfg.hardwareAcceleration === false) app.disableHardwareAcceleration();
 // letras borradas por alguns segundos: o Chromium pinta primeiro uma versão em baixa resolução e só depois a nítida
 app.commandLine.appendSwitch('disable-low-res-tiling');
@@ -34,6 +37,9 @@ if (gpuCompat && cfg.hardwareAcceleration !== false) {
   app.commandLine.appendSwitch('disable-gpu-memory-buffer-video-frames');
   app.commandLine.appendSwitch('disable-accelerated-video-decode'); // clipes e transmissões decodificados pela CPU
   app.commandLine.appendSwitch('force-color-profile', 'srgb'); // sem conversão de cor do monitor/HDR
+  // vídeo desenhado junto com a página: sem sobreposição de hardware nem realce/HDR automático do driver
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,DirectCompositionVideoOverlays,DirectCompositionVideoOverlaySupport,DirectCompositionVideoSwapChainForFullscreen,NvidiaVpSuperResolution,NvidiaVpTrueHDR,IntelVpSuperResolution,DirectCompositionLetterboxVideoOptimization');
+  app.commandLine.appendSwitch('disable-direct-composition-video-overlays');
 }
 const log = (...a) => { try { fs.appendFileSync(path.join(app.getPath('userData'), 'main.log'), `${new Date().toISOString()} ${a.join(' ')}\n`); } catch { /* sem log */ } };
 let win, tray, quitting = false, pickedSource = null, badge = 0;
@@ -288,6 +294,9 @@ async function detectGpu() {
     gpuName = g.deviceString || `${g.vendorId.toString(16)}:${g.deviceId.toString(16)}`;
     const old = g.vendorId === 0x8086 && g.deviceId < 0x1600; // Intel antes da Broadwell (IDs 0x01xx, 0x04xx, 0x0Axx, 0x0Dxx)
     log('gpu', gpuName, 'driver', g.driverVersion || '?', 'antiga', old, 'compat ativa', gpuCompat);
+    // diagnóstico: todas as placas (qual está ativa) e o que o Chromium está acelerando
+    log('gpus', devs.map(d => `${d.deviceString || d.vendorId.toString(16) + ':' + d.deviceId.toString(16)}${d.active ? ' (ativa)' : ''}`).join(' | '));
+    log('gpu status', JSON.stringify(app.getGPUFeatureStatus()));
     if (cfg.gpuOld !== old) { cfg.gpuOld = old; saveCfg(); }
   } catch (e) { log('gpu info falhou', e.message); }
 }

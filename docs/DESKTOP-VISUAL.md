@@ -30,3 +30,15 @@ Correções:
   `--disable-direct-composition-video-overlays`.
 - **Compatibilidade de vídeo = Ligada** agora também decodifica vídeo pela CPU (`--disable-accelerated-video-decode`) e
   força o perfil de cor sRGB (`--force-color-profile=srgb`). Se ainda acontecer, é o próximo passo.
+
+## Vídeo escuro e piscando só no app (no navegador normal) — desktop 1.0.19
+
+Sintoma: no mesmo PC, o vídeo fica escuro e piscando no app desktop, mas normal no Chrome/Edge.
+
+Conclusão: a diferença eram as opções de GPU que só o app usava (sobreposição de vídeo desligada, recursos de vídeo
+NVIDIA/Intel desligados), colocadas na 1.0.16 para esse mesmo PC.
+
+Correções:
+- **Padrão = igual ao navegador:** esses desligamentos saíram do padrão e foram para **Compatibilidade de vídeo = Ligada**.
+- `--force_high_performance_gpu`: em PC com vídeo integrado + placa dedicada, o app usa a dedicada.
+- `main.log` registra todas as placas (qual está ativa) e o `getGPUFeatureStatus()`.
