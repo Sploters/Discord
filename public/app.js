@@ -1,4 +1,5 @@
 import { nativeEnded } from './nativetest.js';
+import { gifPicker, gifEl, isGifMessage, toggleFav as toggleGifFav, isFav as isGifFav } from './gifs.js';
 import { h, icon, avatar, fsVideo, md, esc, stamp, clock, dayLabel, sameDay, bytes, onlyEmoji, isImageUrl, SHORT, inviteCodes, callCodes, stripInvites, inviteText, parsePos, framePos, initials } from './util.js';
 import { S, api, tryApi, user, guild, channelById, member, nameOf, roleColor, can, perms, PERM, dmPeer, relType, toast, modal, confirmBox, promptBox, menu, popout, emojiPicker, lightbox, closeFloating, beep, notify, notifPolicy, channelMuted, desktop, applyTheme, emojiUrl, allEmojis, savePrefs, relite } from './state.js';
 import { Voice, SCREEN_PRESETS, VOICE_BITRATES } from './voice.js';
@@ -926,6 +927,7 @@ function msgEl(m, prev) {
     let shown = shared ? stripThemeCodes(m.content) : m.content; // o código do tema não aparece, só o bloco
     if (invites.length || calls.length) shown = stripInvites(shown); // o link do convite também vira só o cartão
     if (m.poll) shown = ''; // enquete: o cartão mostra a pergunta
+    const gifOnly = !m.poll && !shared && isGifMessage(shown); if (gifOnly) shown = ''; // só um GIF: mostra a imagem, sem o link
     if (shown) body.innerHTML = md(shown, ctxFor(gid));
     if (shown && onlyEmoji(shown.replace(/<:\w+:\d+>/g, '😀'))) body.classList.add('emoji-big');
     if (m.edited_at) body.append(h('span.edited', '(editado)'));
@@ -933,6 +935,7 @@ function msgEl(m, prev) {
     for (const code of invites) body.append(inviteCard(code));
     for (const id of calls) body.append(callCard(id));
     if (m.poll) body.append(pollCard(m));
+    if (gifOnly && S.prefs.embedLinks !== false) body.append(gifEl(m.content.trim(), (u) => lightbox(u))); else if (gifOnly) body.append(h('a', { href: m.content.trim(), target: '_blank', rel: 'noopener' }, m.content.trim()));
     if (S.prefs.embedLinks !== false) for (const url of (shown.match(/https?:\/\/\S+/g) || []).filter(isImageUrl).slice(0, 3)) body.append(h('div.attach', h('img', { src: url, loading: 'lazy', referrerPolicy: 'no-referrer', onclick: () => lightbox(url) })));
     body.querySelectorAll('.spoiler').forEach(s => (s.onclick = () => s.classList.add('shown')));
     body.querySelectorAll('.mention[data-uid]').forEach(s => { s.onclick = () => profile(s, s.dataset.uid, gid); const u = S.users.get(s.dataset.uid); if (u) s.prepend(mentionAvatar(u)); });
@@ -1061,6 +1064,7 @@ function msgMenu(e, m) {
     { label: 'Responder', fn: () => setReply(m) },
     !mine && { label: 'Mencionar', fn: () => mentionUser(m.author_id) },
     m.content && { label: 'Copiar texto', fn: () => navigator.clipboard?.writeText(m.content) },
+    isGifMessage(m.content) && { label: isGifFav(m.content.trim()) ? 'Tirar GIF dos favoritos' : 'Favoritar GIF', fn: () => toggleGifFav({ url: m.content.trim(), preview: m.content.trim() }).then(() => renderMessages(true)) },
     m.content && { label: isTranslated(m) ? 'Mostrar original' : 'Traduzir', fn: () => toggleTranslation(m, refreshMsg) },
     mine && !m.poll && { label: 'Editar mensagem', fn: () => { S.editing = m.id; renderMessages(true); } },
     (mod || !gid) && { label: m.pinned ? 'Desafixar mensagem' : 'Fixar mensagem', fn: () => tryApi(m.pinned ? 'DELETE' : 'PUT', `/channels/${m.channel_id}/pins/${m.id}`) },
@@ -1243,6 +1247,7 @@ function composer(ch, label) {
     h('div#composer', h('button.ibtn', { title: 'Enviar arquivo ou compartilhar tema', onclick: (e) => plusMenu(e, ch, fileIn) }, icon('plus', 24)), fileIn, ta,
       h('button.ibtn', { title: 'Traduzir o que você escreveu (ou use $en, $es… no início)', onclick: (e) => draftMenu(e, ta) }, icon('translate', 22)),
       h('button.ibtn', { title: 'Gravar mensagem de voz', onclick: (e) => recordVoiceMessage(ch, e.currentTarget.closest('#composer'), { onSent: () => { S.replyTo = null; renderReplyBar(); } }) }, icon('mic', 22)),
+      h('button.ibtn.gifbtn', { title: 'GIFs', onclick: (e) => gifPicker(e.currentTarget, (url) => sendGif(ch, url)) }, h('span', 'GIF')),
       h('button.ibtn', { title: 'Emoji', onclick: (e) => emojiPicker(e.currentTarget, (em) => { ta.setRangeText(em, ta.selectionStart, ta.selectionEnd, 'end'); ta.focus(); }) }, icon('smile', 24))));
   setTimeout(() => { renderReplyBar(); renderPendingPrev(); ta.focus(); }, 0);
   return wrap;
@@ -1267,6 +1272,12 @@ function renderPendingPrev() {
     h('button.x', { onclick: () => { S.pending = S.pending.filter(x => x !== p); renderPendingPrev(); } }, icon('x', 14)))));
 }
 const renderPending = () => { };
+// GIF escolhido no seletor: vai como o próprio link (respeita a resposta em andamento)
+async function sendGif(ch, url) {
+  const body = { content: url, reply_to: S.replyTo?.id };
+  S.replyTo = null; renderReplyBar();
+  try { await api('POST', `/channels/${ch.id}/messages`, body); } catch (e) { toast(e.message, true); }
+}
 async function sendMsg(ta, ch) {
   let content = ta.value; const atts = S.pending.filter(p => p.state === 'ok');
   if (S.pending.some(p => p.state === 'up')) return toast('Aguarde o envio dos anexos…');

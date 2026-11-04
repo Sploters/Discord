@@ -901,3 +901,22 @@ select.gpucompat:focus { outline: 2px solid var(--brand, #5865f2); outline-offse
 .trimmer .trlab { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; color: var(--text-muted); margin: 6px 8px; } .trimmer .trlab b { color: var(--header); font-variant-numeric: tabular-nums; }
 .trimmer .trrow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 8px 0; } .trimmer .trplay { display: flex; align-items: center; gap: 6px; }
 .trimmer .trhandle.s { transform: none; border-radius: 4px 0 0 4px; } .trimmer .trhandle.e { transform: translateX(-100%); border-radius: 0 4px 4px 0; }
+
+/* ---------- GIFs ---------- */
+#composer .gifbtn span { font-size: 12px; font-weight: 800; letter-spacing: .02em; border: 2px solid currentColor; border-radius: 5px; padding: 1px 4px; line-height: 1.2; }
+.emoji-picker.gifpicker { width: 420px; height: 460px; }
+.gifpicker .gtabs { display: flex; gap: 6px; padding: 0 12px 8px; } .gifpicker .gtabs button { border: 0; background: var(--bg-tert); color: var(--text); border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; } .gifpicker .gtabs button.on { background: var(--brand); color: #fff; }
+.gifpicker .ggrid { flex: 1; overflow-y: auto; padding: 0 8px 8px; display: flex; gap: 6px; align-items: flex-start; position: relative; }
+.gifpicker .ggrid[data-empty]::after { content: attr(data-empty); position: absolute; inset: 40px 20px auto; text-align: center; color: var(--text-muted); font-size: 14px; }
+.gifpicker .gcol { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.gifpicker .gcard { position: relative; border-radius: 6px; overflow: hidden; cursor: pointer; background: var(--bg-tert); min-height: 60px; }
+.gifpicker .gcard img { width: 100%; display: block; object-fit: cover; }
+.gifpicker .gcard:hover { outline: 2px solid var(--brand); }
+.gstar { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border: 0; border-radius: 6px; background: rgba(0,0,0,.6); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity .12s; }
+.gstar.on { color: #f0b232; opacity: 1; }
+.gcard:hover .gstar, .gifmsg:hover .gstar { opacity: 1; }
+.gifpicker .gfoot { padding: 6px 12px 8px; font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--divider); }
+.gifmsg { position: relative; display: inline-block; max-width: min(360px, 100%); }
+.gifmsg img { max-width: 100%; max-height: 300px; border-radius: 6px; display: block; cursor: zoom-in; margin: 0 !important; }
+.gifmsg .gtag { position: absolute; left: 6px; bottom: 6px; font-size: 10px; font-weight: 800; color: #fff; background: rgba(0,0,0,.6); border-radius: 4px; padding: 1px 5px; opacity: 0; }
+.gifmsg.paused .gtag { opacity: 1; }

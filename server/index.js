@@ -14,6 +14,7 @@ import { getAdapter, listAdapters } from './integrations/index.js';
 import { createActivityService } from './activity.js';
 import { createCallInvites } from './callinvites.js';
 import { createRemote } from './remote.js';
+import { mountGifs } from './gifs.js';
 import { mountLfg } from './lfg.js';
 import { translate, translateEnabled, engineName } from './translate.js';
 import { initMusic, handle as musicHandle, onVoiceJoin as musicOnJoin, onVoiceLeave as musicOnLeave, stopAll as musicStopAll } from './music.js';
@@ -764,6 +765,7 @@ function lfgAudience(uid) {
   for (const r of all('SELECT other_id id FROM relationships WHERE user_id=? AND type=2 UNION SELECT user_id id FROM relationships WHERE other_id=? AND type=2', uid, uid)) ids.delete(r.id);
   return [...ids];
 }
+mountGifs(app, { auth, wrap, bad, all, run, get, canSeeChannel: canAccessChannel, dataDir: DATA_DIR, clean });
 mountLfg(app, {
   auth, wrap, bad, get, all, run, newId, dispatch, userPub, clean,
   audienceOf: lfgAudience, canSeeChannel: canAccessChannel,

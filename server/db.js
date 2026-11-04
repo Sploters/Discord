@@ -138,3 +138,5 @@ db.exec(`CREATE TABLE IF NOT EXISTS lfg_posts(
 CREATE INDEX IF NOT EXISTS idx_lfg_open ON lfg_posts(expires_at);
 CREATE TABLE IF NOT EXISTS lfg_requests(post_id TEXT NOT NULL REFERENCES lfg_posts(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, state TEXT NOT NULL, created_at INTEGER, PRIMARY KEY(post_id, user_id));
 CREATE TABLE IF NOT EXISTS lfg_profiles(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, game TEXT NOT NULL, ign TEXT DEFAULT '', rank TEXT, roles TEXT DEFAULT '[]', updated_at INTEGER, PRIMARY KEY(user_id, game));`);
+// GIFs favoritos (por pessoa)
+db.exec(`CREATE TABLE IF NOT EXISTS gif_favs(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, url TEXT NOT NULL, preview TEXT, w INTEGER DEFAULT 0, h INTEGER DEFAULT 0, title TEXT DEFAULT '', created_at INTEGER, PRIMARY KEY(user_id, url));`);
