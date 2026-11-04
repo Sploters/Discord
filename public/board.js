@@ -131,13 +131,14 @@ export const clearBoard = (id) => { boards.set(id, []); send('ROOM_DRAW', { boar
 export function boardTools(id, extra) {
   const bar = h('div.btools', { onclick: (e) => e.stopPropagation(), onpointerdown: (e) => e.stopPropagation(), onwheel: (e) => e.stopPropagation() });
   const cols = COLORS.map(c => h('button.bcol', { style: { background: c }, title: c, 'data-c': c, onclick: () => { tool.color = c; tool.erase = false; sync(); } }));
-  const custom = h('input.bpick', { type: 'color', value: tool.color, title: 'Cor personalizada (seletor RGB)', oninput: (e) => { tool.color = e.target.value; tool.erase = false; sync(true); } });
+  const customIn = h('input', { type: 'color', name: 'board-color', value: tool.color, oninput: (e) => { tool.color = e.target.value; tool.erase = false; sync(true); } });
+  const custom = h('label.bpick', { title: 'Cor personalizada (seletor RGB)' }, icon('palette', 14), customIn); // paleta; o seletor nativo fica invisível por cima
   const pen = h('button.ibtn.btool', { title: 'Caneta', onclick: () => { tool.erase = false; sync(); } }, icon('edit', 16));
   const era = h('button.ibtn.btool', { title: 'Borracha (apaga o traço em que passar)', onclick: () => { tool.erase = true; sync(); } }, icon('eraser', 16));
   const sync = (fromPicker) => {
     cols.forEach(b => b.classList.toggle('on', !tool.erase && b.dataset.c === tool.color));
     pen.classList.toggle('on', !tool.erase); era.classList.toggle('on', tool.erase);
-    custom.classList.toggle('on', !tool.erase && !COLORS.includes(tool.color)); if (!fromPicker) custom.value = /^#[0-9a-f]{6}$/i.test(tool.color) ? tool.color : '#ffffff';
+    const own = !COLORS.includes(tool.color); custom.classList.toggle('on', !tool.erase && own); custom.style.color = own ? tool.color : ''; if (!fromPicker) customIn.value = /^#[0-9a-f]{6}$/i.test(tool.color) ? tool.color : '#ffffff';
     document.querySelectorAll('canvas.board.live').forEach(c => { c.style.cursor = tool.erase ? 'cell' : 'crosshair'; });
   };
   const zoom = id === 'wb' ? [h('span.bsep'),

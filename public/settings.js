@@ -67,10 +67,16 @@ async function avatarPicker(current, onPick) {
   [{ label: 'Cancelar', cls: 'link' }]);
 }
 const swatches = (cur, onPick) => {
-  const box = h('div.swatches');
-  const draw = (c) => box.replaceChildren(...SWATCHES.map(s => h('i' + (s === c ? '.sel' : ''), { style: { background: s }, onclick: () => { onPick(s); draw(s); } })),
-    h('input', { type: 'color', value: /^#[0-9a-f]{6}$/i.test(c) ? c : '#5865f2', oninput: (e) => { onPick(e.target.value); draw(e.target.value); }, title: 'Cor personalizada', style: { width: '32px', height: '32px', border: 0, background: 'none', padding: 0, cursor: 'pointer' } }));
-  draw(cur); return box;
+  // cor personalizada: botão com a paleta (o seletor nativo fica invisível por cima); escolhida, o botão ganha a cor.
+  // Marcar a seleção só troca classes/estilo: recriar o seletor fecharia o nativo no meio do arraste
+  const inp = h('input', { type: 'color', name: 'custom-color', value: /^#[0-9a-f]{6}$/i.test(cur) ? cur : '#5865f2', oninput: (e) => { onPick(e.target.value); mark(e.target.value); } });
+  const own = h('label.swcustom', { title: 'Cor personalizada' }, icon('palette', 18), inp);
+  const dots = SWATCHES.map(s => h('i', { style: { background: s }, onclick: () => { onPick(s); mark(s); } }));
+  const mark = (c) => {
+    dots.forEach((d, i) => d.classList.toggle('sel', SWATCHES[i] === c));
+    const mine = !!c && !SWATCHES.includes(c); own.classList.toggle('sel', mine); own.style.background = mine ? c : '';
+  };
+  mark(cur); return h('div.swatches', ...dots, own);
 };
 const card = (...k) => h('div.card2', ...k);
 const hint = (t) => h('div.hintline', t);
@@ -274,18 +280,18 @@ function appearancePage() {
   const gcard = (k, t, extra) => h('div.ncard.tgrad' + (t.base === 'light' ? '.light' : '') + (S.prefs.theme === k ? '.on' : ''), { style: { background: gradientCss(t) }, onclick: () => pick(k) }, extra, h('b', t.name));
   const drawTh = () => {
     th.replaceChildren(...Object.entries(SOLID_THEMES).map(([k, l]) => h('div.ncard.theme-' + k + (S.prefs.theme === k ? '.on' : ''), { onclick: () => pick(k) }, h('b', l))));
-    gr.replaceChildren(...Object.entries(GRADIENT_THEMES).map(([k, t]) => gcard('g:' + k, t, h('div.tact', h('button', { title: 'Personalizar uma cópia', onclick: (e) => { e.stopPropagation(); openThemeEditor({ ...t, name: t.name + ' (cópia)' }, { onExit: drawTh }); } }, icon('edit', 14))))));
+    gr.replaceChildren(...Object.entries(GRADIENT_THEMES).map(([k, t]) => gcard('g:' + k, t, h('div.tact', h('button', { title: 'Personalizar as cores (cria uma cópia)', onclick: (e) => { e.stopPropagation(); openThemeEditor({ ...t, name: t.name + ' (cópia)' }, { onExit: drawTh }); } }, icon('palette', 14))))));
     mine.replaceChildren(...(S.prefs.customThemes || []).map(t => gcard('c:' + t.id, t, h('div.tact',
       h('button', { title: 'Copiar código para compartilhar', onclick: (e) => { e.stopPropagation(); shareTheme(t); } }, icon('link', 14)),
-      h('button', { title: 'Editar', onclick: (e) => { e.stopPropagation(); openThemeEditor(t, { onExit: drawTh }); } }, icon('edit', 14)),
+      h('button', { title: 'Editar as cores', onclick: (e) => { e.stopPropagation(); openThemeEditor(t, { onExit: drawTh }); } }, icon('palette', 14)),
       h('button', { title: 'Excluir', onclick: async (e) => { e.stopPropagation(); if (await confirmBox('Excluir tema', `"${t.name}" será removido.`, 'Excluir')) { S.prefs.customThemes = S.prefs.customThemes.filter(x => x !== t); if (S.prefs.theme === 'c:' + t.id) S.prefs.theme = t.base; save(); applyTheme(); drawTh(); } } }, icon('trash', 14))))),
-      h('div.ncard.tnew', { onclick: () => openThemeEditor(null, { onExit: drawTh }) }, icon('plus', 20), h('small', 'Criar tema')),
+      h('div.ncard.tnew', { onclick: () => openThemeEditor(null, { onExit: drawTh }) }, icon('palette', 20), h('small', 'Criar tema')),
       h('div.ncard.tnew', { onclick: async () => { const code = await promptBox('Importar tema', 'Cole o código do tema', '', 'Importar'); if (code == null) return; const t = decodeTheme(code); if (!t) return toast('Código de tema inválido', true); openThemeEditor(t, { onExit: drawTh }); } }, icon('dl', 20), h('small', 'Importar código')));
   };
   drawTh();
   const set = (k) => (v) => { S.prefs[k] = v; save(); applyTheme(); };
   return h('div', h('h2', 'Aparência'), section('Tema'), card(th),
-    section('Temas em gradiente'), card(gr, hint('Passe o mouse num tema e clique no lápis para criar uma versão sua a partir dele.')),
+    section('Temas em gradiente'), card(gr, hint('Passe o mouse num tema e clique na paleta para criar uma versão sua a partir dele.')),
     section('Seus temas'), card(mine, hint('Crie um gradiente com até 5 cores e compartilhe: o código colado no chat vira um cartão com o botão "Usar tema".')),
     section('Cor de destaque'), card(swatches(S.prefs.accent, (c) => { S.prefs.accent = c; save(); applyTheme(); })),
     section('Fonte'), card(h('label.f', 'Família da fonte', seg({ default: 'Padrão', rounded: 'Arredondada', serif: 'Serifada', mono: 'Monoespaçada', dyslexia: 'Legível (dislexia)' }, S.prefs.fontFamily, set('fontFamily'))),

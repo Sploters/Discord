@@ -35,7 +35,15 @@ const I = {
   shrink: 'M9 3v6H3V7h4V3Zm6 0h2v4h4v2h-6ZM3 15h6v6H7v-4H3Zm12 0h6v2h-4v4h-2Z',
   sun: 'M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM11 1h2v3h-2zM11 20h2v3h-2zM1 11h3v2H1zM20 11h3v2h-3zM4.2 5.6l1.4-1.4 2.1 2.1-1.4 1.4zM16.3 17.7l1.4-1.4 2.1 2.1-1.4 1.4zM4.2 18.4l2.1-2.1 1.4 1.4-2.1 2.1zM16.3 6.3l2.1-2.1 1.4 1.4-2.1 2.1z',
   moon: 'M21 14.5A9 9 0 0 1 9.5 3a9 9 0 1 0 11.5 11.5z',
-  pipette: 'M19.4 2.6a2.1 2.1 0 0 0-3 0l-2.6 2.6-1.4-1.4-1.4 1.4 1.4 1.4-8 8V19h4.4l8-8 1.4 1.4 1.4-1.4-1.4-1.4 2.6-2.6a2.1 2.1 0 0 0 0-3zM7.6 17H6v-1.6l7.4-7.4 1.6 1.6z',
+  // conta-gotas: bulbo, anel vazado e tubo com a parte vazia recortada (desenhado em pé e girado 45°)
+  pipette: { t: 'rotate(45 12 12) translate(12 12) scale(1.24) translate(-12 -12)', parts: [
+    'M9 4.4a3 3 0 0 1 3-3 3 3 0 0 1 3 3v4H9Z',
+    'M8.8 9.1h6.4a1.8 1.8 0 0 1 1.8 1.8v0a1.8 1.8 0 0 1-1.8 1.8H8.8A1.8 1.8 0 0 1 7 10.9v0a1.8 1.8 0 0 1 1.8-1.8Zm.6 1.2a.6.6 0 0 0 0 1.2h5.2a.6.6 0 0 0 0-1.2Z',
+    'M9.3 13.4h5.4v4.9c0 1.3-.9 2.1-1.8 2.3V22a.9.9 0 0 1-1.8 0v-1.4c-.9-.2-1.8-1-1.8-2.3Zm1.2 1v2.4l3-2.4Z',
+  ] },
+  // paleta de pintor com quatro tintas vazadas
+  palette: { parts: ['M12 2.4c-5.4 0-9.6 4.3-9.6 9.6 0 5.2 4 9.6 8.7 9.6 1.6 0 2.6-1 2.6-2.4 0-.9-.5-1.5-.5-2.4 0-1.8 1.6-3.2 3.4-3.2h1.7c2.3 0 3.7-1.6 3.7-3.7 0-4.2-4.4-7.5-10-7.5Z' +
+    'M5.4 9.6a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0ZM8.6 6.4a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0ZM13.6 6.9a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0ZM5.2 14.6a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0Z'] },
   sparkle: 'M12 2l2.2 6.6L21 11l-6.8 2.4L12 20l-2.2-6.6L3 11l6.8-2.4z',
   x: 'M18.4 4L12 10.4 5.6 4 4 5.6l6.4 6.4L4 18.4 5.6 20l6.4-6.4 6.4 6.4 1.6-1.6-6.4-6.4L20 5.6z',
   caret: 'M7 10l5 5 5-5z',
@@ -97,6 +105,12 @@ export const icon = (name, size) => {
   if (size) { s.style.width = s.style.height = size + 'px'; }
   const def = I[name] || '', path = (d) => { const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', d); s.append(p); return p; };
   if (typeof def === 'string') { path(def); return s; }
+  // ícone sólido com recortes vazados: { parts: [d...], t? } (evenodd; t = transform do grupo, ex.: desenhado reto e girado)
+  if (def.parts) {
+    const g = def.t ? s.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'g')) : s; if (def.t) g.setAttribute('transform', def.t);
+    for (const d of def.parts) { const p = path(d); p.setAttribute('fill-rule', 'evenodd'); g.append(p); }
+    return s;
+  }
   // ícone com partes em traço: { fill, stroke } (o traço usa a cor do texto, largura 2, pontas redondas)
   if (def.fill) path(def.fill);
   if (def.stroke) { const p = path(def.stroke); p.setAttribute('fill', 'none'); p.setAttribute('stroke', 'currentColor'); p.setAttribute('stroke-width', '2'); p.setAttribute('stroke-linecap', 'round'); }
