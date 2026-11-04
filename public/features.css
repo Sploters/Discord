@@ -933,3 +933,8 @@ select.gpucompat:focus { outline: 2px solid var(--brand, #5865f2); outline-offse
 .fxb { font-size: 13px; line-height: 1; margin-left: 2px; }
 .roundbtn.fxon, #voice-panel .row button.fxon { color: #fff; background: var(--brand) !important; }
 .fxpicker .fxfoot kbd { white-space: nowrap; }
+
+/* controles do centro da sala: só sala/transmissão; os pessoais (mic, fone, câmera, efeitos, soundboard, música) ficam
+   no painel da esquerda e só reaparecem aqui quando o painel some (tela estreita) */
+#stage .bar .solo-narrow, .bar .roundbtn.solo-narrow { display: none; }
+@media (max-width: 640px) { #stage .bar .solo-narrow, .bar .roundbtn.solo-narrow { display: inline-flex; } }
