@@ -3,7 +3,6 @@
 // renomear, favoritar, baixar, ir para a mensagem e apagar. Atualiza em tempo real (CLIP_CREATE/UPDATE/DELETE).
 import { h, icon, fsVideo, whenGone, thumbUrl } from './util.js';
 import { openTrimmer } from './cliptrim.js';
-import { postClip } from './clips.js';
 import { S, tryApi, toast, menu, modal, confirmBox, promptBox, can, PERM, guild, nameOf } from './state.js';
 
 let ctx = {}; // injetado por app.js: go(gid, cid), jumpTo(mid)
@@ -58,11 +57,21 @@ function moreMenu(e, c) {
   ]);
 }
 // corta um clipe da galeria: o original fica; a cópia cortada vira um clipe novo no mesmo canal.
-// O editor abre na hora tocando o vídeo do servidor; o arquivo baixa em segundo plano (com progresso) só para o corte.
+// Nada é baixado nem enviado: o editor toca o vídeo do servidor e o servidor corta o arquivo que já tem.
 function trimCopy(c) {
+  const f = /^\/files\/([a-f0-9]{24}\.webm)\//.exec(c.url)?.[1];
   try {
-    openTrimmer({ url: c.url, size: c.size }, { title: (c.title + ' (cortado)').slice(0, 100), action: 'Salvar cópia cortada',
-      onSave: ({ blob, secs, title }) => postClip(blob, { channelId: c.channel_id, secs, streamerId: c.streamer?.id, hasAudio: c.has_audio, title, who: c.streamer ? who(c.streamer) : 'clipe' }) });
+    openTrimmer({
+      url: c.url,
+      keys: () => tryApi('GET', `/clips/${c.id}/keyframes`).then(r => r?.keys || []),
+      strip: () => `/thumbs/${f}/strip`,
+      save: async ({ startMs, endMs, title }) => {
+        toast('Cortando…');
+        const r = await tryApi('POST', `/clips/${c.id}/trim`, { start_ms: startMs, end_ms: endMs, title });
+        if (!r) return false;
+        toast('Cópia cortada salva na galeria e postada no chat da sala'); return true;
+      },
+    }, { title: (c.title + ' (cortado)').slice(0, 100), action: 'Salvar cópia cortada' });
   } catch (e) { toast('Não consegui abrir o editor: ' + e.message, true); }
 }
 async function rename(c) {

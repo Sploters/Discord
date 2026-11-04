@@ -903,6 +903,7 @@ select.gpucompat:focus { outline: 2px solid var(--brand, #5865f2); outline-offse
 .trimmer .trstrip { position: absolute; inset: 0; display: flex; overflow: hidden; border-radius: 6px; opacity: .55; }
 .trimmer .trstrip > * { flex: 1; min-width: 0; height: 100%; object-fit: cover; display: block; }
 .trimmer .trstrip > canvas { width: 10%; height: 100%; }
+.trimmer .trstrip > img.trsprite { width: 100%; object-fit: fill; } /* faixa do servidor: 10 quadros numa imagem */
 .trimmer .trsel { position: absolute; top: 0; bottom: 0; border: 2px solid var(--yellow, #f0b232); border-radius: 6px; box-shadow: 0 0 0 9999px rgba(0,0,0,.45); pointer-events: none; box-sizing: border-box; }
 .trimmer .trtrack { overflow: hidden; }
 .trimmer .trhead { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #fff; pointer-events: none; transform: translateX(-1px); }

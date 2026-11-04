@@ -19,33 +19,15 @@ async function filmstrip(url, durMs, n, box) {
   v.removeAttribute('src'); v.load();
 }
 
-// baixa o arquivo com progresso (usa o cache do navegador se o clipe já foi assistido)
-async function download(url, size, onProgress, signal) {
-  const r = await fetch(url, { cache: 'force-cache', signal });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  const total = +r.headers.get('content-length') || size || 0;
-  if (!r.body?.getReader || !total) return new Uint8Array(await r.arrayBuffer());
-  const out = new Uint8Array(total), rd = r.body.getReader(); let got = 0, extra = [];
-  for (;;) {
-    const { done, value } = await rd.read(); if (done) break;
-    if (got + value.length <= total) out.set(value, got); else extra.push(value);
-    got += value.length; onProgress?.(got, total);
-  }
-  if (!extra.length && got === total) return out;
-  const all = new Uint8Array(got); all.set(out.subarray(0, Math.min(got, total))); let o = Math.min(got, total); extra.forEach(x => { all.set(x, o); o += x.length; });
-  return all;
-}
-const mbs = (n) => (n / 1048576).toFixed(1);
-
 /**
- * Abre o editor. src: Uint8Array do WebM, ou { url, size } de um clipe no servidor (abre na hora tocando do servidor
- * e baixa o arquivo em segundo plano; salvar espera o download). opts: { title, action, onSave: async ({ blob, secs, title, startMs, endMs }) => bool }
+ * Abre o editor. src: Uint8Array do WebM (clipe recém-gravado, corta aqui), ou um clipe que já está no servidor:
+ * { url, keys: () => Promise<[ms]>, strip: (durS) => url da faixa de miniaturas, save: async ({ startMs, endMs, title }) => bool }
+ * — nada é baixado: o vídeo toca do servidor e o próprio servidor corta. opts: { title, action, onSave (só para bytes) }
  */
 export function openTrimmer(src, opts = {}) {
-  const local = src instanceof Uint8Array;
-  let bytes = local ? src : null;
+  const local = src instanceof Uint8Array, bytes = local ? src : null;
   const url = local ? URL.createObjectURL(new Blob([src], { type: 'video/webm' })) : src.url;
-  const video = h('video.trvid', { src: url, playsInline: true, preload: local ? 'auto' : 'metadata' }); // do servidor: só o começo, para não disputar a banda com o download
+  const video = h('video.trvid', { src: url, playsInline: true, preload: local ? 'auto' : 'metadata' });
   const strip = h('div.trstrip', Array.from({ length: 10 }, () => h('i')));
   const sel = h('div.trsel'), head = h('div.trhead');
   const hs = h('div.trhandle.s', { title: 'Início (arraste)' }), he = h('div.trhandle.e', { title: 'Fim (arraste)' });
@@ -55,7 +37,7 @@ export function openTrimmer(src, opts = {}) {
   const play = h('button.btn.grey.trplay', { onclick: () => toggle() }, icon('play', 16), 'Assistir trecho');
   let dur = 0, a = 0, b = 0, snapped = 0, loop = false;
   let keysAt = bytes ? keyframeTimes(bytes) : []; // calculado uma vez: arrastar não relê o arquivo
-  let status = bytes ? '' : 'Baixando o clipe para cortar…', failed = false;
+  let status = '', failed = false;
 
   const pos = (ms) => (dur ? (ms / dur) * 100 : 0) + '%';
   const paint = () => {
@@ -95,15 +77,11 @@ export function openTrimmer(src, opts = {}) {
   video.addEventListener('loadedmetadata', () => {
     dur = Math.round((isFinite(video.duration) ? video.duration : 0) * 1000);
     if (!dur) { lab.textContent = 'Não consegui ler a duração deste vídeo.'; return; }
-    a = 0; b = dur; paint(); if (bytes) filmstrip(stripUrl(), dur, 10, strip);
+    a = 0; b = dur; paint();
+    if (local) filmstrip(url, dur, 10, strip);
+    else { const img = h('img.trsprite', { src: src.strip(dur / 1000), alt: '', onload: () => strip.replaceChildren(img) }); } // faixa pronta do servidor (uma imagem)
   });
-  // miniaturas sempre do arquivo local (pular pelo vídeo do servidor faria um pedido de rede por miniatura)
-  let blobUrl = local ? url : null;
-  const stripUrl = () => blobUrl || (blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'video/webm' })));
-  const ctl = new AbortController();
-  const ready = local ? Promise.resolve(bytes) : download(src.url, src.size, (got, total) => { status = `Baixando o clipe para cortar… ${mbs(got)} de ${mbs(total)} MB (${Math.floor(got / total * 100)}%). Já dá para escolher o trecho.`; paint(); }, ctl.signal)
-    .then((bt) => { bytes = bt; keysAt = keyframeTimes(bt); status = ''; paint(); if (dur) filmstrip(stripUrl(), dur, 10, strip); return bt; })
-    .catch((e) => { if (e.name !== 'AbortError') { failed = true; status = 'Não consegui baixar o vídeo: ' + e.message; paint(); } return null; });
+  if (!local) src.keys().then((k) => { keysAt = k || []; paint(); }).catch(() => { });
   paint();
   // atalhos: espaço = assistir/pausar, I/O = marcar início/fim onde o vídeo está
   const keys = (e) => {
@@ -113,12 +91,16 @@ export function openTrimmer(src, opts = {}) {
     if (e.key === 'o' || e.key === 'O') { b = Math.max(Math.round(video.currentTime * 1000), a + 500); paint(); }
   };
   addEventListener('keydown', keys);
-  const cleanup = () => { removeEventListener('keydown', keys); video.pause(); ctl.abort(); if (blobUrl) URL.revokeObjectURL(blobUrl); };
+  const cleanup = () => { removeEventListener('keydown', keys); video.pause(); video.removeAttribute('src'); video.load(); if (local) URL.revokeObjectURL(url); };
   const body = h('div.trimmer', video, track, lab, h('div.trrow', play, h('small.mut', 'Espaço: assistir · I / O: marcar início / fim no ponto atual')), note, h('label.f', 'Título', title));
   const m = modal('Cortar clipe', 'Arraste as alças para escolher o trecho.', body, [
     { label: 'Cancelar', cls: 'link', fn: () => cleanup() },
     { label: opts.action || 'Postar clipe', cls: 'green', fn: async () => {
-      if (!bytes) { toast('Terminando de baixar o clipe…'); if (!await ready) { toast('Não consegui baixar o vídeo para cortar', true); return false; } }
+      if (!local) { // o servidor corta o arquivo que já tem: sem download e sem upload
+        const ok = await src.save({ startMs: a, endMs: b, title: title.value.trim() });
+        if (ok === false) return false;
+        cleanup(); return;
+      }
       const r = trimWebm(bytes, a, b);
       if (!r) { toast('Não consegui cortar este vídeo', true); return false; }
       const ok = await opts.onSave?.({ blob: new Blob([r.bytes], { type: 'video/webm' }), secs: Math.max(1, Math.round((r.endMs - r.startMs) / 1000)), title: title.value.trim(), startMs: r.startMs, endMs: r.endMs });

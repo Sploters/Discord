@@ -75,10 +75,12 @@ try {
   const t0 = Date.now();
   await P.evaluate(() => [...document.querySelectorAll('.menu *')].find(x => x.children.length === 0 && /Cortar \(cria uma cópia\)/.test(x.textContent))?.click());
   await P.waitForSelector('.trimmer .trtrack', { timeout: 8000 });
-  const openMs = Date.now() - t0, dlNote = await P.evaluate(() => document.querySelector('.trimmer .qinfo')?.textContent || '');
-  ok(openMs < 1000 && /Baixando o clipe/.test(dlNote), 'editor abre na hora mesmo com conexão lenta (mostra o progresso do download)', { openMs, dlNote });
-  await P.waitForFunction(() => /Fim/.test(document.querySelector('.trimmer .trlab')?.textContent || '') && !/Baixando/.test(document.querySelector('.trimmer .qinfo')?.textContent || ''), { timeout: 30000 });
-  ok(true, 'download termina e o editor fica pronto para cortar', Date.now() - t0);
+  const openMs = Date.now() - t0;
+  ok(openMs < 1000, 'editor abre na hora mesmo com conexão lenta', { openMs });
+  await P.waitForFunction(() => /Fim/.test(document.querySelector('.trimmer .trlab')?.textContent || ''), { timeout: 15000 });
+  await P.waitForSelector('.trimmer .trstrip img.trsprite', { timeout: 15000 }).catch(() => { });
+  const sp = await P.evaluate(() => { const i = document.querySelector('.trimmer .trstrip img.trsprite'); return i ? { w: i.naturalWidth, h: i.naturalHeight } : null; });
+  ok(sp && sp.w >= 128 * 9 && sp.h === 72, 'faixa de miniaturas pronta do servidor (10 quadros numa imagem)', sp);
   await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
   await P.waitForFunction(() => /Fim/.test(document.querySelector('.trimmer .trlab')?.textContent || ''), { timeout: 8000 });
   await sleep(2500); // miniaturas
@@ -90,9 +92,13 @@ try {
   const durShown = +(lab.match(/Duração ([\d.]+) s/)?.[1] || 0);
   ok(durShown > 3 && durShown < 6, 'arrastando as alças: trecho de ~4–5 s', lab);
   if (process.env.SHOTS) await P.screenshot({ path: `${OUT}/05-cortar.png` });
+  const fullGets = await P.evaluate((u) => performance.getEntriesByType('resource').filter(e => e.name.includes(u.split('/')[2]) && e.initiatorType === 'fetch').length, up.clip.url);
+  ok(fullGets === 0, 'o editor não baixa o arquivo inteiro (o servidor corta)', fullGets);
+  const ts = Date.now();
   await P.evaluate(() => [...document.querySelectorAll('.modal .btn')].find(x => /Salvar cópia cortada/.test(x.textContent)).click());
   let list; for (let i = 0; i < 30; i++) { await sleep(300); list = await call(tok, 'GET', `/guilds/${g.id}/clips`); if (list.clips?.length === 2) break; }
   const copy = list.clips?.find(c => c.id !== up.clip?.id);
+  ok(Date.now() - ts < 3000, 'salvar a cópia cortada é rápido (sem download nem upload)', Date.now() - ts);
   ok(copy && copy.title === 'Jogada da noite (cortado)' && copy.secs >= 3 && copy.secs <= 6, 'cópia cortada vira um clipe novo; o original continua', copy && { title: copy.title, secs: copy.secs });
   const p3 = copy && await P.evaluate(async (u) => { const b = new Uint8Array(await (await fetch(u)).arrayBuffer()); window.__t3 = b; return b.length; }, copy.url);
   const pr3 = await probe('window.__t3');

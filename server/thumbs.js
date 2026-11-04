@@ -41,6 +41,41 @@ export function createThumbs(dir) {
       res.type('image/jpeg'); res.sendFile(thumbOf(f));
     }, () => res.sendStatus(500));
   }
-  const remove = (f) => fs.unlink(thumbOf(path.basename(f)), () => { });
-  return { route, ensure, remove };
+  // faixa da linha do tempo do editor de corte: até 10 quadros lado a lado (128x72 cada) numa imagem só.
+  // Decodifica só os quadros-chave (-skip_frame nokey) e pega os de índice `idx` (os mais próximos de cada décimo do
+  // clipe): poucos décimos de segundo mesmo num clipe de 60 s. GET /thumbs/<arquivo>/strip
+  const stripOf = (f) => path.join(UPLOAD_DIR, f + '.strip.jpg');
+  const stripPending = new Map();
+  function ensureStrip(f, idx) {
+    if (!VIDEO.test(f) || !idx.length) return Promise.resolve(false);
+    if (fs.existsSync(stripOf(f))) return Promise.resolve(true);
+    if (!fs.existsSync(path.join(UPLOAD_DIR, f))) return Promise.resolve(false);
+    if (!stripPending.has(f)) {
+      const out = stripOf(f), tmp = out + '.tmp.jpg', sel = idx.map(i => `eq(n\\,${i})`).join('+');
+      const args = ['-hide_banner', '-loglevel', 'error', '-y', '-skip_frame', 'nokey', '-i', path.join(UPLOAD_DIR, f), '-an',
+        '-vf', `select='${sel}',scale=128:72,tile=${idx.length}x1`, '-frames:v', '1', '-fps_mode', 'vfr', '-q:v', '5', tmp];
+      const p = (chain = chain.then(() => run(args)).then(ok => { if (ok && fs.existsSync(tmp)) { fs.renameSync(tmp, out); return true; } try { fs.unlinkSync(tmp); } catch { } return false; }))
+        .finally(() => stripPending.delete(f));
+      stripPending.set(f, p);
+    }
+    return stripPending.get(f);
+  }
+  // keys: tempos (ms) dos quadros-chave do arquivo
+  function stripRoute(req, res, keys) {
+    const f = path.basename(String(req.params.f || ''));
+    if (!VIDEO.test(f)) return res.sendStatus(404);
+    const end = (keys.at(-1) || 0) + 1000, idx = [];
+    for (let i = 0; i < 10 && keys.length; i++) {
+      const want = end * (i + 0.5) / 10; let best = 0;
+      keys.forEach((t, k) => { if (Math.abs(t - want) < Math.abs(keys[best] - want)) best = k; });
+      if (idx.at(-1) !== best) idx.push(best);
+    }
+    ensureStrip(f, idx).then(ok => {
+      if (!ok) return res.sendStatus(404);
+      res.set({ 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'public, max-age=31536000, immutable' });
+      res.type('image/jpeg'); res.sendFile(stripOf(f));
+    }, () => res.sendStatus(500));
+  }
+  const remove = (f) => { fs.unlink(thumbOf(path.basename(f)), () => { }); fs.unlink(stripOf(path.basename(f)), () => { }); };
+  return { route, ensure, remove, stripRoute };
 }

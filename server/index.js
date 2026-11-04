@@ -16,6 +16,7 @@ import { createCallInvites } from './callinvites.js';
 import { createRemote } from './remote.js';
 import { mountStatic } from './static.js';
 import { createThumbs } from './thumbs.js';
+import { trimWebm, keyframeTimes } from '../public/webm.js';
 import { mountGifs } from './gifs.js';
 import { mountLfg } from './lfg.js';
 import { translate, translateEnabled, engineName } from './translate.js';
@@ -197,6 +198,7 @@ const auth = (req, res, next) => {
   req.uid = s.user_id; req.token = token; next();
 };
 const wrap = (fn) => (req, res) => { try { fn(req, res); } catch (e) { console.error(e); if (!res.headersSent) res.status(500).json({ error: 'Erro interno' }); } };
+const wrapA = (fn) => (req, res) => Promise.resolve().then(() => fn(req, res)).catch((e) => { console.error(e); if (!res.headersSent) res.status(500).json({ error: 'Erro interno' }); });
 const bad = (res, msg, code = 400) => res.status(code).json({ error: msg });
 const clean = (s, max) => String(s ?? '').trim().slice(0, max);
 
@@ -850,24 +852,56 @@ const clipAudience = (c) => { const ch = get('SELECT * FROM channels WHERE id=?'
 function dropClipsOfMessage(mid) {
   for (const c of all('SELECT * FROM clips WHERE message_id=?', mid)) { const to = clipAudience(c); run('DELETE FROM clips WHERE id=?', c.id); dispatch(to, 'CLIP_DELETE', { id: c.id, guild_id: c.guild_id }); }
 }
+// registra um clipe: posta a mensagem com o vídeo no chat da sala e coloca na galeria (avisa todo mundo na hora)
+function createClip(uid, ch, { url, name, size, secs, streamer, title, audio }) {
+  const who = streamer ? (ch.guild_id ? (get('SELECT nickname FROM members WHERE guild_id=? AND user_id=?', ch.guild_id, streamer)?.nickname || getUser(streamer).display_name) : getUser(streamer).display_name) : 'alguém';
+  title = title || `Clipe de ${who}`;
+  const mid = newId(), now = Date.now();
+  run('INSERT INTO messages(id,channel_id,author_id,content,created_at,attachments) VALUES(?,?,?,?,?,?)', mid, ch.id, uid, `🎬 Clipe de ${secs}s da transmissão de ${who}`, now, JSON.stringify([{ url, name, size, type: url.endsWith('.mp4') ? 'video/mp4' : 'video/webm' }]));
+  run('INSERT INTO read_states VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET last_id=excluded.last_id', uid, ch.id, mid);
+  const cid = newId();
+  run('INSERT INTO clips(id,guild_id,channel_id,message_id,author_id,streamer_id,title,url,size,secs,has_audio,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', cid, ch.guild_id, ch.id, mid, uid, streamer, title, url, size, secs, audio ? 1 : 0, now);
+  const to = channelAudience(ch), msg = { ...messageObj(get('SELECT * FROM messages WHERE id=?', mid)), guild_id: ch.guild_id, mentions: [] };
+  dispatch(to, 'MESSAGE_CREATE', msg);
+  const c = get('SELECT * FROM clips WHERE id=?', cid);
+  for (const u of to) dispatch([u], 'CLIP_CREATE', clipObj(c, u));
+  return { clip: clipObj(c, uid), message: msg };
+}
 // salvar um clipe: posta a mensagem com o vídeo no chat da sala e registra na galeria
 app.post('/api/channels/:id/clips', auth, wrap((req, res) => {
   const ch = channelFor(req, res); if (!ch) return;
   const url = String(req.body.url || ''), secs = Math.max(1, Math.min(600, Math.round(+req.body.secs || 0)));
   if (!CLIP_URL.test(url) || !fs.existsSync(path.join(UPLOAD_DIR, url.split('/')[2]))) return bad(res, 'Vídeo do clipe inválido');
   const streamer = req.body.streamer_id && getUser(String(req.body.streamer_id)) ? String(req.body.streamer_id) : null;
-  const who = streamer ? (ch.guild_id ? (get('SELECT nickname FROM members WHERE guild_id=? AND user_id=?', ch.guild_id, streamer)?.nickname || getUser(streamer).display_name) : getUser(streamer).display_name) : 'alguém';
-  const title = clean(req.body.title, 100) || `Clipe de ${who}`, size = Math.max(0, +req.body.size || 0), audio = req.body.has_audio !== false;
-  const mid = newId(), now = Date.now(), name = clean(req.body.name, 200) || 'clipe.webm';
-  run('INSERT INTO messages(id,channel_id,author_id,content,created_at,attachments) VALUES(?,?,?,?,?,?)', mid, ch.id, req.uid, `🎬 Clipe de ${secs}s da transmissão de ${who}`, now, JSON.stringify([{ url, name, size, type: url.endsWith('.mp4') ? 'video/mp4' : 'video/webm' }]));
-  run('INSERT INTO read_states VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET last_id=excluded.last_id', req.uid, ch.id, mid);
-  const cid = newId();
-  run('INSERT INTO clips(id,guild_id,channel_id,message_id,author_id,streamer_id,title,url,size,secs,has_audio,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', cid, ch.guild_id, ch.id, mid, req.uid, streamer, title, url, size, secs, audio ? 1 : 0, now);
-  const to = channelAudience(ch), msg = { ...messageObj(get('SELECT * FROM messages WHERE id=?', mid)), guild_id: ch.guild_id, mentions: [] };
-  dispatch(to, 'MESSAGE_CREATE', msg);
-  const c = get('SELECT * FROM clips WHERE id=?', cid);
-  for (const u of to) dispatch([u], 'CLIP_CREATE', clipObj(c, u));
-  res.json({ clip: clipObj(c, req.uid), message: msg });
+  res.json(createClip(req.uid, ch, { url, name: clean(req.body.name, 200) || 'clipe.webm', size: Math.max(0, +req.body.size || 0), secs, streamer, title: clean(req.body.title, 100), audio: req.body.has_audio !== false }));
+}));
+// quadros-chave de um clipe (onde um corte pode começar), calculados uma vez por arquivo
+const keyCache = new Map(); // arquivo -> [ms]
+async function clipKeys(fname) {
+  if (keyCache.has(fname)) return keyCache.get(fname);
+  const keys = keyframeTimes(new Uint8Array(await fs.promises.readFile(path.join(UPLOAD_DIR, fname))));
+  keyCache.set(fname, keys); if (keyCache.size > 200) keyCache.delete(keyCache.keys().next().value);
+  return keys;
+}
+const clipFile = (c) => { const f = path.basename(String(c.url).split('/')[2] || ''); return /^[a-f0-9]{24}\.webm$/.test(f) && fs.existsSync(path.join(UPLOAD_DIR, f)) ? f : null; };
+app.get('/api/clips/:id/keyframes', auth, wrapA(async (req, res) => {
+  const c = clipFor(req, res); if (!c) return;
+  const f = clipFile(c); if (!f) return bad(res, 'Este clipe não pode ser cortado', 400);
+  res.json({ keys: await clipKeys(f) });
+}));
+// cortar no servidor: o arquivo já está aqui, então não precisa baixar nem reenviar nada. A cópia vira um clipe novo.
+app.post('/api/clips/:id/trim', auth, wrapA(async (req, res) => {
+  const c = clipFor(req, res); if (!c) return;
+  const ch = get('SELECT * FROM channels WHERE id=?', c.channel_id);
+  const f = clipFile(c); if (!f) return bad(res, 'Este clipe não pode ser cortado', 400);
+  const a = Math.max(0, Math.round(+req.body.start_ms || 0)), b = Math.round(+req.body.end_ms || 0);
+  if (!(b - a >= 500)) return bad(res, 'Trecho curto demais');
+  const r = trimWebm(new Uint8Array(await fs.promises.readFile(path.join(UPLOAD_DIR, f))), a, b);
+  if (!r) return bad(res, 'Não consegui cortar este vídeo', 422);
+  const fname = crypto.randomBytes(12).toString('hex') + '.webm', secs = Math.max(1, Math.round((r.endMs - r.startMs) / 1000));
+  await fs.promises.writeFile(path.join(UPLOAD_DIR, fname), r.bytes);
+  const name = `clipe-${secs}s-cortado.webm`, streamer = c.streamer_id && getUser(c.streamer_id) ? c.streamer_id : null;
+  res.json({ ...createClip(req.uid, ch, { url: `/files/${fname}/${name}`, name, size: r.bytes.length, secs, streamer, title: clean(req.body.title, 100) || (c.title + ' (cortado)').slice(0, 100), audio: !!c.has_audio }), start_ms: r.startMs, end_ms: r.endMs });
 }));
 // lista da galeria do servidor: todos | meus | favoritos, busca no título/nome, mais novos primeiro, 30 por página
 app.get('/api/guilds/:id/clips', auth, wrap((req, res) => {
@@ -1065,6 +1099,11 @@ function migrateOldClips() {
 migrateOldClips();
 
 app.get('/thumbs/:f', (req, res) => thumbs.route(req, res)); // miniatura de vídeo (server/thumbs.js)
+app.get('/thumbs/:f/strip', wrapA(async (req, res) => { // faixa da linha do tempo do editor de corte
+  const f = path.basename(String(req.params.f || ''));
+  if (!/^[a-f0-9]{24}\.webm$/.test(f) || !fs.existsSync(path.join(UPLOAD_DIR, f))) return res.sendStatus(404);
+  thumbs.stripRoute(req, res, await clipKeys(f));
+}));
 app.get('/files/:f/:name?', (req, res) => {
   const f = path.basename(req.params.f), p = path.join(UPLOAD_DIR, f);
   if (!fs.existsSync(p)) return res.sendStatus(404);

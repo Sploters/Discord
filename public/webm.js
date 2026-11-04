@@ -4,7 +4,8 @@ export const CLUSTER_ID = [0x1f, 0x43, 0xb6, 0x75];
 
 export function findClusters(bytes, base = 0) {
   const out = [];
-  for (let i = 0; i <= bytes.length - 4; i++) if (bytes[i] === 0x1f && bytes[i + 1] === 0x43 && bytes[i + 2] === 0xb6 && bytes[i + 3] === 0x75) out.push(base + i);
+  // indexOf (nativo) pula direto para cada 0x1F: dezenas de vezes mais rápido que olhar byte a byte num clipe de 60 MB
+  for (let i = bytes.indexOf(0x1f); i >= 0 && i <= bytes.length - 4; i = bytes.indexOf(0x1f, i + 1)) if (bytes[i + 1] === 0x43 && bytes[i + 2] === 0xb6 && bytes[i + 3] === 0x75) out.push(base + i);
   return out;
 }
 
