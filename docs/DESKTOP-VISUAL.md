@@ -42,3 +42,12 @@ Correções:
 - **Padrão = igual ao navegador:** esses desligamentos saíram do padrão e foram para **Compatibilidade de vídeo = Ligada**.
 - `--force_high_performance_gpu`: em PC com vídeo integrado + placa dedicada, o app usa a dedicada.
 - `main.log` registra todas as placas (qual está ativa) e o `getGPUFeatureStatus()`.
+
+### Resultado (RTX 3080, driver 32.0.16.1088)
+
+- A piscada acontecia **sempre que algo mudava na tela** com o vídeo tocando (controles aparecendo, contador de
+  tempo a cada segundo, mensagens): o Chromium alterna entre entregar o vídeo direto à placa e desenhá-lo junto com a
+  página, e no app esse segundo caminho saía escuro nessa placa. Tirar elementos de cima do vídeo não resolve
+  (testado e desfeito).
+- **Resolveu 100%: Compatibilidade de vídeo = Ligada** (vídeo sempre desenhado junto com a página, decodificado pela
+  CPU, em sRGB). A escolha fica salva no `config.json` do app.
