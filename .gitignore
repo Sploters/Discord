@@ -9,3 +9,11 @@ desktop/dist
 spikes/*/target
 native/*/target
 .testdata-chat/
+
+# configuração local com o endereço do servidor (não versionar)
+deploy/servidor.conf
+.env
+.env.*
+*.key
+*.pem
+cookies.txt
