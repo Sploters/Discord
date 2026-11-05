@@ -3,7 +3,11 @@
 # da Tailscale: mais atraso e banda limitada). Também testa se a rede do Umbrel permite ligações diretas.
 # Uso (do seu PC, igual ao deploy): sh deploy/conexoes.sh [usuario@host]
 # Só lê informações; não muda nada.
-TARGET=${1:-umbrel@100.105.3.128}
+# O endereço do servidor não fica no repositório: passe como argumento ou crie deploy/servidor.conf
+# (ignorado pelo git) com a linha: SERVIDOR=usuario@ip-da-vpn
+[ -f "$(dirname "$0")/servidor.conf" ] && . "$(dirname "$0")/servidor.conf"
+TARGET=${1:-$SERVIDOR}
+[ -n "$TARGET" ] || { echo "Informe o servidor: sh $0 usuario@ip-da-vpn  (ou crie deploy/servidor.conf com SERVIDOR=usuario@ip)"; exit 1; }
 ssh "$TARGET" 'sh -s' <<'REMOTO'
 TS=""
 if command -v tailscale >/dev/null 2>&1; then TS="tailscale"

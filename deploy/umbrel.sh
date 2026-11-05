@@ -3,7 +3,11 @@
 # Uso: sh deploy/umbrel.sh [usuario@host] [ip-da-vpn]
 # Requer chave SSH no servidor e o usuário no grupo docker.
 set -e
-TARGET=${1:-umbrel@100.105.3.128}
+# O endereço do servidor não fica no repositório: passe como argumento ou crie deploy/servidor.conf
+# (ignorado pelo git) com a linha: SERVIDOR=usuario@ip-da-vpn
+[ -f "$(dirname "$0")/servidor.conf" ] && . "$(dirname "$0")/servidor.conf"
+TARGET=${1:-$SERVIDOR}
+[ -n "$TARGET" ] || { echo "Informe o servidor: sh $0 usuario@ip-da-vpn  (ou crie deploy/servidor.conf com SERVIDOR=usuario@ip)"; exit 1; }
 IP=${2:-${TARGET#*@}}
 cd "$(dirname "$0")/.."
 tar czf - Dockerfile README.md package.json package-lock.json .gitignore deploy public server scripts | ssh "$TARGET" "
