@@ -1031,3 +1031,13 @@ select.gpucompat:focus { outline: 2px solid var(--brand, #5865f2); outline-offse
 .clipmsg .cminfo .btn { display: flex; align-items: center; gap: 4px; padding: 2px 0; }
 .clipmsg .cmvideo { width: 100%; max-width: 440px; flex: none; } .clipmsg:has(.cmvideo) { flex-direction: column; align-items: stretch; }
 .clipmsg .cmvideo video { width: 100%; border-radius: 6px; }
+
+/* ---------- aviso de versão nova do app desktop (appupdate.js) ---------- */
+.appupd { position: fixed; right: 20px; bottom: 20px; z-index: 1000; width: min(360px, calc(100vw - 32px)); display: flex; gap: 12px; padding: 14px 16px; border-radius: 12px;
+  background: var(--bg-float, #111214); color: var(--text, #dbdee1); border: 1px solid color-mix(in srgb, var(--brand, #5865f2) 45%, transparent); box-shadow: 0 10px 32px rgba(0,0,0,.45); }
+html.anim .appupd { animation: lc-pop .25s cubic-bezier(.2, .9, .3, 1.15); }
+.appupd .au-ico { flex: none; width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--green, #23a55a) 22%, transparent); color: var(--green, #23a55a); }
+.appupd .au-ico svg { fill: currentColor; }
+.appupd .au-body { flex: 1; min-width: 0; } .appupd b { display: block; color: var(--header, #fff); font-size: 15px; }
+.appupd p { margin: 4px 0 10px; font-size: 13px; color: var(--text-muted, #949ba4); line-height: 1.35; }
+.appupd .au-btns { display: flex; justify-content: flex-end; gap: 8px; } .appupd .btn { min-height: 32px; padding: 4px 14px; }

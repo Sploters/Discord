@@ -1,0 +1,68 @@
+# App desktop: a cada mudança em desktop/ na main, o GitHub monta o instalador do Windows e publica a release.
+# Os apps instalados (inclusive versões antigas) procuram a release mais nova no GitHub ao abrir e de hora em hora,
+# e a página mostra o aviso "Atualizar agora / Depois". Ninguém precisa gerar versão nem arquivos à mão.
+# Versão: a do desktop/package.json se for maior que a última release; senão, a última + 1 no último número.
+name: App desktop — instalador automático
+
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/**']
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 30
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Número da versão
+        id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BASE=$(node -p "require('./package.json').version")
+          LAST=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName 2>/dev/null | sed 's/^v//' || true)
+          V=$(node -e '
+            const p = (s) => (/^\d+\.\d+\.\d+$/.test(s || "") ? s : "0.0.0").split(".").map(Number);
+            const [b, l] = [p(process.argv[1]), p(process.argv[2])];
+            const gt = (x, y) => { for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; };
+            console.log((gt(b, l) ? b : [l[0], l[1], l[2] + 1]).join("."));
+          ' "$BASE" "$LAST")
+          echo "Última release: ${LAST:-nenhuma} · package.json: $BASE · nova: $V"
+          echo "v=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Dependências
+        run: npm ci
+
+      # os programas nativos (lc-input.exe e lc-stream.exe) já estão em desktop/native no repositório
+      - name: Montar o instalador
+        run: npx electron-builder --win nsis portable --publish never -c.extraMetadata.version=${{ steps.ver.outputs.v }}
+
+      - name: Publicar a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=${{ steps.ver.outputs.v }}
+          NOTES=$(git log -12 --format='- %s' -- . | head -12)
+          gh release create "v$V" "dist/LocalCord-Setup-$V.exe" "dist/LocalCord-Portable-$V.exe" \
+            --repo "$GITHUB_REPOSITORY" --title "LocalCord $V" --notes "${NOTES:-Atualização do app desktop}"
