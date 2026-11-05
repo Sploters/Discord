@@ -32,8 +32,9 @@ app.commandLine.appendSwitch('disable-low-res-tiling');
 // sem texturas compartilhadas de vídeo. "auto" liga sozinho em placas Intel antigas (detectado na execução anterior).
 const gpuCompat = cfg.gpuCompat === 'on' || (cfg.gpuCompat !== 'off' && cfg.gpuOld === true);
 if (gpuCompat && cfg.hardwareAcceleration !== false) {
-  app.commandLine.appendSwitch('disable-gpu-rasterization');
-  app.commandLine.appendSwitch('disable-zero-copy');
+  // interface desenhada pela CPU: só nas placas antigas (letras borradas). Ligado numa placa moderna (RTX 3080), a
+  // janela parava de se redesenhar sozinha: transmissão nova só aparecia ao passar o mouse e "Assistir" não abria
+  if (cfg.gpuOld === true) { app.commandLine.appendSwitch('disable-gpu-rasterization'); app.commandLine.appendSwitch('disable-zero-copy'); }
   app.commandLine.appendSwitch('disable-gpu-memory-buffer-video-frames');
   app.commandLine.appendSwitch('disable-accelerated-video-decode'); // clipes e transmissões decodificados pela CPU
   app.commandLine.appendSwitch('force-color-profile', 'srgb'); // sem conversão de cor do monitor/HDR
@@ -98,6 +99,7 @@ function createWindow(forceShow) {
   // ao trocar de tela, entrar/sair da tela cheia, restaurar, maximizar, mover entre monitores ou mudar a escala
   const repaint = () => [0, 60, 300, 1000].forEach(t => setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.invalidate(); }, t));
   win.webContents.on('did-navigate-in-page', repaint);
+  win.webContents.on('media-started-playing', repaint); // vídeo/transmissão começou: garante que a janela redesenha (no PC com redesenho atrasado só aparecia ao mexer o mouse)
   for (const ev of ['show', 'restore', 'maximize', 'unmaximize', 'moved', 'focus']) win.on(ev, repaint);
   screen.on('display-metrics-changed', repaint);
   // tela cheia de vídeo/transmissão/clipe: os botões nativos da barra de título (sobrepostos) ficavam desenhados por cima

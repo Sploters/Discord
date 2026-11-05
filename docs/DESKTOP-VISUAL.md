@@ -51,3 +51,14 @@ Correções:
   (testado e desfeito).
 - **Resolveu 100%: Compatibilidade de vídeo = Ligada** (vídeo sempre desenhado junto com a página, decodificado pela
   CPU, em sRGB). A escolha fica salva no `config.json` do app.
+
+## Transmissão só aparece ao passar o mouse e "Assistir" não abre (desktop 1.0.21)
+
+Com Compatibilidade de vídeo = Ligada numa RTX 3080, a janela deixava de se redesenhar sozinha: o aviso de
+transmissão só aparecia ao mexer o mouse e a transmissão não abria. No navegador (e com o servidor de mídia, testado
+aqui com mediasoup) tudo funciona. Causa provável: a interface desenhada pela CPU (`--disable-gpu-rasterization`,
+`--disable-zero-copy`), parte do modo de compatibilidade feita para placas Intel antigas.
+
+Correção: esses dois só entram em placas antigas (`gpuOld`); a compatibilidade em placas modernas mantém só os ajustes
+de vídeo (decodificação na CPU, sRGB, sem sobreposição), que foram os que resolveram as piscadas. Repintura forçada
+também quando um vídeo começa a tocar (`media-started-playing`).
