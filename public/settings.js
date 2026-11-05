@@ -533,7 +533,7 @@ function versionRow(version) {
     if (!r.available) { btn.textContent = 'Procurar atualização'; status.textContent = `LocalCord Desktop ${version} — você está na versão mais nova`; return; }
     status.textContent = `LocalCord Desktop ${version} — versão ${r.latest} disponível`;
     btn.className = 'btn green'; btn.textContent = `Atualizar para ${r.latest}`;
-    btn.onclick = async () => { btn.disabled = true; btn.textContent = 'Baixando…'; if (!await installAppUpdate()) { btn.disabled = false; btn.textContent = `Atualizar para ${r.latest}`; toast('Abri a página da versão nova no navegador: baixe o LocalCord-Setup e abra.'); } };
+    btn.onclick = async () => { btn.disabled = true; btn.textContent = 'Baixando…'; if (!await installAppUpdate()) { btn.disabled = false; btn.textContent = `Atualizar para ${r.latest}`; toast('Baixando o instalador: quando terminar, abra o LocalCord-Setup.'); } };
   } }, 'Procurar atualização');
   return row('Versão', status, btn);
 }

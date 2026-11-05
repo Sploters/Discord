@@ -273,24 +273,38 @@ ipcMain.handle('save-server', async (_e, url) => { cfg.server = url; saveCfg(); 
 // ---------- atualização (GitHub Releases) ----------
 const REPO = 'Sploters/Discord';
 let update = null, updating = false;
+// pedidos do atualizador: ao servidor LocalCord (certificado próprio aceito só para ele) ou ao GitHub
+const fromServer = (url) => { try { return new URL(url).hostname === serverHost(); } catch { return false; } };
+const reqOpts = (url, accept) => ({ headers: { 'User-Agent': 'LocalCord', Accept: accept }, timeout: 8000, ...(fromServer(url) ? { rejectUnauthorized: false } : {}) });
+const libOf = (url) => (url.startsWith('http:') ? http : https);
 const getJson = (url) => new Promise((resolve) => {
-  https.get(url, { headers: { 'User-Agent': 'LocalCord', Accept: 'application/vnd.github+json' }, timeout: 8000 }, (res) => {
-    let b = ''; res.on('data', d => (b += d)); res.on('end', () => { try { resolve(JSON.parse(b)); } catch { resolve(null); } });
-  }).on('error', () => resolve(null));
+  libOf(url).get(url, reqOpts(url, 'application/json'), (res) => {
+    let b = ''; res.on('data', d => (b += d)); res.on('end', () => { try { resolve(res.statusCode === 200 ? JSON.parse(b) : null); } catch { resolve(null); } });
+  }).on('error', () => resolve(null)).on('timeout', function () { this.destroy(); });
 });
 const newer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
+// 1º o servidor LocalCord (funciona com o repositório privado: o servidor consulta o GitHub com a chave dele);
+// se o servidor ainda não tiver a rota ou a chave, tenta o GitHub direto (repositório público)
 async function checkUpdate() {
-  const rel = await getJson(`https://api.github.com/repos/${REPO}/releases/latest`);
-  const ver = String(rel?.tag_name || '').replace(/^v/i, '');
-  const asset = rel?.assets?.find(a => /^LocalCord-Setup-.*\.exe$/i.test(a.name));
-  if (!ver || !asset || !newer(ver, app.getVersion())) return;
-  update = { version: ver, url: asset.browser_download_url, name: asset.name };
-  win?.webContents.send('update-available', { version: ver });
+  let found = null;
+  if (cfg.server) {
+    const r = await getJson(new URL('/api/desktop/update', cfg.server).href);
+    if (r?.version && r.url) found = { version: r.version, url: new URL(r.url, cfg.server).href, name: r.name || `LocalCord-Setup-${r.version}.exe` };
+  }
+  if (!found) {
+    const rel = await getJson(`https://api.github.com/repos/${REPO}/releases/latest`);
+    const asset = rel?.assets?.find(a => /^LocalCord-Setup-.*\.exe$/i.test(a.name));
+    if (rel?.tag_name && asset) found = { version: String(rel.tag_name).replace(/^v/i, ''), url: asset.browser_download_url, name: asset.name };
+  }
+  if (!found || !newer(found.version, app.getVersion())) return;
+  update = found;
+  log('atualização disponível', found.version, found.url);
+  win?.webContents.send('update-available', { version: found.version });
 }
 function download(url, dest, redirects = 5) {
   return new Promise((resolve, reject) => {
-    https.get(url, { headers: { 'User-Agent': 'LocalCord' } }, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) { res.resume(); return resolve(download(res.headers.location, dest, redirects - 1)); }
+    libOf(url).get(url, { ...reqOpts(url, 'application/octet-stream'), timeout: 60000 }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) { res.resume(); return resolve(download(new URL(res.headers.location, url).href, dest, redirects - 1)); }
       if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
       const f = fs.createWriteStream(dest); res.pipe(f); f.on('finish', () => f.close(resolve)); f.on('error', reject);
     }).on('error', reject);
