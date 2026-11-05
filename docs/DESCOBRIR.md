@@ -1,10 +1,11 @@
 # Aba Descobrir (Home → Descobrir)
 
 Três abas:
-- **Início:** tudo resumido em seções, cada uma com uma linha de cartões e **Ver mais** para expandir: Para você
-  (o que combina com os interesses, intercalando promoções, torneios, jogos da Steam, lançamentos e notícias), Em alta
-  na Steam (5 de cada lista; expandido mostra 15 e os que estão subindo), Promoções, Lançamentos, Torneios e Últimas
-  notícias (estas duas com atalho para a aba completa). Os interesses ficam numa linha com "Editar".
+- **Início:** seções em carrossel horizontal (3 cartões visíveis, até 12; rola para o lado ou pelas setas) e
+  **Ver tudo** em cima abre a lista completa em grade: Para você (o que combina com os interesses, intercalando
+  promoções, torneios (até 4), jogos da Steam, lançamentos e notícias), Na Steam (mais jogados agora e mais vendidos
+  da semana, 5 de cada; Ver tudo mostra 15), Promoções, Lançamentos, Torneios e Últimas notícias (estas duas abrem a
+  aba completa). Os interesses ficam numa linha com "Editar".
 - **Notícias:** em páginas de 12, com filtro por site.
 - **Torneios:** lista completa com região, jogo e prêmio.
 
@@ -28,11 +29,10 @@ cada pessoa (jogos e assuntos que ela escolhe; salvos na conta).
   organizador herda a região dos torneios dele. O padrão é **Brasil**; cada pessoa pode trocar para "Brasil e América
   Latina" ou "Todas as regiões" (fica salvo na conta). Organizador errado ou faltando? Corrija no `discover.json`:
   `"hostRegions": { "Nome do organizador": "br" }` (ou `"latam"`, `"intl"`).
-- **Tendências:** números da Steam, no estilo do SteamDB, pelas APIs públicas da própria Steam (as mesmas que o
-  SteamDB usa; o site do SteamDB em si não é lido): pessoas online e jogando, **mais jogados agora** (jogadores e pico
-  do dia), **mais vendidos da semana no Brasil** (com subida/descida e semanas na lista, preço e desconto) e **Em alta**
-  (jogos que estrearam ou subiram 10+ posições). Atualiza a cada 15 min (jogadores) a 1 h (vendas). Jogos dos
-  interesses da pessoa ficam marcados na lista.
+- **Na Steam:** pelas APIs públicas da própria Steam (as mesmas que o SteamDB usa; o site do SteamDB em si não é
+  lido): **mais jogados agora** (jogadores e pico do dia) e **mais vendidos da semana no Brasil** (com subida/descida,
+  semanas na lista, preço e desconto). Atualiza a cada 15 min (jogadores) e 1 h (vendas). Jogos dos interesses da
+  pessoa ficam marcados na lista.
 
 ## Configurar as fontes
 Arquivo `discover.json` na pasta de dados do servidor (no Umbrel: `~/localcord-data/discover.json`). Vale na hora.

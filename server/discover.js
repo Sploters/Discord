@@ -13,8 +13,8 @@
 // No discover.json: "tournaments": false desliga; "cmFeed" troca o endereço do feed (testes).
 // Região: o feed não diz o país, então cada torneio ganha uma região pelo nome, organizador e prêmio (Brasil, América
 // Latina, outra) e o organizador "herda" a região dos torneios dele. "hostRegions": { "Organizador": "br" } corrige.
-//   GET /api/discover/charts -> { online, playing, sellers, rising }: números da Steam pelas APIs públicas da própria
-// Steam (as mesmas que o SteamDB usa): mais jogados agora, mais vendidos da semana no país e quem está subindo.
+//   GET /api/discover/charts -> { playing, sellers }: pelas APIs públicas da própria Steam (as mesmas que o SteamDB
+// usa): mais jogados agora e mais vendidos da semana no país.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -49,7 +49,7 @@ export function parseFeed(xml, source) {
     const image = httpUrl(attr(it, 'media:content', 'url', /medium\s*=\s*["']image|type\s*=\s*["']image|^(?![\s\S]*(medium|type)=)/i)) || httpUrl(attr(it, 'media:thumbnail', 'url'))
       || httpUrl(attr(it, 'enclosure', 'url', /type\s*=\s*["']image/i)) || httpUrl((cdata(decode(body)).match(/<img[^>]+src=["']([^"']+)["']/i) || [])[1] || '');
     const d = Date.parse(strip(tag(it, ['pubDate', 'published', 'updated', 'dc:date'])));
-    out.push({ id: `${source.name}:${url}`, title: cut(title, 160), summary: cut(strip(body), 220), url, image, source: source.name, lang: source.lang || '', date: isFinite(d) ? d : null });
+    out.push({ id: `${source.name}:${url}`, title: cut(title, 160), summary: cut(((t) => (/<[a-z!/]/i.test(t) ? strip(t) : t))(strip(body)), 220), url, image, source: source.name, lang: source.lang || '', date: isFinite(d) ? d : null });
   }
   return out;
 }
@@ -243,26 +243,16 @@ export function mountDiscover(app, { auth, dataDir }) {
   }
   async function charts() {
     if (conf().steam === false) return { off: true, items: [] };
-    const [conc, played, sold, online] = await Promise.all([
+    const [conc, sold] = await Promise.all([
       cached('steam:concurrent', 15 * 60e3, () => sapi('ISteamChartsService/GetGamesByConcurrentPlayers')).catch(() => null),
-      cached('steam:mostplayed', 60 * 60e3, () => sapi('ISteamChartsService/GetMostPlayedGames')).catch(() => null),
-      cached('steam:sellers:' + country(), 60 * 60e3, () => sapi('IStoreTopSellersService/GetWeeklyTopSellers', { country_code: country(), context: ctx(), page_start: 0, page_count: 100 })).catch(() => null),
-      cached('steam:online', 15 * 60e3, () => get(conf().steamStats || 'https://www.valvesoftware.com/about/stats', 'json')).catch(() => null),
+      cached('steam:sellers:' + country(), 60 * 60e3, () => sapi('IStoreTopSellersService/GetWeeklyTopSellers', { country_code: country(), context: ctx(), page_start: 0, page_count: 25 })).catch(() => null),
     ]);
-    if (!conc && !played && !sold) throw new Error('Steam fora do ar');
+    if (!conc && !sold) throw new Error('Steam fora do ar');
     const playing = (conc?.response?.ranks || []).slice(0, 25).map(r => ({ rank: r.rank, appid: r.appid, now: r.concurrent_in_game, peak: r.peak_in_game }));
     const sellers = (sold?.response?.ranks || []).slice(0, 25).map(r => ({ rank: r.rank, appid: r.appid, last: r.last_week_rank, weeks: r.consecutive_weeks }));
-    // em alta: quem entrou ou subiu muito nos mais jogados (dia) e nos mais vendidos (semana)
-    const climb = (r) => (r.last_week_rank > 0 ? r.last_week_rank - r.rank : 1000 - r.rank);
-    const risingP = (played?.response?.ranks || []).filter(r => r.last_week_rank === -1 || r.last_week_rank - r.rank >= 10).map(r => ({ appid: r.appid, rank: r.rank, last: r.last_week_rank, peak: r.peak_in_game, chart: 'played', score: climb(r) }));
-    const risingS = (sold?.response?.ranks || []).filter(r => r.last_week_rank === -1 || r.last_week_rank - r.rank >= 10).map(r => ({ appid: r.appid, rank: r.rank, last: r.last_week_rank, chart: 'sold', score: climb(r) }));
-    const seen = new Set(), rising = [];
-    for (const r of [...risingS, ...risingP].sort((a, b) => (a.last === -1) - (b.last === -1) || a.rank - b.rank).sort((a, b) => (b.last === -1 ? 1 : 0) - (a.last === -1 ? 1 : 0) || a.rank - b.rank))
-      if (!seen.has(r.appid) && rising.length < 12) { seen.add(r.appid); rising.push(r); }
-    const items = await storeItems([...new Set([...playing, ...sellers, ...rising].map(x => x.appid))]);
+    const items = await storeItems([...new Set([...playing, ...sellers].map(x => x.appid))]);
     const fill = (list) => list.filter(x => items[x.appid]).map(x => ({ ...items[x.appid], ...x, id: 'steam:' + x.appid }));
-    const num = (v) => +String(v || '').replace(/[^\d]/g, '') || 0;
-    return { online: online ? { users: num(online.users_online), ingame: num(online.users_ingame) } : null, playing: fill(playing), sellers: fill(sellers), rising: fill(rising), country: country(), at: Date.now(), items: [1] };
+    return { playing: fill(playing), sellers: fill(sellers), country: country(), at: Date.now(), items: [1] };
   }
 
   const send = (fn) => async (req, res) => {

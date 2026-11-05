@@ -38,7 +38,6 @@ const atom = `<?xml version="1.0" encoding="utf-8" ?><feed xmlns="http://www.w3.
 // Steam (formato das APIs públicas): jogos fictícios
 const SG = { 1: 'Arena Rápida', 2: 'Estrela Cadente', 3: 'Blocos & Picaretas', 4: 'Fazendinha Tranquila', 5: 'Corrida Neon' };
 const sapi = { 'ISteamChartsService/GetGamesByConcurrentPlayers': { response: { ranks: [1, 3, 2, 5].map((a, i) => ({ rank: i + 1, appid: a, concurrent_in_game: 900000 - i * 200000, peak_in_game: 1000000 - i * 150000 })) } },
-  'ISteamChartsService/GetMostPlayedGames': { response: { ranks: [{ rank: 1, appid: 1, last_week_rank: 1, peak_in_game: 1e6 }, { rank: 4, appid: 4, last_week_rank: -1, peak_in_game: 5e4 }] } },
   'IStoreTopSellersService/GetWeeklyTopSellers': { response: { ranks: [{ rank: 1, appid: 2, last_week_rank: 3, consecutive_weeks: 4 }, { rank: 2, appid: 5, last_week_rank: 1, consecutive_weeks: 9 }, { rank: 3, appid: 3, last_week_rank: 30, consecutive_weeks: 1 }] } },
   'IStoreService/GetTagList': { response: { tags: [{ tagid: 10, name: 'Ação' }, { tagid: 11, name: 'RPG' }, { tagid: 12, name: 'Indie' }] } } };
 const sitem = (a) => ({ success: 1, appid: a, name: SG[a], is_free: a === 1, tagids: [10 + (a % 3), 12], assets: { asset_url_format: `img/${a}/\${FILENAME}`, header: 'h.svg', small_capsule: 's.svg' },
@@ -75,25 +74,28 @@ try {
   await P.evaluate(() => [...document.querySelectorAll('#side-list .ch')].find(x => /Descobrir/.test(x.textContent)).click());
   await P.waitForSelector('#discoverview .dint'); await sleep(1500);
   ok(await P.evaluate(() => [...document.querySelectorAll('.dtab')].map(x => x.textContent).join(',') === 'Início,Notícias,Torneios'), 'só 3 abas: Início, Notícias, Torneios');
-  const secs = () => P.evaluate(() => [...document.querySelectorAll('.dhsec')].map(s => ({ k: s.dataset.sec, cards: s.querySelectorAll('.dcard').length, rows: s.querySelectorAll('.drow').length, more: s.querySelector('.dmore')?.textContent || '' })));
-  const home = await secs(), cols = await P.evaluate(() => Math.max(1, Math.floor(((document.querySelector('#discoverview').clientWidth - 40) + 14) / 264)));
-  ok(['charts', 'deals', 'upcoming', 'tournaments', 'news'].every(k => home.some(x => x.k === k)), 'Início junta Em alta, Promoções, Lançamentos, Torneios e Notícias', home);
-  ok(home.find(x => x.k === 'deals').cards === Math.min(4, cols) && /Ver mais \(4\)/.test(home.find(x => x.k === 'deals').more), 'seções mostram uma linha e "Ver mais (N)"', { cols, deals: home.find(x => x.k === 'deals') });
-  ok(home.find(x => x.k === 'charts').rows === 7, 'Em alta resumido: listas curtas (até 5 cada)', home.find(x => x.k === 'charts'));
-  ok(await P.evaluate(() => /35,5 mi/.test(document.querySelector('.dstats')?.textContent || '')), 'números da Steam no topo');
+  const secs = () => P.evaluate(() => [...document.querySelectorAll('.dhsec')].map(s => ({ k: s.dataset.sec, cards: s.querySelectorAll('.dcard').length, rail: !!s.querySelector('.drail'), rows: s.querySelectorAll('.drow').length, more: s.querySelector('.dmore')?.textContent || '' })));
+  const home = await secs();
+  ok(['charts', 'deals', 'upcoming', 'tournaments', 'news'].every(k => home.some(x => x.k === k)), 'Início: Na Steam, Promoções, Lançamentos, Torneios e Notícias', home);
+  const rd = await P.evaluate(() => { const r = document.querySelector('.dhsec[data-sec="news"] .drail'); const c = r.querySelectorAll('.dcard'); const vis = [...c].filter(x => x.getBoundingClientRect().right <= r.getBoundingClientRect().right + 2).length; return { n: c.length, vis, scrolls: r.scrollWidth > r.clientWidth }; });
+  ok(rd.n === 12 && rd.vis === 3 && rd.scrolls, 'carrossel: 3 visíveis, até 12, rola para o lado', rd);
+  await P.evaluate(() => document.querySelector('.dhsec[data-sec="news"] .drailbtn.next').click()); await sleep(700);
+  ok(await P.evaluate(() => document.querySelector('.dhsec[data-sec="news"] .drail').scrollLeft > 100 && !document.querySelector('.dhsec[data-sec="news"] .drailwrap').classList.contains('atstart')), 'seta "Próximos" rola o carrossel');
+  ok(home.find(x => x.k === 'deals').rail && /Ver tudo \(4\)/.test(home.find(x => x.k === 'deals').more), 'seções com "Ver tudo (N)" em cima', home.find(x => x.k === 'deals'));
+  ok(home.find(x => x.k === 'charts').rows === 7, 'Na Steam resumido: mais jogados e mais vendidos (até 5 cada)', home.find(x => x.k === 'charts'));
+  ok(await P.evaluate(() => !document.querySelector('.dstats')), 'sem os números de online/jogando');
   const click = (sec, re) => P.evaluate((k, r) => [...document.querySelector(`.dhsec[data-sec="${k}"]`).querySelectorAll('.dmore')].find(b => new RegExp(r).test(b.textContent)).click(), sec, re);
-  await click('deals', 'Ver mais'); await sleep(300);
-  const deals = await P.evaluate(() => [...document.querySelectorAll('.dhsec[data-sec="deals"] .dcard')].map(c => c.querySelector('.dtitle').textContent + ' | ' + c.querySelector('.dprice').textContent));
-  ok(deals.length === 4 && /Grátis/.test(deals[0]) && /Em breve grátis/.test(deals[1]) && /-60%/.test(deals[2]) && /39,99/.test(deals[2]), 'promoções expandidas: grátis da Epic primeiro, depois Steam por desconto, em reais', deals);
-  await click('deals', 'Ver menos'); await click('charts', 'Ver mais'); await sleep(300);
-  const ch = await P.evaluate(() => ({ panels: [...document.querySelectorAll('.dpanel')].map(p => [...p.querySelectorAll('.drow')].map(r => r.innerText.replace(/\n+/g, ' | '))), rising: [...document.querySelectorAll('.dhsec[data-sec="charts"] .dcard .dtitle')].map(x => x.textContent) }));
+  await click('deals', 'Ver tudo'); await sleep(300);
+  const deals = await P.evaluate(() => [...document.querySelectorAll('.dhsec[data-sec="deals"] .dgrid .dcard')].map(c => c.querySelector('.dtitle').textContent + ' | ' + c.querySelector('.dprice').textContent));
+  ok(deals.length === 4 && /Grátis/.test(deals[0]) && /Em breve grátis/.test(deals[1]) && /-60%/.test(deals[2]) && /39,99/.test(deals[2]), '"Ver tudo" abre em grade: grátis da Epic primeiro, depois Steam por desconto', deals);
+  await click('deals', 'Ver menos'); await click('charts', 'Ver tudo'); await sleep(300);
+  const ch = await P.evaluate(() => ({ panels: [...document.querySelectorAll('.dpanel')].map(p => [...p.querySelectorAll('.drow')].map(r => r.innerText.replace(/\n+/g, ' | '))) }));
   ok(ch.panels[0].length === 4 && /Arena Rápida/.test(ch.panels[0][0]) && /900\.000/.test(ch.panels[0][0]), 'mais jogados agora, com jogadores', ch.panels[0]);
   ok(ch.panels[1].length === 3 && /▲2/.test(ch.panels[1][0]) && /▼1/.test(ch.panels[1][1]) && /-40%/.test(ch.panels[1][1]) && /▲27/.test(ch.panels[1][2]), 'mais vendidos com subida/descida e preço', ch.panels[1]);
-  ok(ch.rising.includes('Blocos & Picaretas') && ch.rising.includes('Fazendinha Tranquila'), 'expandido mostra "Subindo rápido"', ch.rising);
   await click('charts', 'Ver menos');
   const up = await P.evaluate(() => [...document.querySelectorAll('.dhsec[data-sec="upcoming"] .dcard')].map(c => c.innerText.replace(/\n+/g, ' | ')));
   ok(up.length === 2 && /12 dez/.test(up[0]) && /RPG/.test(up[0]), 'lançamentos com data e gêneros', up);
-  await P.screenshot({ path: OUT + '/disc-inicio.png' });
+  await P.evaluate(() => document.querySelector('.dbodywrap').scrollTo(0, 0)); await P.screenshot({ path: OUT + '/disc-inicio.png' });
 
   const tab = async (name) => { await P.evaluate((n) => [...document.querySelectorAll('.dtab')].find(x => x.textContent === n).click(), name); await sleep(900); };
   await tab('Notícias');
@@ -126,8 +128,8 @@ try {
   await tab('Início');
   const addInt = async (t) => { await P.waitForSelector('.dint-in'); await P.evaluate(() => document.querySelector('.dint-in').focus()); await P.keyboard.type(t); await P.keyboard.press('Enter'); await sleep(400); };
   await addInt('Estrela Cadente'); await addInt('Valorant');
-  const fy = await P.evaluate(() => { const s = document.querySelector('.dhsec[data-sec="foryou"]'); return { titles: [...s.querySelectorAll('.dcard .dtitle')].map(x => x.textContent), more: s.querySelector('.dmore')?.textContent }; });
-  ok(fy.titles.includes('Estrela Cadente') && fy.titles.includes('Copa Relâmpago') && !fy.titles.some(t => /Arena/.test(t)), '"Para você" mistura promoções, torneios etc. do que combina', fy);
+  const fy = await P.evaluate(() => { const s = document.querySelector('.dhsec[data-sec="foryou"]'); return { titles: [...s.querySelectorAll('.dcard .dtitle')].map(x => x.textContent), kinds: [...s.querySelectorAll('.dcard .dmeta b')].map(x => x.textContent), more: s.querySelector('.dmore')?.textContent }; });
+  ok(fy.titles.includes('Estrela Cadente') && fy.titles.includes('Copa Relâmpago') && !fy.titles.some(t => /^Arena/.test(t)) && fy.kinds[0] === 'Steam' && fy.kinds[1] === 'Challengermode', '"Para você" mistura promoções, torneios etc. do que combina', fy);
   await P.evaluate(() => [...document.querySelectorAll('.dint .btn')].find(b => /Pronto/.test(b.textContent)).click()); await sleep(200);
   ok(await P.evaluate(() => !!document.querySelector('.dint.mini') && document.querySelectorAll('.dint.mini .dchip').length === 2), 'interesses ficam resumidos numa linha com "Editar"');
   await sleep(1800); const saved = await P.evaluate(async () => (await (await fetch('/api/me/settings', { headers: { authorization: 'Bearer ' + localStorage.lc_token } })).json()));

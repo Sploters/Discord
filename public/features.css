@@ -1143,6 +1143,17 @@ html.anim .dcard.skel { animation: lc-fade 1.2s ease-in-out infinite alternate; 
 #discoverview .dchip.sm { padding: 2px 9px; font-size: 12px; white-space: nowrap; cursor: default; }
 #discoverview .dint-head { flex-direction: row; justify-content: space-between; align-items: flex-start; gap: 12px; } #discoverview .dint-head > div { display: flex; flex-direction: column; gap: 2px; }
 #discoverview .dint { margin-bottom: 16px; }
+/* carrossel horizontal do Início: 3 cartões visíveis, rola para o lado */
+#discoverview .drailwrap { position: relative; }
+#discoverview .drail { display: grid; grid-auto-flow: column; grid-auto-columns: calc((100% - 28px) / 3); gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: auto; overscroll-behavior-x: contain; scrollbar-width: none; padding-bottom: 2px; }
+#discoverview .drail::-webkit-scrollbar { display: none; }
+#discoverview .drail > .dcard { scroll-snap-align: start; }
+#discoverview .drailbtn { position: absolute; top: 50%; transform: translateY(-50%); z-index: 2; width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--divider); background: color-mix(in srgb, var(--bg-sec, #2b2d31) 92%, transparent); color: var(--header); display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.35); transition: opacity .15s; }
+#discoverview .drailbtn svg { fill: currentColor; } #discoverview .drailbtn:hover { background: var(--bg-mod-hover, #404249); }
+#discoverview .drailbtn.prev { left: -12px; } #discoverview .drailbtn.next { right: -12px; }
+#discoverview .drailwrap.atstart .drailbtn.prev, #discoverview .drailwrap.atend .drailbtn.next { opacity: 0; pointer-events: none; }
+@media (max-width: 1000px) { #discoverview .drail { grid-auto-columns: calc((100% - 14px) / 2); } }
+@media (max-width: 700px) { #discoverview .drail { grid-auto-columns: 82%; } #discoverview .drailbtn { display: none; } }
 /* páginas das notícias */
 #discoverview .dpager { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: 22px; }
 #discoverview .dpg { display: inline-flex; align-items: center; gap: 4px; min-width: 34px; height: 34px; justify-content: center; padding: 0 10px; border: 1px solid var(--divider); border-radius: 8px; background: var(--bg-sec); color: var(--interactive); font-weight: 600; font-size: 13px; cursor: pointer; }
