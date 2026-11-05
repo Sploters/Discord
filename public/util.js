@@ -87,6 +87,9 @@ const I = {
   wifi: 'M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3a4.24 4.24 0 0 0-6 0zm-4-4l2 2a7.07 7.07 0 0 1 10 0l2-2C15.14 9.14 8.87 9.14 5 13z',
   music: 'M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6Z',
   play: 'M8 5v14l11-7Z',
+  vol: 'M3 9.5v5c0 .6.4 1 1 1h3l4.3 3.6c.7.6 1.7.1 1.7-.8V5.7c0-.9-1-1.4-1.7-.8L7 8.5H4c-.6 0-1 .4-1 1Zm12.6-2.1a1 1 0 0 0-1.3 1.5 4.6 4.6 0 0 1 0 6.2 1 1 0 1 0 1.3 1.5 6.6 6.6 0 0 0 0-9.2Zm2.6-2.9a1 1 0 0 0-1.4 1.4 8.6 8.6 0 0 1 0 12.2 1 1 0 0 0 1.4 1.4 10.6 10.6 0 0 0 0-15Z',
+  vollow: 'M3 9.5v5c0 .6.4 1 1 1h3l4.3 3.6c.7.6 1.7.1 1.7-.8V5.7c0-.9-1-1.4-1.7-.8L7 8.5H4c-.6 0-1 .4-1 1Zm12.6-2.1a1 1 0 0 0-1.3 1.5 4.6 4.6 0 0 1 0 6.2 1 1 0 1 0 1.3 1.5 6.6 6.6 0 0 0 0-9.2Z',
+  volmute: 'M3 9.5v5c0 .6.4 1 1 1h3l4.3 3.6c.7.6 1.7.1 1.7-.8V5.7c0-.9-1-1.4-1.7-.8L7 8.5H4c-.6 0-1 .4-1 1Zm13.3-.2a1 1 0 0 0-1.4 1.4l1.3 1.3-1.3 1.3a1 1 0 1 0 1.4 1.4l1.3-1.3 1.3 1.3a1 1 0 0 0 1.4-1.4L18 12l1.3-1.3a1 1 0 0 0-1.4-1.4l-1.3 1.3Z',
   pause: 'M6 5h4v14H6Zm8 0h4v14h-4Z',
   stop: 'M6 6h12v12H6Z',
   send: 'M3 20.5v-6.2l9-2.3-9-2.3V3.5L22 12Z',
@@ -204,18 +207,95 @@ for (const fn of ['append', 'prepend', 'replaceChildren']) for (const P of [Elem
 // A tela cheia do próprio <video> leva o Chromium/Windows a mandar o vídeo direto para a placa
 // (sobreposição de hardware, realce de vídeo do driver); em alguns PCs isso deixa a imagem escura e
 // com cores estouradas. Assim o vídeo continua sendo desenhado pela página, igual fora da tela cheia.
+// Player próprio: controles flutuando sobre o vídeo, que somem sozinhos (com o cursor) enquanto toca; em tela cheia o
+// vídeo ocupa a tela inteira. Progresso com trecho carregado e bolha de tempo no hover, volume lembrado entre vídeos,
+// velocidade e atalhos (espaço/K, ← →, J/L, ↑ ↓, M, F, 0–9).
+const vfmt = (s) => { s = isFinite(s) ? Math.max(0, Math.floor(s)) : 0; const hh = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, ss = String(s % 60).padStart(2, '0'); return hh ? `${hh}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`; };
+const vPref = { get: (k, d) => { try { const x = localStorage.getItem('lc_v_' + k); return x == null ? d : JSON.parse(x); } catch { return d; } }, set: (k, x) => { try { localStorage.setItem('lc_v_' + k, JSON.stringify(x)); } catch { } } };
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 export function fsVideo(attrs = {}, cls = '') {
-  const v = h('video', { controls: true, playsInline: true, disablePictureInPicture: true, ...attrs });
+  const v = h('video', { playsInline: true, disablePictureInPicture: true, ...attrs });
   v.setAttribute('controlslist', 'nofullscreen noremoteplayback');
-  const box = h('div.fsvid' + cls, v);
-  const toggle = () => { if (document.fullscreenElement === box) document.exitFullscreen?.().catch(() => { }); else box.requestFullscreen?.().catch(() => { }); };
-  const btn = h('button.fsvbtn', { type: 'button', title: 'Tela cheia (F)', onclick: (e) => { e.stopPropagation(); toggle(); } }, icon('expand', 18));
-  box.append(btn);
-  v.addEventListener('dblclick', (e) => { e.preventDefault(); toggle(); });
-  v.addEventListener('keydown', (e) => { if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggle(); } });
-  // tocando: sem cantos arredondados no vídeo (a máscara dos cantos obriga a recompor a página a cada quadro; travava em PC fraco)
-  const on = () => box.classList.toggle('playing', !v.paused);
-  v.addEventListener('play', on); v.addEventListener('pause', on); v.addEventListener('ended', on);
+  v.volume = vPref.get('vol', 1); v.muted = !!attrs.muted || vPref.get('muted', false);
+  const box = h('div.fsvid' + cls, { tabIndex: 0 }, v);
+  const isFs = () => document.fullscreenElement === box;
+  const toggleFs = () => { if (isFs()) document.exitFullscreen?.().catch(() => { }); else box.requestFullscreen?.().catch(() => { }); };
+  const playPause = () => (v.paused || v.ended ? v.play().catch(() => { }) : v.pause());
+  const btn = (cl, title, fn, ico) => h('button.vc-btn' + cl, { type: 'button', title, onclick: (e) => { e.stopPropagation(); fn(); } }, icon(ico, 20));
+
+  // ---- barra de progresso ----
+  const buf = h('div.vc-buf'), prog = h('div.vc-prog', h('i.vc-knob')), hov = h('div.vc-hov'), bubble = h('div.vc-bubble');
+  const track = h('div.vc-track', h('div.vc-rail', buf, hov, prog), bubble);
+  const frac = (e) => { const r = track.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); };
+  let scrub = false, wasPlaying = false;
+  const seekTo = (f) => { if (isFinite(v.duration)) { v.currentTime = f * v.duration; paintTime(); } };
+  track.addEventListener('pointermove', (e) => { const f = frac(e); hov.style.width = f * 100 + '%'; bubble.style.left = f * 100 + '%'; bubble.textContent = vfmt(f * v.duration); if (scrub) seekTo(f); });
+  track.addEventListener('pointerleave', () => { if (!scrub) hov.style.width = '0'; });
+  track.addEventListener('pointerdown', (e) => { e.stopPropagation(); scrub = true; wasPlaying = !v.paused; v.pause(); track.setPointerCapture(e.pointerId); box.classList.add('scrub'); seekTo(frac(e)); });
+  const endScrub = () => { if (!scrub) return; scrub = false; box.classList.remove('scrub'); hov.style.width = '0'; if (wasPlaying) v.play().catch(() => { }); };
+  track.addEventListener('pointerup', endScrub); track.addEventListener('pointercancel', endScrub);
+
+  // ---- botões ----
+  const play = btn('.vc-play', 'Tocar / pausar (espaço)', playPause, 'play');
+  const time = h('div.vc-time', h('span', '0:00'), h('i', '/'), h('span', '0:00'));
+  const volIco = () => (v.muted || !v.volume ? 'volmute' : v.volume < 0.5 ? 'vollow' : 'vol');
+  const mute = btn('.vc-mute', 'Som (M)', () => { v.muted = !v.muted; if (!v.muted && !v.volume) v.volume = 0.5; }, volIco());
+  const volFill = h('div.vc-vfill'), volRail = h('div.vc-vrail', volFill, h('i.vc-vknob'));
+  const volSlot = h('div.vc-vslot', volRail);
+  const setVolAt = (e) => { const r = volRail.getBoundingClientRect(); const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); v.volume = x; v.muted = x === 0; };
+  volRail.addEventListener('pointerdown', (e) => { e.stopPropagation(); volRail.setPointerCapture(e.pointerId); setVolAt(e); const mv = (ev) => setVolAt(ev); volRail.addEventListener('pointermove', mv); volRail.addEventListener('pointerup', () => volRail.removeEventListener('pointermove', mv), { once: true }); });
+  const volume = h('div.vc-vol', mute, volSlot);
+  const speed = h('button.vc-btn.vc-speed', { type: 'button', title: 'Velocidade', onclick: (e) => { e.stopPropagation(); const i = SPEEDS.indexOf(v.playbackRate); v.playbackRate = SPEEDS[(i + 1) % SPEEDS.length]; } }, '1×');
+  const fs = btn('.fsvbtn', 'Tela cheia (F)', toggleFs, 'expand');
+  const bar = h('div.vc-bar', { onclick: (e) => e.stopPropagation(), ondblclick: (e) => e.stopPropagation() }, track, h('div.vc-row', play, time, h('div.vc-sp'), speed, volume, fs));
+  const flash = h('div.vc-flash'), big = h('div.vc-big', icon('play', 34));
+  box.append(flash, big, bar);
+
+  // ---- pintura ----
+  const paintTime = () => {
+    const d = v.duration, t = v.currentTime, p = isFinite(d) && d ? (t / d) * 100 : 0;
+    prog.style.width = p + '%'; time.children[0].textContent = vfmt(t); time.children[2].textContent = vfmt(d);
+    let b = 0; for (let i = 0; i < v.buffered.length; i++) if (v.buffered.start(i) <= t + 0.5) b = Math.max(b, v.buffered.end(i));
+    buf.style.width = (isFinite(d) && d ? Math.min(100, (b / d) * 100) : 0) + '%';
+  };
+  const paintPlay = () => { const on = !v.paused && !v.ended; play.replaceChildren(icon(on ? 'pause' : 'play', 20)); box.classList.toggle('playing', on); box.classList.toggle('ended', v.ended); if (!on) wake(); };
+  const paintVol = () => { mute.replaceChildren(icon(volIco(), 20)); volFill.style.width = (v.muted ? 0 : v.volume) * 100 + '%'; vPref.set('vol', v.volume); if (!attrs.muted) vPref.set('muted', v.muted); };
+  for (const ev of ['timeupdate', 'durationchange', 'loadedmetadata', 'progress', 'seeked']) v.addEventListener(ev, paintTime);
+  for (const ev of ['play', 'pause', 'ended']) v.addEventListener(ev, paintPlay);
+  v.addEventListener('volumechange', paintVol);
+  v.addEventListener('ratechange', () => (speed.textContent = String(v.playbackRate).replace('.', ',') + '×'));
+  v.addEventListener('waiting', () => box.classList.add('loading')); for (const ev of ['playing', 'canplay', 'pause']) v.addEventListener(ev, () => box.classList.remove('loading'));
+  paintVol();
+
+  // ---- some sozinho: 2,5 s parado com o vídeo tocando (cursor some junto) ----
+  let idle = 0;
+  const wake = () => { box.classList.add('awake'); clearTimeout(idle); idle = setTimeout(() => { if (!v.paused && !scrub && !box.matches(':has(.vc-bar:hover)')) box.classList.remove('awake'); }, 2500); };
+  box.addEventListener('pointermove', wake); box.addEventListener('pointerdown', wake);
+  box.addEventListener('pointerleave', () => { if (!v.paused) box.classList.remove('awake'); });
+  const pulse = (ico) => { flash.replaceChildren(icon(ico, 30)); flash.classList.remove('go'); void flash.offsetWidth; flash.classList.add('go'); };
+
+  // ---- clique / duplo clique / teclado ----
+  let clickT = 0;
+  v.addEventListener('click', () => { clearTimeout(clickT); clickT = setTimeout(() => { pulse(v.paused ? 'play' : 'pause'); playPause(); }, 180); });
+  big.addEventListener('click', (e) => { e.stopPropagation(); playPause(); });
+  v.addEventListener('dblclick', (e) => { e.preventDefault(); clearTimeout(clickT); toggleFs(); });
+  box.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    const k = e.key.toLowerCase(), d = v.duration || 0; let ok = true;
+    if (k === ' ' || k === 'k') { pulse(v.paused ? 'play' : 'pause'); playPause(); }
+    else if (k === 'arrowleft' || k === 'j') v.currentTime = Math.max(0, v.currentTime - (k === 'j' ? 10 : 5));
+    else if (k === 'arrowright' || k === 'l') v.currentTime = Math.min(d, v.currentTime + (k === 'l' ? 10 : 5));
+    else if (k === 'arrowup') { v.muted = false; v.volume = Math.min(1, v.volume + 0.1); }
+    else if (k === 'arrowdown') v.volume = Math.max(0, v.volume - 0.1);
+    else if (k === 'm') v.muted = !v.muted;
+    else if (k === 'f') toggleFs();
+    else if (/^[0-9]$/.test(k) && d) v.currentTime = (+k / 10) * d;
+    else ok = false;
+    if (ok) { e.preventDefault(); e.stopPropagation(); wake(); }
+  });
+  const onFs = () => { box.classList.toggle('isfs', isFs()); fs.replaceChildren(icon(isFs() ? 'shrink' : 'expand', 20)); fs.title = isFs() ? 'Sair da tela cheia (F)' : 'Tela cheia (F)'; if (isFs()) box.focus(); };
+  document.addEventListener('fullscreenchange', onFs); queueMicrotask(() => whenGone(box, () => { document.removeEventListener('fullscreenchange', onFs); clearTimeout(idle); }));
+  wake(); paintPlay();
   box.video = v;
   return box;
 }
