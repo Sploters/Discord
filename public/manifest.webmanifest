@@ -1,0 +1,44 @@
+{
+  "name": "LocalCord",
+  "short_name": "LocalCord",
+  "description": "Chat, voz, vídeo e transmissão de tela com os seus amigos, no seu servidor.",
+  "id": "/",
+  "start_url": "/?app=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1e1f22",
+  "theme_color": "#1e1f22",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "categories": [
+    "social",
+    "communication"
+  ],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
