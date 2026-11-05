@@ -11,6 +11,10 @@
 // da página do torneio (og:image), buscada aos poucos e guardada por 1 dia. GamersClub e Battlefy não oferecem os dados
 // abertos (a Battlefy recusa acesso direto e a GamersClub só tem a API interna do site), então aparecem como atalhos.
 // No discover.json: "tournaments": false desliga; "cmFeed" troca o endereço do feed (testes).
+// Região: o feed não diz o país, então cada torneio ganha uma região pelo nome, organizador e prêmio (Brasil, América
+// Latina, outra) e o organizador "herda" a região dos torneios dele. "hostRegions": { "Organizador": "br" } corrige.
+//   GET /api/discover/charts -> { online, playing, sellers, rising }: números da Steam pelas APIs públicas da própria
+// Steam (as mesmas que o SteamDB usa): mais jogados agora, mais vendidos da semana no país e quem está subindo.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -71,6 +75,28 @@ export function parseTournament(title, summary) {
   out.format = out.format.replace(/(Single Elimination)( \+ Single Elimination)+/g, '$1').trim();
   if (/prize pool$/i.test(out.prize)) out.prize = out.prize.replace(/\s*prize pool$/i, '');
   return out;
+}
+
+// ---------- região do torneio (Brasil / América Latina / outra) ----------
+const BR_HOSTS = ['Wolfoxy', 'Rainbow6Brasil', 'AcadArena Brasil', 'Estação Brawlhalla', 'KFBR', 'Gamers Club', 'GamersClub'];
+const has = (re, s) => re.test(s);
+export function regionOf(t) {
+  const txt = ` ${t.title} | ${t.host} | ${t.prize} `, low = norm(txt);
+  if (has(/R\$|\b(brasil|brazil|brasileir[ao]s?|bra|br)\b/i, txt) || has(/[ãõ]/i, txt)
+    || has(/\b(classificatoria|campeonato|ferias|alianca|modo padrao|hora do|premiacao|inscricoes|rodada)\b/, low)) return 'br';
+  if (has(/[ñ¿¡]/, txt) || has(/\b(latam|sudamerica|south america|clasificatoria|torneo|dolares|pesos|mexico|argentina|chile|colombia|peru|s\.a\.s)\b/, low)) return 'latam';
+  if (has(/[\u0400-\u04ff\u0600-\u06ff\u0590-\u05ff\u0e00-\u0e7f\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af]/, txt)
+    || has(/\b(na|eu|euw|eune|uk|mena|cis|oce|sea|apac|asia|india|ind|uae|ksa|nz|usa?|north america|europe|rub|kc)\b|[£€₽]/i, low + txt)) return 'intl';
+  return '';
+}
+const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+// o organizador herda a região dos torneios dele em que ela ficou clara
+export function assignRegions(items, hostRegions = {}) {
+  const fixed = {}; for (const h of BR_HOSTS) fixed[norm(h)] = 'br'; for (const [h, r] of Object.entries(hostRegions || {})) fixed[norm(h)] = r;
+  const byHost = {};
+  for (const t of items) { t.region = fixed[norm(t.host)] || regionOf(t); if (t.host && t.region && !/^challengermode$/i.test(t.host)) (byHost[norm(t.host)] ||= {})[t.region] = ((byHost[norm(t.host)] || {})[t.region] || 0) + 1; }
+  for (const t of items) if (!t.region && t.host && !/^challengermode$/i.test(t.host) && byHost[norm(t.host)]) { const c = byHost[norm(t.host)]; t.region = Object.keys(c).sort((a, b) => c[b] - c[a])[0]; }
+  return items;
 }
 
 export function mountDiscover(app, { auth, dataDir }) {
@@ -178,13 +204,65 @@ export function mountDiscover(app, { auth, dataDir }) {
     for (const it of (xml.match(/<entry\b[\s\S]*?<\/entry>/gi) || []).slice(0, 200)) {
       const url = httpUrl(attr(it, 'link', 'href')); if (!url) continue;
       const t = parseTournament(strip(tag(it, ['title'])), tag(it, ['summary']));
-      if (!t.title || (t.starts && t.starts < now - 3 * 3600e3) || /^test\b/i.test(t.title)) continue; // já passou ou é teste
+      if (!t.title || (t.starts && t.starts < now - 3 * 3600e3) || /\btest\d*\b/i.test(t.title)) continue; // já passou ou é teste
       items.push({ id: 'cm:' + url, url, source: 'Challengermode', image: cache.get('timg:' + url)?.v || '', ...t, host: /^challengermode$/i.test(t.host) ? '' : t.host });
     }
+    assignRegions(items, c.hostRegions);
     items.sort((a, b) => (a.starts || Infinity) - (b.starts || Infinity));
     // imagens: dos que começam antes primeiro (só o <head> de cada página, 3 por vez, guardadas por 1 dia)
     if (c.cmImages !== false) { for (const t of items.slice(0, 100)) { const k = 'timg:' + t.url; if (!cache.has(k) && !busy.has(k) && !imgQueue.includes(t.url)) imgQueue.push(t.url); } pumpImages(); }
     return { items, links: TLINKS };
+  }
+
+  // ---------- números da Steam (mais jogados, mais vendidos, em alta) ----------
+  const steamApi = () => String(conf().steamApi || 'https://api.steampowered.com').replace(/\/+$/, '');
+  const sapi = (svc, input) => get(`${steamApi()}/${svc}/v1/${input ? '?input_json=' + encodeURIComponent(JSON.stringify(input)) : ''}`, 'json', 15000);
+  const ctx = () => ({ language: 'brazilian', country_code: country() });
+  const ASSETS = 'https://shared.akamai.steamstatic.com/store_item_assets/';
+  const tagNames = () => cached('steam:tags', 7 * 864e5, async () => Object.fromEntries((await get(`${steamApi()}/IStoreService/GetTagList/v1/?language=brazilian`, 'json'))?.response?.tags?.map(t => [t.tagid, t.name]) || []));
+  // detalhes de cada jogo (nome, imagens, preço, avaliações, tags), guardados por 6 h; busca em lotes de 50
+  async function storeItems(ids) {
+    const miss = ids.filter(id => { const c = cache.get('sitem:' + id); return !c || Date.now() - c.at > 6 * 3600e3; });
+    for (let i = 0; i < miss.length; i += 50) {
+      const r = await sapi('IStoreBrowseService/GetItems', { ids: miss.slice(i, i + 50).map(appid => ({ appid })), context: ctx(),
+        data_request: { include_assets: true, include_reviews: true, include_all_purchase_options: true, include_tag_count: 3 } }).catch(() => null);
+      for (const it of r?.response?.store_items || []) if (it.success === 1 && it.appid) cache.set('sitem:' + it.appid, { at: Date.now(), v: it });
+    }
+    const tags = await tagNames().catch(() => ({}));
+    const out = {};
+    for (const id of ids) {
+      const it = cache.get('sitem:' + id)?.v; if (!it) continue;
+      const a = it.assets || {}, img = (f) => (f && a.asset_url_format ? ASSETS + a.asset_url_format.replace('${FILENAME}', f) : '');
+      const bp = it.best_purchase_option, rv = it.reviews?.summary_filtered;
+      out[id] = { appid: id, title: it.name, url: `https://store.steampowered.com/app/${id}/`, image: img(a.header), thumb: img(a.small_capsule) || img(a.header),
+        free: !!it.is_free, price: it.is_free ? 'Gratuito' : bp?.formatted_final_price || '', old: bp?.discount_pct ? bp.formatted_original_price || '' : '', discount: bp?.discount_pct || 0,
+        reviews: rv?.review_count ? { pct: rv.percent_positive, label: rv.review_score_label, count: rv.review_count } : null,
+        tags: (it.tagids || []).slice(0, 3).map(t => tags[t]).filter(Boolean) };
+    }
+    return out;
+  }
+  async function charts() {
+    if (conf().steam === false) return { off: true, items: [] };
+    const [conc, played, sold, online] = await Promise.all([
+      cached('steam:concurrent', 15 * 60e3, () => sapi('ISteamChartsService/GetGamesByConcurrentPlayers')).catch(() => null),
+      cached('steam:mostplayed', 60 * 60e3, () => sapi('ISteamChartsService/GetMostPlayedGames')).catch(() => null),
+      cached('steam:sellers:' + country(), 60 * 60e3, () => sapi('IStoreTopSellersService/GetWeeklyTopSellers', { country_code: country(), context: ctx(), page_start: 0, page_count: 100 })).catch(() => null),
+      cached('steam:online', 15 * 60e3, () => get(conf().steamStats || 'https://www.valvesoftware.com/about/stats', 'json')).catch(() => null),
+    ]);
+    if (!conc && !played && !sold) throw new Error('Steam fora do ar');
+    const playing = (conc?.response?.ranks || []).slice(0, 25).map(r => ({ rank: r.rank, appid: r.appid, now: r.concurrent_in_game, peak: r.peak_in_game }));
+    const sellers = (sold?.response?.ranks || []).slice(0, 25).map(r => ({ rank: r.rank, appid: r.appid, last: r.last_week_rank, weeks: r.consecutive_weeks }));
+    // em alta: quem entrou ou subiu muito nos mais jogados (dia) e nos mais vendidos (semana)
+    const climb = (r) => (r.last_week_rank > 0 ? r.last_week_rank - r.rank : 1000 - r.rank);
+    const risingP = (played?.response?.ranks || []).filter(r => r.last_week_rank === -1 || r.last_week_rank - r.rank >= 10).map(r => ({ appid: r.appid, rank: r.rank, last: r.last_week_rank, peak: r.peak_in_game, chart: 'played', score: climb(r) }));
+    const risingS = (sold?.response?.ranks || []).filter(r => r.last_week_rank === -1 || r.last_week_rank - r.rank >= 10).map(r => ({ appid: r.appid, rank: r.rank, last: r.last_week_rank, chart: 'sold', score: climb(r) }));
+    const seen = new Set(), rising = [];
+    for (const r of [...risingS, ...risingP].sort((a, b) => (a.last === -1) - (b.last === -1) || a.rank - b.rank).sort((a, b) => (b.last === -1 ? 1 : 0) - (a.last === -1 ? 1 : 0) || a.rank - b.rank))
+      if (!seen.has(r.appid) && rising.length < 12) { seen.add(r.appid); rising.push(r); }
+    const items = await storeItems([...new Set([...playing, ...sellers, ...rising].map(x => x.appid))]);
+    const fill = (list) => list.filter(x => items[x.appid]).map(x => ({ ...items[x.appid], ...x, id: 'steam:' + x.appid }));
+    const num = (v) => +String(v || '').replace(/[^\d]/g, '') || 0;
+    return { online: online ? { users: num(online.users_online), ingame: num(online.users_ingame) } : null, playing: fill(playing), sellers: fill(sellers), rising: fill(rising), country: country(), at: Date.now(), items: [1] };
   }
 
   const send = (fn) => async (req, res) => {
@@ -201,4 +279,5 @@ export function mountDiscover(app, { auth, dataDir }) {
   }));
   app.get('/api/discover/upcoming', auth, send(async () => ({ items: await steamUpcoming() })));
   app.get('/api/discover/tournaments', auth, send(tournaments));
+  app.get('/api/discover/charts', auth, send(charts));
 }

@@ -5,7 +5,7 @@
 import { h, icon } from './util.js';
 import { S, api, savePrefs } from './state.js';
 
-const TABS = [['foryou', 'Para você'], ['news', 'Notícias'], ['deals', 'Promoções'], ['upcoming', 'Lançamentos'], ['tournaments', 'Torneios']];
+const TABS = [['foryou', 'Para você'], ['news', 'Notícias'], ['deals', 'Promoções'], ['upcoming', 'Lançamentos'], ['tournaments', 'Torneios'], ['charts', 'Tendências']];
 const ALL = ['news', 'deals', 'upcoming', 'tournaments'];
 const st = { tab: 'foryou', data: {}, loading: {}, error: {}, at: {}, root: null, srcFilter: null, game: null, prize: false };
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -53,10 +53,15 @@ const when = (t) => {
 };
 const FORMATS = { 'single elimination': 'Eliminação simples', 'double elimination': 'Eliminação dupla', 'round robin': 'Todos contra todos', 'swiss': 'Suíço', 'groups': 'Grupos', 'battle royale': 'Battle royale', 'leaderboard': 'Ranking' };
 const fmt = (f) => String(f || '').split(' + ').map(x => FORMATS[x.toLowerCase().trim()] || x).join(' + ');
+// região dos torneios: Brasil (padrão), Brasil + América Latina, ou todas; salva na conta
+const REGIONS = [['br', 'Brasil'], ['latam', 'Brasil e América Latina'], ['all', 'Todas as regiões']];
+const region = () => (REGIONS.some(([k]) => k === S.prefs.discoverRegion) ? S.prefs.discoverRegion : 'br');
+const inRegion = (t) => { const r = region(); return r === 'all' || t.region === 'br' || (r === 'latam' && t.region === 'latam'); };
+const REGION_NAME = { br: 'Brasil', latam: 'América Latina', intl: 'Internacional' };
 const tourCard = (t) => link(t.url,
   h('div.dimg.dtimg', t.image ? h('img', { src: t.image, alt: '', loading: 'lazy', referrerPolicy: 'no-referrer', onerror: (e) => e.target.remove() }) : null, h('span.dtgame', t.game || 'Torneio'),
     h('span.dtwhen' + (t.starts && t.starts - Date.now() < 864e5 ? '.soon' : ''), icon('calendar', 12), when(t.starts))),
-  h('div.dbody', h('div.dmeta', h('b', t.source), t.host && h('span', 'por ' + t.host), why(t)),
+  h('div.dbody', h('div.dmeta', h('b', t.source), t.host && h('span', 'por ' + t.host), region() !== 'br' && REGION_NAME[t.region] && h('span.dreg', REGION_NAME[t.region]), why(t)),
     h('div.dtitle', t.title),
     h('div.dtags', t.mode && h('span', t.mode), t.slots > 0 && h('span', `${t.slots} vagas`), t.format && h('span', fmt(t.format))),
     h('div.dprice', t.prize ? h('span.dprize', icon('trophy', 13), t.prize) : null, t.free === true ? h('span.dfree', 'Inscrição grátis') : t.free === false ? h('span.dpaid', 'Inscrição paga') : null)));
@@ -91,11 +96,13 @@ function dealsTab() {
 const upcomingTab = () => { const items = st.data.upcoming?.items || []; return state('upcoming', items, 'Nenhum lançamento na lista agora.') || grid(items, upCard); };
 
 function tournamentsTab() {
-  const data = st.data.tournaments, all = data?.items || [];
+  const data = st.data.tournaments, every = data?.items || [], all = every.filter(inRegion);
   const counts = {}; for (const t of all) if (t.game) counts[t.game] = (counts[t.game] || 0) + 1;
   const games = Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 14);
   if (st.game && !counts[st.game]) st.game = null;
   const items = all.filter(t => (!st.game || t.game === st.game) && (!st.prize || t.prize));
+  const regions = every.length > 0 && h('div.dchips.dregions', h('span.dlabel', icon('globe', 14), 'Região:'),
+    REGIONS.map(([k, l]) => h('button.dchip' + (region() === k ? '.on' : ''), { onclick: () => { S.prefs.discoverRegion = k; savePrefs(); draw(); } }, l)));
   const chips = all.length > 0 && h('div.dchips',
     h('button.dchip' + (!st.game ? '.on' : ''), { onclick: () => { st.game = null; draw(); } }, 'Todos os jogos'),
     games.map(g => h('button.dchip' + (st.game === g ? '.on' : ''), { onclick: () => { st.game = st.game === g ? null : g; draw(); } }, g, h('small.dcount', String(counts[g])))),
@@ -107,10 +114,38 @@ function tournamentsTab() {
   const sites = h('div.dsites', (data?.links || []).map(l => h('div.dsite',
     h('a.dsite-main', { href: l.url, target: '_blank', rel: 'noopener noreferrer' }, h('b', l.name, icon('external', 14)), h('small', l.desc)),
     l.games?.length ? h('div.dsite-games', l.games.map(([g, u]) => h('a.dchip', { href: u, target: '_blank', rel: 'noopener noreferrer' }, g))) : null)));
-  const body = state('tournaments', items, all.length ? 'Nenhum torneio com esses filtros.' : 'Nenhum torneio aberto encontrado agora.')
+  const body = state('tournaments', items, all.length ? 'Nenhum torneio com esses filtros.' : every.length ? `Nenhum torneio ${region() === 'br' ? 'do Brasil' : 'do Brasil ou da América Latina'} aberto agora. Veja "Todas as regiões" ou os sites abaixo.` : 'Nenhum torneio aberto encontrado agora.')
     || [...sec('star', 'Hoje', today), ...sec('calendar', 'Próximos 7 dias', week), ...sec('trophy', 'Mais adiante', later)];
-  return [chips, body, data?.links?.length && h('h3.dsec', icon('external', 18), 'Mais torneios nos sites'), data?.links?.length && sites,
-    data?.links?.length && h('p.dnote', 'GamersClub e Battlefy não liberam a lista de torneios para outros apps, então os atalhos abrem direto no site. Inscrição e regras ficam sempre no site de cada torneio.')];
+  return [regions, chips, body, data?.links?.length && h('h3.dsec', icon('external', 18), 'Mais torneios nos sites'), data?.links?.length && sites,
+    data?.links?.length && h('p.dnote', 'A região é deduzida pelo nome, organizador e prêmio de cada torneio (o Challengermode não informa o país). GamersClub e Battlefy não liberam a lista de torneios para outros apps, então os atalhos abrem direto no site. Inscrição e regras ficam sempre no site de cada torneio.')];
+}
+
+// ---------- Tendências: números da Steam (como o SteamDB, pelas APIs públicas da Steam) ----------
+const big = (n) => n >= 1e6 ? (n / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mi' : n >= 1e4 ? Math.round(n / 1e3).toLocaleString('pt-BR') + ' mil' : n.toLocaleString('pt-BR');
+const full = (n) => n.toLocaleString('pt-BR');
+const trend = (last, rank) => last === -1 ? h('span.dtr.new', 'Novo') : last > rank ? h('span.dtr.up', '▲' + (last - rank)) : last < rank ? h('span.dtr.down', '▼' + (rank - last)) : h('span.dtr.same', '–');
+const priceTag = (g) => g.free ? h('span.dpr', 'Gratuito') : g.price ? h('span.dpr', g.discount ? h('span.doff', `-${g.discount}%`) : null, g.price) : null;
+const row = (g, right) => h('a.drow' + (matchOf(g) ? '.mine' : ''), { href: g.url, target: '_blank', rel: 'noopener noreferrer', title: g.title },
+  h('span.drank', String(g.rank)), h('div.dthumb', g.thumb ? h('img', { src: g.thumb, alt: '', loading: 'lazy', referrerPolicy: 'no-referrer', onerror: (e) => e.target.remove() }) : null),
+  h('div.dname', h('b', g.title), h('small', [g.tags?.slice(0, 2).join(' · '), g.reviews && `${g.reviews.pct}% positivas`].filter(Boolean).join(' · '))), h('div.dright', ...right));
+const panel = (ic, title, sub, list, right, n = 15) => h('section.dpanel', h('header', icon(ic, 18), h('b', title), sub && h('small', sub)), list.length ? h('div.drows', list.slice(0, n).map(g => row(g, right(g)))) : h('p.dnote', 'Sem dados agora.'));
+const riseCard = (g) => link(g.url, img(g.image),
+  h('div.dbody', h('div.dmeta', h('b', g.chart === 'sold' ? 'Mais vendidos' : 'Mais jogados'), h('span', g.last === -1 ? `estreou em ${g.rank}º` : `subiu ${g.last - g.rank} posições (agora ${g.rank}º)`), why(g)),
+    h('div.dtitle', g.title), g.tags?.length && h('div.dtags', g.tags.map(t => h('span', t))), h('div.dprice', priceTag(g), g.reviews && h('small.drev', `${g.reviews.pct}% positivas`))));
+function chartsTab() {
+  const d = st.data.charts;
+  const wait = state('charts', d ? [1] : [], 'Sem dados da Steam agora.'); if (wait) return wait;
+  const on = d.online && h('div.dstats',
+    h('div.dstat', h('small', 'Online na Steam agora'), h('b', big(d.online.users))),
+    h('div.dstat', h('small', 'Jogando agora'), h('b', big(d.online.ingame))),
+    d.playing[0] && h('div.dstat', h('small', 'Mais jogado'), h('b', d.playing[0].title), h('small', `${big(d.playing[0].now)} jogando`)),
+    d.sellers[0] && h('div.dstat', h('small', 'Mais vendido da semana'), h('b', d.sellers[0].title)));
+  return [on,
+    h('div.dpanels',
+      panel('users', 'Mais jogados agora', 'jogadores agora · pico de hoje', d.playing, (g) => [h('b', full(g.now)), h('small', 'pico ' + big(g.peak))]),
+      panel('tag', 'Mais vendidos da semana', d.country === 'BR' ? 'no Brasil, por faturamento' : 'por faturamento', d.sellers, (g) => [trend(g.last, g.rank), h('div.dstack', priceTag(g), g.weeks > 1 && h('small', `${g.weeks} semanas na lista`))])),
+    d.rising.length && h('h3.dsec', icon('rocket', 18), 'Em alta', h('small.dcount', 'entraram ou subiram rápido nas listas')), d.rising.length && grid(d.rising, riseCard),
+    h('p.dnote', `Dados da própria Steam (mais jogados, vendas da semana e jogadores online), atualizados a cada 15 min a 1 h. Última leitura: ${new Date(d.at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`)];
 }
 
 // "Para você": interesses (editar) + o que combina com eles nas três listas
@@ -130,7 +165,7 @@ function forYouTab() {
     sugg && h('div.dsugg', h('small', 'Sugestões:'), sugg.filter(s => !mine.some(m => norm(m) === norm(s))).slice(0, 12).map(s => h('button.dchip', { onclick: () => setInterests([...mine, s]) }, '+ ' + s))));
   if (!mine.length) return [box, h('div.dempty', h('b', 'Escolha seus jogos e assuntos'), h('p', 'Adicione o que você joga ou acompanha e o seu feed aparece aqui.'))];
   const n = (st.data.news?.items || []).filter(matchOf).slice(0, 30), d = (st.data.deals?.items || []).filter(matchOf), u = (st.data.upcoming?.items || []).filter(matchOf);
-  const t = (st.data.tournaments?.items || []).filter(matchOf).slice(0, 12);
+  const t = (st.data.tournaments?.items || []).filter(x => inRegion(x) && matchOf(x)).slice(0, 12);
   const loading = ALL.some(k => st.loading[k] && !st.data[k]);
   if (!n.length && !d.length && !u.length && !t.length) return [box, loading ? state('news', [], '') : h('div.dempty', h('b', 'Nada sobre seus interesses agora'), h('p', 'Volte mais tarde ou adicione outros jogos e assuntos.'))];
   return [box,
@@ -142,7 +177,7 @@ function forYouTab() {
 
 function draw() {
   const root = st.root; if (!root?.isConnected) return;
-  const body = st.tab === 'news' ? newsTab() : st.tab === 'deals' ? dealsTab() : st.tab === 'upcoming' ? upcomingTab() : st.tab === 'tournaments' ? tournamentsTab() : forYouTab();
+  const body = st.tab === 'news' ? newsTab() : st.tab === 'deals' ? dealsTab() : st.tab === 'upcoming' ? upcomingTab() : st.tab === 'tournaments' ? tournamentsTab() : st.tab === 'charts' ? chartsTab() : forYouTab();
   root.replaceChildren(
     h('div#topbar', h('span.hash', icon('compass', 24)), h('span', 'Descobrir'),
       h('div.dtabs', TABS.map(([k, l]) => h('button.dtab' + (st.tab === k ? '.on' : ''), { onclick: () => { st.tab = k; ensure(); draw(); } }, l))),

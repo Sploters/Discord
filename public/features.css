@@ -1103,4 +1103,32 @@ html.anim .dcard.skel { animation: lc-fade 1.2s ease-in-out infinite alternate; 
 #discoverview .dsite-main b { color: var(--header); display: inline-flex; align-items: center; gap: 6px; font-size: 15px; } #discoverview .dsite-main b svg { fill: currentColor; color: var(--text-muted); }
 #discoverview .dsite-main small { color: var(--text-muted); font-size: 13px; }
 #discoverview .dsite-games { display: flex; flex-wrap: wrap; gap: 6px; } #discoverview .dsite-games .dchip { text-decoration: none; padding: 3px 10px; font-size: 12px; }
+#discoverview .dlabel { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-right: 2px; } #discoverview .dlabel svg { fill: currentColor; }
+#discoverview .dregions { margin-bottom: 8px; }
+.dcard .dreg { padding: 0 6px; border-radius: 4px; background: var(--bg-tert); font-size: 11px; }
+/* tendências (números da Steam) */
+#discoverview .dstats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+#discoverview .dstat { padding: 12px 14px; border-radius: 10px; background: var(--bg-sec); border: 1px solid var(--divider); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#discoverview .dstat small { color: var(--text-muted); font-size: 12px; } #discoverview .dstat b { color: var(--header); font-size: 22px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#discoverview .dstat:nth-child(n+3) b { font-size: 16px; line-height: 1.6; }
+#discoverview .dpanels { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 14px; }
+#discoverview .dpanel { border-radius: 10px; background: var(--bg-sec); border: 1px solid var(--divider); overflow: hidden; min-width: 0; }
+#discoverview .dpanel header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--divider); } #discoverview .dpanel header svg { fill: currentColor; color: var(--interactive); }
+#discoverview .dpanel header b { color: var(--header); font-size: 15px; } #discoverview .dpanel header small { margin-left: auto; color: var(--text-muted); font-size: 12px; }
+#discoverview .drows { display: flex; flex-direction: column; }
+#discoverview .drow { display: grid; grid-template-columns: 26px 92px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 14px; color: inherit; text-decoration: none; }
+#discoverview .drow:nth-child(even) { background: color-mix(in srgb, var(--bg-tert) 35%, transparent); } #discoverview .drow:hover { background: var(--bg-mod-hover); }
+#discoverview .drow.mine { box-shadow: inset 3px 0 var(--brand, #5865f2); }
+#discoverview .drank { color: var(--text-muted); font-weight: 700; font-size: 13px; text-align: right; }
+#discoverview .dthumb { width: 92px; height: 35px; border-radius: 4px; overflow: hidden; background: var(--bg-tert); } #discoverview .dthumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#discoverview .dname { display: flex; flex-direction: column; min-width: 0; } #discoverview .dname b { color: var(--header); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#discoverview .dname small { color: var(--text-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#discoverview .dright { display: flex; align-items: center; gap: 8px; justify-content: flex-end; text-align: right; font-size: 13px; white-space: nowrap; } #discoverview .dright b { color: var(--header); font-variant-numeric: tabular-nums; } #discoverview .dright small { color: var(--text-muted); font-size: 12px; }
+#discoverview .drows .drow .dright:has(b + small) { flex-direction: column; align-items: flex-end; gap: 0; }
+#discoverview .dstack { display: flex; flex-direction: column; align-items: flex-end; }
+#discoverview .dtr { font-size: 12px; font-weight: 800; min-width: 34px; text-align: center; } #discoverview .dtr.up { color: #23a55a; } #discoverview .dtr.down { color: #f23f43; } #discoverview .dtr.same { color: var(--text-muted); }
+#discoverview .dtr.new { padding: 1px 6px; border-radius: 4px; background: var(--brand, #5865f2); color: #fff; font-size: 11px; }
+#discoverview .dpr { display: inline-flex; align-items: center; gap: 5px; color: var(--header); font-weight: 600; } #discoverview .dpr .doff { padding: 1px 5px; border-radius: 4px; background: #23a55a; color: #fff; font-size: 11px; font-weight: 800; }
+.dcard .drev { color: var(--text-muted); font-size: 12px; }
+@media (max-width: 700px) { #discoverview .dpanels { grid-template-columns: 1fr; } #discoverview .drow { grid-template-columns: 22px 64px minmax(0, 1fr) auto; padding: 6px 10px; gap: 8px; } #discoverview .dthumb { width: 64px; height: 24px; } #discoverview .dpanel header small { display: none; } }
 @media (max-width: 700px) { #discoverview .dbodywrap { padding: 12px 12px 32px; } #discoverview .dgrid { grid-template-columns: 1fr; } #discoverview #topbar { overflow-x: auto; } }

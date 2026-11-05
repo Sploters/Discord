@@ -15,6 +15,16 @@ cada pessoa (jogos e assuntos que ela escolhe; salvos na conta).
   **GamersClub** e **Battlefy** aparecem como atalhos: não oferecem a lista de torneios para outros apps (a Battlefy
   responde "Direct API access is not permitted" e a GamersClub só tem a API interna do próprio site), então o LocalCord
   não puxa dados deles. No "Para você", torneios dos jogos escolhidos aparecem em "Torneios dos seus jogos".
+  **Região:** o feed não informa o país, então cada torneio recebe uma região (Brasil, América Latina ou
+  internacional) pelo nome, organizador e prêmio (português, "R$", "Brasil", "(NA)", "EU", moeda estrangeira...), e o
+  organizador herda a região dos torneios dele. O padrão é **Brasil**; cada pessoa pode trocar para "Brasil e América
+  Latina" ou "Todas as regiões" (fica salvo na conta). Organizador errado ou faltando? Corrija no `discover.json`:
+  `"hostRegions": { "Nome do organizador": "br" }` (ou `"latam"`, `"intl"`).
+- **Tendências:** números da Steam, no estilo do SteamDB, pelas APIs públicas da própria Steam (as mesmas que o
+  SteamDB usa; o site do SteamDB em si não é lido): pessoas online e jogando, **mais jogados agora** (jogadores e pico
+  do dia), **mais vendidos da semana no Brasil** (com subida/descida e semanas na lista, preço e desconto) e **Em alta**
+  (jogos que estrearam ou subiram 10+ posições). Atualiza a cada 15 min (jogadores) a 1 h (vendas). Jogos dos
+  interesses da pessoa ficam marcados na lista.
 
 ## Configurar as fontes
 Arquivo `discover.json` na pasta de dados do servidor (no Umbrel: `~/localcord-data/discover.json`). Vale na hora.

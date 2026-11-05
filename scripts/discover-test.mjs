@@ -31,10 +31,23 @@ const epic = { data: { Catalog: { searchStore: { elements: [
     promotions: { promotionalOffers: [], upcomingPromotionalOffers: [{ promotionalOffers: [{ startDate: new Date(now + 5 * day).toISOString(), endDate: new Date(now + 12 * day).toISOString(), discountSetting: { discountPercentage: 0 } }] }] } }] } } } };
 // torneios fictícios no formato do feed do Challengermode (um hoje, um amanhã, um daqui a 10 dias, um que já passou)
 const tours = [['Copa Relâmpago', 'VALORANT', '5 vs 5', 16, 'Prize R$ 500, ', now + 3 * 3600e3, '#e8484f'], ['Liga dos Amigos', 'CS2', '5 vs 5', 32, '', now + day + 3600e3, '#f0a020'],
-  ['Desafio Solo', 'Rocket League', '1 vs 1', 64, '', now + 10 * day, '#2ea869'], ['Torneio Antigo', 'VALORANT', '5 vs 5', 8, '', now - 2 * day, '#555']];
+  ['Desafio Solo', 'Rocket League', '1 vs 1', 64, '', now + 10 * day, '#2ea869'], ['Torneio Antigo', 'VALORANT', '5 vs 5', 8, '', now - 2 * day, '#555'], ['(NA) Weekly Cup', 'CS2', '5 vs 5', 16, '', now + 2 * day, '#345']];
 const atom = `<?xml version="1.0" encoding="utf-8" ?><feed xmlns="http://www.w3.org/2005/Atom"><title>Tournament Feed</title>${tours.map(([t, g, m, n, p, at], i) =>
-  `<entry><id>cm:tournament:${i}</id><link href="${M}/t/${i}" /><title>${t} - Overview - Tournament</title><summary>${g}, ${m}, ${n} Slots, ${p}Free to enter, ${i === 2 ? 'Double' : 'Single'} Elimination, Start time ${new Date(at).toUTCString()}. Hosted by Clube Fictício..</summary></entry>`).join('')}</feed>`;
+  `<entry><id>cm:tournament:${i}</id><link href="${M}/t/${i}" /><title>${t} - Overview - Tournament</title><summary>${g}, ${m}, ${n} Slots, ${p}Free to enter, ${i === 2 ? 'Double' : 'Single'} Elimination, Start time ${new Date(at).toUTCString()}. Hosted by ${i === 4 ? 'Far Away Club' : 'Clube Fictício'}..</summary></entry>`).join('')}</feed>`;
+// Steam (formato das APIs públicas): jogos fictícios
+const SG = { 1: 'Arena Rápida', 2: 'Estrela Cadente', 3: 'Blocos & Picaretas', 4: 'Fazendinha Tranquila', 5: 'Corrida Neon' };
+const sapi = { 'ISteamChartsService/GetGamesByConcurrentPlayers': { response: { ranks: [1, 3, 2, 5].map((a, i) => ({ rank: i + 1, appid: a, concurrent_in_game: 900000 - i * 200000, peak_in_game: 1000000 - i * 150000 })) } },
+  'ISteamChartsService/GetMostPlayedGames': { response: { ranks: [{ rank: 1, appid: 1, last_week_rank: 1, peak_in_game: 1e6 }, { rank: 4, appid: 4, last_week_rank: -1, peak_in_game: 5e4 }] } },
+  'IStoreTopSellersService/GetWeeklyTopSellers': { response: { ranks: [{ rank: 1, appid: 2, last_week_rank: 3, consecutive_weeks: 4 }, { rank: 2, appid: 5, last_week_rank: 1, consecutive_weeks: 9 }, { rank: 3, appid: 3, last_week_rank: 30, consecutive_weeks: 1 }] } },
+  'IStoreService/GetTagList': { response: { tags: [{ tagid: 10, name: 'Ação' }, { tagid: 11, name: 'RPG' }, { tagid: 12, name: 'Indie' }] } } };
+const sitem = (a) => ({ success: 1, appid: a, name: SG[a], is_free: a === 1, tagids: [10 + (a % 3), 12], assets: { asset_url_format: `img/${a}/\${FILENAME}`, header: 'h.svg', small_capsule: 's.svg' },
+  best_purchase_option: a === 1 ? null : { formatted_final_price: `R$ ${a}9,90`, discount_pct: a === 5 ? 40 : 0, formatted_original_price: 'R$ 99,90' }, reviews: { summary_filtered: { review_count: 1000, percent_positive: 80 + a, review_score_label: 'Muito positivas' } } });
 const mock = http.createServer((q, r) => {
+  const su = new URL(q.url, M);
+  if (su.pathname.startsWith('/sapi/')) { const k = su.pathname.slice(6).replace(/\/v1\/?$/, ''); r.setHeader('content-type', 'application/json');
+    if (k === 'IStoreBrowseService/GetItems') return r.end(JSON.stringify({ response: { store_items: JSON.parse(su.searchParams.get('input_json')).ids.map(x => sitem(x.appid)) } }));
+    return r.end(JSON.stringify(sapi[k] || {})); }
+  if (su.pathname === '/stats') { r.setHeader('content-type', 'application/json'); return r.end(JSON.stringify({ users_online: '35,458,983', users_ingame: '9,806,958' })); }
   if (q.url === '/tours.xml') { r.setHeader('content-type', 'application/atom+xml'); return r.end(atom); }
   if (q.url.startsWith('/t/')) { const t = tours[+q.url.slice(3)]; r.setHeader('content-type', 'text/html'); return r.end(`<html><head><meta property="og:image" content="${M}/img/t.svg?c=${encodeURIComponent(t[6])}" /></head><body>${'x'.repeat(5000)}</body></html>`); }
   const u = new URL(q.url, M);
@@ -47,7 +60,7 @@ const mock = http.createServer((q, r) => {
   r.statusCode = 404; r.end();
 }).listen(MOCK);
 fs.rmSync(DATA, { recursive: true, force: true }); fs.mkdirSync(DATA, { recursive: true });
-fs.writeFileSync(DATA + '/discover.json', JSON.stringify({ news: [{ name: 'Jogos Hoje', url: M + '/feed.xml', lang: 'pt' }, { name: 'Site Fora do Ar', url: M + '/broken.xml', lang: 'pt' }], steamBase: M + '/steam', epicUrl: M + '/epic', cmFeed: M + '/tours.xml' }));
+fs.writeFileSync(DATA + '/discover.json', JSON.stringify({ news: [{ name: 'Jogos Hoje', url: M + '/feed.xml', lang: 'pt' }, { name: 'Site Fora do Ar', url: M + '/broken.xml', lang: 'pt' }], steamBase: M + '/steam', epicUrl: M + '/epic', cmFeed: M + '/tours.xml', steamApi: M + '/sapi', steamStats: M + '/stats', hostRegions: { 'Clube Fictício': 'br' } }));
 const srv = spawn('node', ['server/index.js'], { env: { ...process.env, PORT, HTTPS: '0', DATA_DIR: DATA, RTC: '0' }, stdio: 'ignore' });
 for (let i = 0; i < 150; i++) { try { await fetch(BASE + '/api/server-info'); break; } catch { await sleep(200); } }
 const browser = await puppeteer.launch({ executablePath: EXE, headless: 'new', args: ['--no-sandbox'] });
@@ -85,9 +98,20 @@ try {
   await P.evaluate(() => document.querySelector('.dchip.dtoggle').click()); await sleep(200);
   ok(await P.evaluate(() => document.querySelectorAll('.dcard').length === 1), 'filtro "Com prêmio"');
   await P.evaluate(() => document.querySelector('.dchip.dtoggle').click());
+  await P.evaluate(() => [...document.querySelectorAll('.dregions .dchip')].find(x => /Todas/.test(x.textContent)).click()); await sleep(300);
+  const allReg = await P.evaluate(() => [...document.querySelectorAll('.dcard .dtitle')].map(x => x.textContent));
+  ok(allReg.length === 4 && allReg.includes('(NA) Weekly Cup') && !tr.cards.some(c => /Weekly/.test(c)), 'região: Brasil por padrão esconde torneio dos EUA; "Todas as regiões" mostra', allReg);
+  await P.evaluate(() => [...document.querySelectorAll('.dregions .dchip')].find(x => x.textContent === 'Brasil').click()); await sleep(300);
   await sleep(9500); // as imagens chegam em segundo plano e a aba recarrega sozinha
   ok(await P.evaluate(() => document.querySelectorAll('.dtimg img').length === 3), 'imagens dos torneios (og:image) carregadas', await P.evaluate(() => document.querySelectorAll('.dtimg img').length));
   await P.screenshot({ path: OUT + '/disc-torneios.png' });
+  await tab('Tendências');
+  const ch = await P.evaluate(() => ({ stats: [...document.querySelectorAll('.dstat')].map(x => x.innerText.replace(/\n+/g, ' ')), panels: [...document.querySelectorAll('.dpanel')].map(p => [...p.querySelectorAll('.drow')].map(r => r.innerText.replace(/\n+/g, ' | '))), rising: [...document.querySelectorAll('.dcard .dtitle')].map(x => x.textContent) }));
+  ok(/35,5 mi/.test(ch.stats[0]) && /Arena Rápida/.test(ch.stats[2]), 'tendências: jogadores online e mais jogado', ch.stats);
+  ok(ch.panels[0].length === 4 && /Arena Rápida/.test(ch.panels[0][0]) && /900\.000/.test(ch.panels[0][0]) && /Gratuito|Ação|Indie/.test(ch.panels[0][0]), 'mais jogados agora, com jogadores e tags', ch.panels[0]);
+  ok(ch.panels[1].length === 3 && /▲2/.test(ch.panels[1][0]) && /▼1/.test(ch.panels[1][1]) && /-40%/.test(ch.panels[1][1]) && /▲27/.test(ch.panels[1][2]), 'mais vendidos com subida/descida e preço', ch.panels[1]);
+  ok(ch.rising.includes('Blocos & Picaretas') && ch.rising.includes('Fazendinha Tranquila'), 'em alta: subiu muito nos vendidos e estreou nos jogados', ch.rising);
+  await P.screenshot({ path: OUT + '/disc-tendencias.png' });
   await tab('Para você');
   await P.type('.dint-in', 'Estrela Cadente'); await P.keyboard.press('Enter'); await sleep(400);
   await P.evaluate(() => [...document.querySelectorAll('.dsugg .dchip')].find(x => /Indie/.test(x.textContent))?.click()); await sleep(500);
