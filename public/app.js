@@ -299,7 +299,7 @@ function onMessage(m) {
 }
 function updateTitle() {
   const n = Object.values(S.mentions).reduce((a, b) => a + b, 0);
-  document.title = (n ? `(${n}) ` : '') + 'LocalCord';
+  document.title = (n ? `(${n}) ` : '') + 'Resenha';
   desktop?.setBadge?.(n);
   const btn = document.querySelector('.inbox-btn'); if (btn) { btn.querySelector('.ibadge')?.remove(); const b = inboxBadge(); if (b) btn.append(b); }
 }
@@ -702,7 +702,7 @@ async function openUserProfile(uid, gid) {
         friendBtn,
         h('button.btn.grey.upico', { title: 'Mais', onclick: (e) => userMenu(e, uid, gid) }, icon('more', 18))),
       u.bio && sec('Sobre mim', h('p', { style: { whiteSpace: 'pre-wrap' } }, u.bio)),
-      sec('No LocalCord desde', h('p', date(u.created_at))),
+      sec('Na Resenha desde', h('p', date(u.created_at))),
       m?.joined_at && sec(`Membro de ${g.name} desde`, h('p', date(m.joined_at))),
       roles.length > 0 && sec('Cargos', h('div.chips', roles.map(r => h('span.chip', h('i.dot', { style: { background: r.color } }), r.name)))),
       sec('Nota (só você vê)', note)));
@@ -1789,13 +1789,13 @@ async function startShare() {
   const refresh = async () => { try { const fresh = await desktop.getSources(); loaded = true; const ids = new Set(fresh.map(s => s.id)); list = [...fresh, ...list.filter(s => !ids.has(s.id) && s.type === 'window').map(s => ({ ...s, gone: true }))]; /* jogo em tela cheia some da lista ao dar alt+tab: mantém o que já foi visto */ if (!src) src = list.find(s => s.type === tab) || list[0] || null; drawSources(); } catch { } };
   const body = h('div', desktop && [h('label.f', 'O que compartilhar'), tabs, grid, h('div.qinfo', 'Jogo em tela cheia? Ele aparece em "Janelas" mesmo que suma ao dar alt+tab: selecione, clique em Transmitir e volte para o jogo. Se não funcionar, use a aba "Telas" (tela inteira).')], qualityPanel(o),
     h('label.f', 'Cursor do mouse', seg({ 1: 'Mostrar o cursor', 0: 'Ocultar o cursor' }, o.cursor === false ? 0 : 1, v => (o.cursor = !!+v))),
-    h('label.f', 'Áudio', seg({ 1: 'Áudio do sistema (tudo que toca no PC, menos o LocalCord)', 0: 'Sem áudio' }, o.audio ? 1 : 0, v => (o.audio = !!v))),
+    h('label.f', 'Áudio', seg({ 1: 'Áudio do sistema (tudo que toca no PC, menos a Resenha)', 0: 'Sem áudio' }, o.audio ? 1 : 0, v => (o.audio = !!v))),
     !desktop && h('div.qinfo', 'Ao clicar em Transmitir, o navegador abrirá o seletor de tela/janela/aba. Para escolher dentro do app, use o aplicativo desktop.'));
   if (desktop) { drawSources(); refresh(); timer = setInterval(() => { if (!document.body.contains(body)) return clearInterval(timer); refresh(); }, 3000); }
   modal('Transmitir tela', 'Escolha o que mostrar, a resolução e os quadros por segundo.', body, [{ label: 'Cancelar', cls: 'link', fn: () => clearInterval(timer) }, { label: 'Transmitir', cls: 'green', fn: async () => {
     if (desktop) { if (!src) { toast('Selecione uma tela ou janela', true); return false; } await desktop.selectSource(src.id); }
     clearInterval(timer); S.prefs.screen = { res: o.res, fps: o.fps, hint: o.hint, audio: o.audio, cursor: o.cursor !== false, bitrate: o.bitrate || 0 }; savePrefs();
-    // o Windows só entrega o áudio do sistema inteiro (também de outros apps), mas o LocalCord é excluído dele; vale para tela e janela
+    // o Windows só entrega o áudio do sistema inteiro (também de outros apps), mas a Resenha é excluída dele; vale para tela e janela
     voiceAct(() => voice.toggleScreen({ ...o }));
   } }], { width: desktop ? '780px' : '560px' });
 }
@@ -1813,7 +1813,7 @@ const pipCtx = {
 };
 function liveShareModal() {
   const o = { ...voice.screenOpts };
-  const settings = h('div.qinfo'), net = h('div.qinfo'), blk = h('div.qinfo.warn'), updInfo = () => { blk.textContent = voice.captureBlack ? 'A transmissão está saindo PRETA. Se for um jogo (ex.: Valorant), coloque-o em "Janela sem bordas" nas opções de vídeo do jogo e transmita a tela inteira. Tela cheia exclusiva e alguns anti-cheats bloqueiam a captura, e o LocalCord não contorna isso.' : ''; blk.style.display = voice.captureBlack ? '' : 'none'; const st = voice.screen?.getVideoTracks()[0]?.getSettings?.() || {}; const cf = voice.captureFps, want = +o.fps || 0; settings.textContent = `${want} FPS solicitados · ${cf == null ? 'medindo…' : cf + ' FPS capturados'} — ${voice.native?.w ? voice.native.w + '×' + voice.native.h + ' (modo 120 FPS, placa de vídeo)' : (st.width || '?') + '×' + (st.height || '?')} — ${qualityLabel(o)}`; settings.classList.toggle('warn', cf != null && want > 0 && cf < want * 0.85); voice.screenStats().then(L => { if (!L?.length) return; const t = L[0], why = { cpu: 'limitado pelo processador', bandwidth: 'limitado pela sua internet (upload)', none: 'sem limitação', other: 'limitado' }[t.limit] || t.limit; net.textContent = `Enviando: ${t.w}×${t.h} a ${t.fps} fps, ${(t.kbps / 1000).toFixed(1)} Mbps — ${why}${/nativo/.test(t.enc) ? ' (' + t.enc + ')' : /hw|h264|video toolbox|nvenc|media/i.test(t.enc) ? ' (placa de vídeo)' : t.enc ? ' (' + t.enc + ')' : ''}`; }); };
+  const settings = h('div.qinfo'), net = h('div.qinfo'), blk = h('div.qinfo.warn'), updInfo = () => { blk.textContent = voice.captureBlack ? 'A transmissão está saindo PRETA. Se for um jogo (ex.: Valorant), coloque-o em "Janela sem bordas" nas opções de vídeo do jogo e transmita a tela inteira. Tela cheia exclusiva e alguns anti-cheats bloqueiam a captura, e a Resenha não contorna isso.' : ''; blk.style.display = voice.captureBlack ? '' : 'none'; const st = voice.screen?.getVideoTracks()[0]?.getSettings?.() || {}; const cf = voice.captureFps, want = +o.fps || 0; settings.textContent = `${want} FPS solicitados · ${cf == null ? 'medindo…' : cf + ' FPS capturados'} — ${voice.native?.w ? voice.native.w + '×' + voice.native.h + ' (modo 120 FPS, placa de vídeo)' : (st.width || '?') + '×' + (st.height || '?')} — ${qualityLabel(o)}`; settings.classList.toggle('warn', cf != null && want > 0 && cf < want * 0.85); voice.screenStats().then(L => { if (!L?.length) return; const t = L[0], why = { cpu: 'limitado pelo processador', bandwidth: 'limitado pela sua internet (upload)', none: 'sem limitação', other: 'limitado' }[t.limit] || t.limit; net.textContent = `Enviando: ${t.w}×${t.h} a ${t.fps} fps, ${(t.kbps / 1000).toFixed(1)} Mbps — ${why}${/nativo/.test(t.enc) ? ' (' + t.enc + ')' : /hw|h264|video toolbox|nvenc|media/i.test(t.enc) ? ' (placa de vídeo)' : t.enc ? ' (' + t.enc + ')' : ''}`; }); };
   updInfo(); const iv = setInterval(() => { if (!document.body.contains(settings)) return clearInterval(iv); updInfo(); }, 1000);
   const body = h('div', blk, settings, net, qualityPanel(o, async (n) => { await voice.changeScreenQuality(n); S.prefs.screen = { ...S.prefs.screen, res: n.res, fps: n.fps, hint: n.hint, bitrate: n.bitrate || 0 }; savePrefs(); setTimeout(updInfo, 400); }),
     h('div', { style: { fontSize: '14px', color: 'var(--text-muted)' } }, `${[...S.voice.values()].filter(v => v.channel_id === voice.channelId).length - 1} pessoa(s) na sala podem assistir.`));

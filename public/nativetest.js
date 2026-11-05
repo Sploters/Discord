@@ -72,7 +72,7 @@ export function openNativeTest() {
     const rx = rows.map(r => r.rx), dec = rows.map(r => r.dec), shown = rows.map(r => r.shown);
     const f = (v) => v.toFixed(1).replace('.', ',');
     const txt = [
-      'LocalCord - teste da transmissão nativa (lado de quem assiste)',
+      'Resenha - teste da transmissão nativa (lado de quem assiste)',
       `Data: ${new Date().toLocaleString('pt-BR')}`,
       `Segundos medidos: ${rows.length}${endedWhy ? ' (fim: ' + endedWhy + ')' : ''}`,
       `Resolução recebida: ${rows.at(-1)?.w || '?'}x${rows.at(-1)?.hgt || '?'}`,

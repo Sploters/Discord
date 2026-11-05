@@ -1,4 +1,4 @@
-// Registro de integrações com plataformas de jogos. O resto do LocalCord só enxerga este contrato e snapshots normalizados;
+// Registro de integrações com plataformas de jogos. O resto da Resenha só enxerga este contrato e snapshots normalizados;
 // cada plataforma vive em seu próprio arquivo (hoje só a Steam).
 //
 // Adaptador: {

@@ -1,4 +1,4 @@
-TESTE DE FPS DA CAPTURA DE TELA - LocalCord
+TESTE DE FPS DA CAPTURA DE TELA - Resenha
 
 1. Extraia esta pasta (botao direito no .zip > Extrair tudo).
 2. Clique duas vezes em "TESTAR (clique duas vezes).bat".

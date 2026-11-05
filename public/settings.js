@@ -116,7 +116,7 @@ export function openSettings(kind, ctx) {
       return list.length ? [h('h6', title), ...list.map(([k, l]) => h('div.ni' + (k === current ? '.active' : ''), { 'data-k': k, onclick: () => show(k) }, l, k === 'lite' && liteOn() && h('span.nlite', { title: 'O modo leve está ligado neste computador' }, 'Ativo')))] : [];
     }), !isServer && h('div', { style: { height: '1px', background: 'var(--divider)', margin: '10px 8px' } }),
     !isServer && h('div.ni.danger', { onclick: async () => { if (await confirmBox('Sair', 'Deseja sair da sua conta?', 'Sair')) ctx.logout(); } }, 'Sair'),
-    h('div.nfoot', 'LocalCord' + (desktop ? ' Desktop' : ' Web'))));
+    h('div.nfoot', 'Resenha' + (desktop ? ' Desktop' : ' Web'))));
   };
   root.append(nav, content, h('button.close', { onclick: close, title: 'Fechar (Esc)' }, icon('x', 20), h('small', 'ESC')));
   document.getElementById('layer').append(root); document.addEventListener('keydown', esc);
@@ -245,7 +245,7 @@ ${t.p} → ${t.a}`, style: { background: `linear-gradient(${t.p}, ${t.a})` }, on
 
 // ============================ Privacidade ============================
 const agentName = (a) => {
-  const b = /Electron/.test(a) ? 'LocalCord Desktop' : /Edg\//.test(a) ? 'Edge' : /Firefox/.test(a) ? 'Firefox' : /Chrome/.test(a) ? 'Chrome' : /Safari/.test(a) ? 'Safari' : 'Navegador';
+  const b = /Electron/.test(a) ? 'Resenha Desktop' : /Edg\//.test(a) ? 'Edge' : /Firefox/.test(a) ? 'Firefox' : /Chrome/.test(a) ? 'Chrome' : /Safari/.test(a) ? 'Safari' : 'Navegador';
   const o = /Windows/.test(a) ? 'Windows' : /Android/.test(a) ? 'Android' : /iPhone|iPad/.test(a) ? 'iOS' : /Mac/.test(a) ? 'macOS' : /Linux/.test(a) ? 'Linux' : '';
   return `${b}${o ? ' em ' + o : ''}`;
 };
@@ -333,7 +333,7 @@ function extrasPage(ctx) {
   };
   drawVols();
   return h('div', h('h2', 'Recursos extras'),
-    hint('Recursos inspirados em plugins populares da comunidade, feitos do zero para o LocalCord.'),
+    hint('Recursos inspirados em plugins populares da comunidade, feitos do zero para a Resenha.'),
     section('Visualizador de imagens'),
     card(
       row('Lente de zoom no clique', 'Desligado: segure o botão do mouse sobre a imagem. Ligado: um clique liga e outro desliga.', toggle(!!P.lensClick, set('lensClick'))),
@@ -510,7 +510,7 @@ function keysPage() {
 
 // ============================ Avançado ============================
 function advancedPage(ctx) {
-  const exportBtn = h('button.btn.grey', { onclick: () => { const p = { ...S.prefs }; ['inputId', 'outputId', 'videoId'].forEach(k => delete p[k]); const a = h('a', { href: URL.createObjectURL(new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' })), download: 'localcord-configuracoes.json' }); a.click(); } }, 'Exportar configurações');
+  const exportBtn = h('button.btn.grey', { onclick: () => { const p = { ...S.prefs }; ['inputId', 'outputId', 'videoId'].forEach(k => delete p[k]); const a = h('a', { href: URL.createObjectURL(new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' })), download: 'resenha-configuracoes.json' }); a.click(); } }, 'Exportar configurações');
   const importBtn = h('button.btn.grey', { onclick: () => { const i = h('input', { type: 'file', accept: '.json', onchange: async () => { try { Object.assign(S.prefs, JSON.parse(await i.files[0].text())); save(); applyTheme(); toast('Configurações importadas'); } catch { toast('Arquivo inválido', true); } } }); i.click(); } }, 'Importar configurações');
   const resetBtn = h('button.btn.red', { onclick: async () => { if (await confirmBox('Redefinir configurações', 'Volta tudo ao padrão (tema, voz, sons, atalhos…).', 'Redefinir')) { const keep = { inputId: S.prefs.inputId, outputId: S.prefs.outputId, videoId: S.prefs.videoId }; for (const k of Object.keys(S.prefs)) delete S.prefs[k]; localStorage.removeItem('lc_prefs'); S.prefs.inputId = keep.inputId; save(); location.reload(); } } }, 'Redefinir tudo');
   const dsk = h('div'); if (desktop) desktop.getSettings().then(s => dsk.replaceChildren(
@@ -532,28 +532,28 @@ function reportPage() {
 }
 // versão do app desktop com "Procurar atualização": diz se já está na mais nova ou oferece atualizar
 function versionRow(version) {
-  const status = h('span', `LocalCord Desktop ${version}`);
+  const status = h('span', `Resenha Desktop ${version}`);
   const btn = h('button.btn.grey', { onclick: async () => {
     btn.disabled = true; btn.textContent = 'Procurando…';
     const r = await checkAppUpdate();
     btn.disabled = false;
     if (!r?.latest) { btn.textContent = 'Procurar atualização'; return toast('Não consegui consultar as atualizações agora. Tente de novo em instantes.', true); }
-    if (!r.available) { btn.textContent = 'Procurar atualização'; status.textContent = `LocalCord Desktop ${version} — você está na versão mais nova`; return; }
-    status.textContent = `LocalCord Desktop ${version} — versão ${r.latest} disponível`;
+    if (!r.available) { btn.textContent = 'Procurar atualização'; status.textContent = `Resenha Desktop ${version} — você está na versão mais nova`; return; }
+    status.textContent = `Resenha Desktop ${version} — versão ${r.latest} disponível`;
     btn.className = 'btn green'; btn.textContent = `Atualizar para ${r.latest}`;
-    btn.onclick = async () => { btn.disabled = true; btn.textContent = 'Baixando…'; if (!await installAppUpdate()) { btn.disabled = false; btn.textContent = `Atualizar para ${r.latest}`; toast('Baixando o instalador: quando terminar, abra o LocalCord-Setup.'); } };
+    btn.onclick = async () => { btn.disabled = true; btn.textContent = 'Baixando…'; if (!await installAppUpdate()) { btn.disabled = false; btn.textContent = `Atualizar para ${r.latest}`; toast('Baixando o instalador: quando terminar, abra o Resenha-Setup.'); } };
   } }, 'Procurar atualização');
   return row('Versão', status, btn);
 }
 function appPage() {
   const box = h('div.card2', 'Carregando…');
   desktop.getSettings().then((s) => box.replaceChildren(
-    row('Iniciar com o Windows', 'Abre o LocalCord ao ligar o computador.', toggle(s.autoStart, v => desktop.setSettings({ autoStart: v }))),
+    row('Iniciar com o Windows', 'Abre a Resenha ao ligar o computador.', toggle(s.autoStart, v => desktop.setSettings({ autoStart: v }))),
     row('Iniciar minimizado', null, toggle(s.startMinimized, v => desktop.setSettings({ startMinimized: v }))),
     row('Fechar para a bandeja', 'Ao fechar a janela o app continua rodando (para ficar em chamada).', toggle(s.closeToTray, v => desktop.setSettings({ closeToTray: v }))),
     row('Atalhos globais', 'Mutar/ensurdecer funcionam com o app em segundo plano (veja Atalhos).', toggle(s.globalHotkeys, v => desktop.setSettings({ globalHotkeys: v }))),
     row('Compatibilidade de vídeo', 'Por padrão o app desenha igual ao navegador. Ligue se as letras ficam borradas ou os vídeos piscam/aparecem escuros só no app (no navegador normais): o vídeo é decodificado pela CPU, em sRGB e sem a sobreposição de vídeo da placa (um pouco mais pesado). Em placas antigas também desenha o texto pela CPU. "Automático" liga sozinho em placas de vídeo antigas.' + (s.gpuName ? ` Placa: ${s.gpuName}.` : '') + ` Agora: ${s.gpuCompatActive ? 'ligada' : 'desligada'}.`,
-      h('select.gpucompat', { onchange: async (e) => { await desktop.setSettings({ gpuCompat: e.target.value }); if (await confirmBox('Reiniciar o LocalCord?', 'A compatibilidade de vídeo só muda depois de reiniciar o app. Se estiver numa chamada, você sai dela.', 'Reiniciar agora')) desktop.relaunch(); else toast('Vale na próxima vez que abrir o app'); } },
+      h('select.gpucompat', { onchange: async (e) => { await desktop.setSettings({ gpuCompat: e.target.value }); if (await confirmBox('Reiniciar a Resenha?', 'A compatibilidade de vídeo só muda depois de reiniciar o app. Se estiver numa chamada, você sai dela.', 'Reiniciar agora')) desktop.relaunch(); else toast('Vale na próxima vez que abrir o app'); } },
         [['auto', 'Automático'], ['on', 'Ligada'], ['off', 'Desligada']].map(([v, l]) => h('option', { value: v, selected: (s.gpuCompat || 'auto') === v }, l)))),
     row('Servidor', s.server, h('button.btn.grey', { onclick: () => desktop.changeServer() }, 'Trocar servidor')),
     versionRow(s.version)));

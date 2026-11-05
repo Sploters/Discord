@@ -15,7 +15,7 @@ const ITEMS = [
   { key: 'clipsOn', lite: (v) => (v !== false ? false : undefined), title: 'Gravação de clipes em segundo plano', desc: 'Para de gravar os últimos 60 s das transmissões que você assiste.' },
   { key: 'screen', lite: (v) => { const o = { res: 1080, fps: 30, ...v }; return o.res === 'source' || o.res > 720 || o.fps > 30 ? { ...scr(), res: 720, fps: 30 } : undefined; }, title: 'Transmissão em 720p • 30 fps', desc: 'Valor inicial ao transmitir a tela (dá para mudar na hora). Codificar menos pixels deixa mais folga para o jogo.' },
 ];
-if (desktop) ITEMS.push({ key: null, title: 'Economia em segundo plano', desc: 'Com o app minimizado e fora de chamada, o Windows pode desacelerar o LocalCord.' });
+if (desktop) ITEMS.push({ key: null, title: 'Economia em segundo plano', desc: 'Com o app minimizado e fora de chamada, o Windows pode desacelerar a Resenha.' });
 
 export const liteOn = () => !!S.prefs.lightMode;
 
@@ -54,13 +54,13 @@ export function litePage(ctx) {
     const on = liteOn(), applied = S.prefs.lightPrev?.applied || {};
     box.replaceChildren(
       h('div.card2.litehero' + (on ? '.on' : ''),
-        h('div', h('div.rt', on ? 'Modo leve ativado' : 'Ativar modo leve'), h('div.rd', on ? 'Desligue para voltar exatamente às configurações que você tinha.' : 'Um clique para o LocalCord pesar o mínimo possível no computador. Ideal para jogar com o app aberto.')),
+        h('div', h('div.rt', on ? 'Modo leve ativado' : 'Ativar modo leve'), h('div.rd', on ? 'Desligue para voltar exatamente às configurações que você tinha.' : 'Um clique para a Resenha pesar o mínimo possível no computador. Ideal para jogar com o app aberto.')),
         toggle(on, (v) => { setLite(v, ctx?.voice); draw(); })),
       section('O que o modo leve faz'),
       h('div.card2', ITEMS.map(it => row((on ? (it.key && !(it.key in applied) ? '• ' : '✓ ') : '• ') + it.title, it.desc + (on && it.key && !(it.key in applied) ? ' (já estava assim)' : ''), null))),
-      section('O que já vem leve no LocalCord'),
+      section('O que já vem leve na Resenha'),
       h('div.card2',
-        row('Sem sobreposição dentro do jogo', 'O LocalCord não injeta nada no jogo, então não há overlay para desligar.', null),
+        row('Sem sobreposição dentro do jogo', 'A Resenha não injeta nada no jogo, então não há overlay para desligar.', null),
         row('Sem coleta de dados', 'Nenhum rastreamento ou telemetria: o servidor é seu.', null),
         row('Prioridade normal', 'O app roda com prioridade normal do Windows; não é preciso mexer no Gerenciador de Tarefas.', null)),
       ...(desktop ? [section('Opcional'), h('div.card2', h('div.hdacc', 'Carregando…'))] : []));

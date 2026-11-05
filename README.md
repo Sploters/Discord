@@ -1,4 +1,4 @@
-# LocalCord
+# Resenha
 
 Chat + voz + vídeo + transmissão de tela auto-hospedado, com layout inspirado no Discord. O servidor roda em Linux/Umbrel/Docker; os amigos usam o **aplicativo desktop** (Windows) ou o navegador, conectados pela VPN (Tailscale / Hamachi / Radmin). Não usa código nem assets do Discord.
 
@@ -63,7 +63,7 @@ Na call, o botão de máscara (painel de voz e controles da sala) abre 9 efeitos
 No menu de clipes da transmissão, **Salvar e cortar…** abre os últimos 60 s numa linha do tempo para escolher o trecho; na galeria, **Cortar (cria uma cópia)…** faz o mesmo com um clipe já salvo. O corte não recomprime o vídeo (instantâneo, sem perda): o início encaixa no quadro-chave anterior (até ~1 s antes) e o fim é exato.
 
 ## Aplicativo desktop (Windows)
-O controle remoto usa o programa nativo `native/lc-input` (Rust); o `.exe` já compilado está em `desktop/native/` e entra no instalador. Instaladores em `desktop/dist/`: `LocalCord-Setup-<versão>.exe` e `LocalCord-Portable-<versão>.exe`. No primeiro uso o app pede o endereço do servidor (IP da VPN). Regerar: `cd desktop && npm install && npm run dist`.
+O controle remoto usa o programa nativo `native/lc-input` (Rust); o `.exe` já compilado está em `desktop/native/` e entra no instalador. Instaladores em `desktop/dist/`: `Resenha-Setup-<versão>.exe` e `Resenha-Portable-<versão>.exe`. No primeiro uso o app pede o endereço do servidor (IP da VPN). Regerar: `cd desktop && npm install && npm run dist`.
 
 ## Desenvolvimento
 O cliente do SFU fica em `public/vendor/msc/` (gerado de `mediasoup-client`): `npm install && npm run build:vendor`.

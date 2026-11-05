@@ -8,10 +8,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import https from 'node:https';
 
-const SETUP = /^LocalCord-Setup-[\d.]+\.exe$/i;
+const SETUP = /^(Resenha|LocalCord)-Setup-[\d.]+\.exe$/i;
 
 export function mountDesktopUpdate(app, dataDir) {
-  const REPO = process.env.DESKTOP_REPO || 'Sploters/Discord';
+  const REPO = process.env.DESKTOP_REPO || 'Sploters/Resenha';
   const dir = path.join(dataDir, 'desktop');
   const token = () => {
     if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN.trim();
@@ -20,7 +20,7 @@ export function mountDesktopUpdate(app, dataDir) {
   // pedido ao GitHub (segue redirecionamentos; a chave só vai para api.github.com)
   const get = (url, accept, hops = 5) => new Promise((resolve, reject) => {
     const u = new URL(url), t = u.hostname === 'api.github.com' ? token() : '';
-    const req = https.get(u, { headers: { 'User-Agent': 'LocalCord', Accept: accept, ...(t ? { Authorization: `Bearer ${t}` } : {}) }, timeout: 15000 }, (res) => {
+    const req = https.get(u, { headers: { 'User-Agent': 'Resenha', Accept: accept, ...(t ? { Authorization: `Bearer ${t}` } : {}) }, timeout: 15000 }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && hops > 0) { res.resume(); resolve(get(new URL(res.headers.location, u).href, accept, hops - 1)); return; }
       resolve(res);
     });

@@ -1,5 +1,5 @@
 //! Transmissão nativa: captura a tela/janela sem o limite de 48 fps, comprime em H.264 na placa de vídeo e envia
-//! por SRTP para o servidor do LocalCord (PlainTransport do mediasoup).
+//! por SRTP para o servidor da Resenha (PlainTransport do mediasoup).
 //! Modos:
 //!   --code "LC120 <host> <porta> <ssrc> <pt> [<chave> <chave do servidor>]" [--secs 60] [--fps 120] [--height 1080] [--kbps 16000]
 //!       teste do pacote: imprime um resumo JSON no fim
@@ -104,7 +104,7 @@ fn main() {
             secs: v["secs"].as_u64().unwrap_or(0), layers, source: src, app: true, stop }
     } else {
         let Some((host, port, ssrc, pt, key)) = parse_code(&arg("--code", "")) else {
-            eprintln!("Codigo invalido. Gere o codigo no LocalCord (Configuracoes > Transmissao > Teste 120 FPS) e cole aqui.");
+            eprintln!("Codigo invalido. Gere o codigo na Resenha (Configuracoes > Transmissao > Teste 120 FPS) e cole aqui.");
             std::process::exit(2);
         };
         let top = Layer { ssrc, height: arg("--height", "1080").parse().unwrap_or(1080), fps: arg("--fps", "120").parse().unwrap_or(120), kbps: arg("--kbps", "16000").parse().unwrap_or(16000) };

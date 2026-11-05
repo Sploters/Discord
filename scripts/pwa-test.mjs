@@ -33,7 +33,7 @@ try {
   const off = await P.evaluate(() => ({ title: document.title, scripts: !!document.querySelector('script[src*="app.js"]'), app: !!window.__lc })).catch(e => ({ err: e.message }));
   await sleep(1500);
   const shell = await P.evaluate(() => !!window.__lc && !!document.querySelector('#app, #auth')).catch(() => false);
-  ok(off.title === 'LocalCord' && shell, 'sem internet, o app ainda abre (da cópia guardada)', { ...off, ms: Date.now() - t0 });
+  ok(off.title === 'Resenha' && shell, 'sem internet, o app ainda abre (da cópia guardada)', { ...off, ms: Date.now() - t0 });
   await P.setOfflineMode(false);
 } catch (e) { console.log('ERRO', e.message); fails++; }
 finally { await browser.close(); srv.kill(); fs.rmSync(DATA, { recursive: true, force: true }); console.log(fails ? `\n${fails} falha(s)` : '\ntudo ok'); setTimeout(() => process.exit(fails ? 1 : 0), 300); }

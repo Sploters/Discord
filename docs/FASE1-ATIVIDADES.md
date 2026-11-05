@@ -8,7 +8,7 @@ Escopo desta etapa: **só Steam**. Nada de Riot/Epic. Não toca na Fase 3.
 | Amigos | `relationships(user_id, other_id, type)`; amigo = `type=1` nas duas direções (3 = pedido recebido, 4 = pedido enviado, 2 = bloqueado) | quem pode ver a atividade |
 | Entrega em tempo real | `dispatch(userIds, type, d)` + `conns` | evento novo `ACTIVITY_UPDATE` |
 | Estado inicial | `buildReady(uid)` | `READY.activities` (amigos jogando agora) |
-| Online/offline | `pubUser().status` (`conns` + `users.status`) | continua sendo a presença do **LocalCord**; a Steam é outra camada |
+| Online/offline | `pubUser().status` (`conns` + `users.status`) | continua sendo a presença da **Resenha**; a Steam é outra camada |
 | Chamadas/transmissões | `S.voice` (quem está em qual sala, `screen`), `joinVoice`, `voice.openStream` | botões "Entrar na chamada" / "Assistir" dos cartões |
 | Preferências | `users.settings` (JSON sincronizado) | preferências de interface do feed |
 | Perfil | `card.js`, `profile()` em `app.js` | seção "Jogos" e abertura do perfil |
@@ -27,7 +27,7 @@ server/index.js                rotas /api/integrations/*, /api/activity/*, event
 **Contrato do adaptador** (`id`, `name`, `capabilities`):
 `configured()` · `startLink({ returnTo, realm })` → URL · `finishLink(query, { returnTo })` → `{ external_id, … }` · `poll(externalIds)` → `Map(external_id → snapshot)`.
 `snapshot` normalizado: `{ name, avatar, profileUrl, state: 'online'|'offline'|'away'|…, visibility: 'public'|'private', game: { id, title } | null }`.
-O resto do LocalCord só enxerga snapshots; trocar/adicionar Riot depois é escrever outro arquivo de adaptador.
+O resto da Resenha só enxerga snapshots; trocar/adicionar Riot depois é escrever outro arquivo de adaptador.
 
 ### Dados (SQLite)
 - `linked_accounts(user_id, platform, external_id, display_name, avatar, profile_url, visibility, linked_at, last_sync, sync_state)` — **sem token** (Steam OpenID não gera segredo por usuário). Único por `(user_id, platform)` e por `(platform, external_id)`.

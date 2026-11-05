@@ -11,7 +11,7 @@ Data: 2026-11-03. Relatado em um PC específico (não reproduzido em outros); as
 
 Diagnóstico: o `main.log` (pasta de dados do app) registra a placa detectada, o driver e se a compatibilidade está ativa (`gpu … antiga … compat ativa …`).
 
-Se o ícone continuar em branco depois de atualizar, pode ser o cache de ícones do Windows: desafixe o LocalCord da barra de tarefas, feche o app e abra pelo menu Iniciar (ou reinicie o Windows).
+Se o ícone continuar em branco depois de atualizar, pode ser o cache de ícones do Windows: desafixe a Resenha da barra de tarefas, feche o app e abra pelo menu Iniciar (ou reinicie o Windows).
 
 ## Clipe/vídeo em tela cheia escuro, com cores estouradas (desktop 1.0.16)
 

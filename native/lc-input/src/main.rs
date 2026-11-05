@@ -1,4 +1,4 @@
-//! lc-input — injeta o mouse e o teclado do controle remoto do LocalCord (Windows).
+//! lc-input — injeta o mouse e o teclado do controle remoto da Resenha (Windows).
 //! Iniciado pelo app desktop, conversa só pela entrada/saída padrão (nenhuma porta de rede).
 //! Segurança:
 //!  - só injeta "armado" (o app arma depois que o dono aceitou no próprio PC) e só dentro do monitor transmitido;

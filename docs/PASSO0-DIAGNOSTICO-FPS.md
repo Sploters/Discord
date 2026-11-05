@@ -73,7 +73,7 @@ Um caso "livre" (sem restrição de fps) com as flags WGC entregou 0 fps uma vez
 1. Em todos os 17 testes de pipeline os contadores de captura, entrega e codificação são iguais; o que sai do capturador é o que chega ao espectador. Nenhuma etapa posterior perde quadros.
 2. O codificador **não** limita: `qualityLimitationReason = none` sempre, e com fonte sintética a NVENC codifica 142 fps a 1080p em 3,9 ms/quadro (o app gasta 7 ms com 3 camadas, equivalente a ~140 fps de folga).
 3. Número de camadas (1 vs 3), codec (H.264 vs VP8), resolução (720/1080/original) e tela vs janela **não alteram** o teto: ficam entre 44,6 e 48,0 fps pedindo 120.
-4. O mesmo teto aparece sem WebRTC, sem codificação e sem servidor (item 1), e também no **Edge estável**, então não é peculiaridade do Electron nem do código do LocalCord.
+4. O mesmo teto aparece sem WebRTC, sem codificação e sem servidor (item 1), e também no **Edge estável**, então não é peculiaridade do Electron nem do código da Resenha.
 5. O valor pedido não importa acima de 60: 60, 120 e 240 dão a mesma coisa. Os intervalos entre quadros se agrupam em múltiplos de ~16 ms (mediana 16,1 ms, p95 ~32 ms), padrão de um capturador que amostra em grade de ~60 Hz e perde ticks, contra uma fonte de 144 Hz.
 
 O que **não** foi isolado: *por que* exatamente o capturador entrega 45–48 e não 60. Hipótese (não provada): leitura de quadro por CPU a ~60 Hz e perda de ticks. Para provar seria preciso instrumentar o próprio Chromium ou comparar com um capturador nativo (próximo passo abaixo).
@@ -164,7 +164,7 @@ de teste fica em 35-50 (sem GPU); não vale como medida.
 | Quadros-chave / NACK / PLI | 31 (GOP 2 s) / 0 / 0 |
 Sem erros de conversão nem de entrada. A parte Windows funcionou na primeira execução.
 
-### Lado de quem assiste (o mesmo PC, app do LocalCord, vídeo indo e voltando pelo Umbrel), 60 s
+### Lado de quem assiste (o mesmo PC, app da Resenha, vídeo indo e voltando pelo Umbrel), 60 s
 | Medida | média | mediana | pior segundo* |
 |---|---|---|---|
 | Recebidos | 119,0 | 120 | 119 |

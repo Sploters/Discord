@@ -1,4 +1,4 @@
-// App instalável (PWA): registra o service worker (sw.js) e oferece "Instalar o LocalCord".
+// App instalável (PWA): registra o service worker (sw.js) e oferece "Instalar a Resenha".
 // - Android e Chrome/Edge no computador: o navegador avisa que dá para instalar (beforeinstallprompt) e o cartão
 //   mostra o botão "Instalar".
 // - iPhone/iPad (Safari não tem botão de instalar): o cartão explica Compartilhar → Adicionar à Tela de Início.
@@ -24,10 +24,10 @@ export function showCard(force) {
   if (card || standalone() || (!force && later())) return;
   const ios = !deferred && isIos();
   const close = () => { try { localStorage.setItem(KEY, String(Date.now())); } catch { } card?.remove(); card = null; };
-  card = h('div.appupd.pwacard', { role: 'dialog', 'aria-label': 'Instalar o LocalCord' },
+  card = h('div.appupd.pwacard', { role: 'dialog', 'aria-label': 'Instalar a Resenha' },
     h('div.au-ico', h('img', { src: '/icons/icon-192.png', alt: '', width: 36, height: 36 })),
     h('div.au-body',
-      h('b', 'Instale o LocalCord'),
+      h('b', 'Instale a Resenha'),
       ios
         ? h('p', 'Toque em ', h('span.pwa-share', icon('upload', 14)), ' Compartilhar e depois em ', h('b.pwa-inline', 'Adicionar à Tela de Início'), '. Ele abre como app, em tela cheia.')
         : h('p', 'Abre como um app, na tela cheia, direto da tela inicial ou da barra de tarefas, e carrega mais rápido.'),

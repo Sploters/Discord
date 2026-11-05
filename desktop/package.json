@@ -1,9 +1,9 @@
 {
-  "name": "localcord-desktop",
+  "name": "resenha-desktop",
   "version": "1.0.23",
-  "description": "LocalCord Desktop — cliente do seu servidor LocalCord",
+  "description": "Resenha Desktop — cliente do seu servidor Resenha",
   "main": "main.js",
-  "author": "LocalCord",
+  "author": "Resenha",
   "private": true,
   "scripts": {
     "start": "electron .",
@@ -13,7 +13,7 @@
   },
   "build": {
     "appId": "br.local.localcord",
-    "productName": "LocalCord",
+    "productName": "Resenha",
     "directories": {
       "output": "dist"
     },
@@ -39,11 +39,11 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "artifactName": "LocalCord-Setup-${version}.${ext}"
+      "artifactName": "Resenha-Setup-${version}.${ext}"
     },
     "portable": {
       "splashImage": "build/splash.bmp",
-      "artifactName": "LocalCord-Portable-${version}.${ext}"
+      "artifactName": "Resenha-Portable-${version}.${ext}"
     },
     "extraResources": [
       {

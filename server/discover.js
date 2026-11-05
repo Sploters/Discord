@@ -26,7 +26,7 @@ const DEFAULT_NEWS = [
   { name: 'GameSpot', url: 'https://www.gamespot.com/feeds/mashup/', lang: 'en' },
   { name: 'Polygon', url: 'https://www.polygon.com/rss/index.xml', lang: 'en' },
 ];
-const UA = 'Mozilla/5.0 (compatible; LocalCord-Discover/1.0; +https://github.com/Sploters)';
+const UA = 'Mozilla/5.0 (compatible; Resenha-Discover/1.0; +https://github.com/Sploters)';
 
 // ---------- texto ----------
 const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', hellip: '…', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“' };

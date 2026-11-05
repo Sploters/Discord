@@ -1,4 +1,4 @@
-# LocalCord — Fase 0: auditoria e planejamento técnico
+# Resenha — Fase 0: auditoria e planejamento técnico
 
 Data: 2026-11-02. Somente leitura: nenhum código de produto foi alterado.
 Tudo abaixo foi verificado lendo o repositório (`server/`, `public/`, `desktop/`, `deploy/`, `scripts/`). O que é hipótese está marcado como **[hipótese]**.

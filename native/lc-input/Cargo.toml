@@ -2,7 +2,7 @@
 name = "lc-input"
 version = "0.1.0"
 edition = "2021"
-description = "LocalCord: injeta mouse e teclado do controle remoto (Windows). Recebe comandos do app desktop pela entrada padrão."
+description = "Resenha: injeta mouse e teclado do controle remoto (Windows). Recebe comandos do app desktop pela entrada padrão."
 publish = false
 
 [dependencies]

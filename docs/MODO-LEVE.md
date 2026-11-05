@@ -1,6 +1,6 @@
 # Modo leve
 
-Data: 2026-11-03. Um botão em **Configurações → Modo leve** (primeiro item de "Configurações do aplicativo"; também aparece buscando "desempenho", "fps", "jogo", "otimizar") para o LocalCord pesar o mínimo possível no computador, pensado para quem joga com o app aberto e não entende de otimização.
+Data: 2026-11-03. Um botão em **Configurações → Modo leve** (primeiro item de "Configurações do aplicativo"; também aparece buscando "desempenho", "fps", "jogo", "otimizar") para a Resenha pesar o mínimo possível no computador, pensado para quem joga com o app aberto e não entende de otimização.
 
 ## O que o botão muda
 | Item | Valor leve | Por quê |
@@ -14,7 +14,7 @@ Data: 2026-11-03. Um botão em **Configurações → Modo leve** (primeiro item 
 
 Itens que já estavam no valor leve não são tocados (a página mostra "já estava assim").
 
-Do procedimento original do Discord, ficaram de fora de propósito: **sobreposição no jogo, telemetria e prioridade do processo** (o LocalCord não tem nada disso; a página diz isso em "O que já vem leve no LocalCord") e **aceleração de hardware**, que fica como opção separada com aviso: no LocalCord ela joga interface e vídeo para a CPU e costuma pesar mais.
+Do procedimento original do Discord, ficaram de fora de propósito: **sobreposição no jogo, telemetria e prioridade do processo** (a Resenha não tem nada disso; a página diz isso em "O que já vem leve na Resenha") e **aceleração de hardware**, que fica como opção separada com aviso: na Resenha ela joga interface e vídeo para a CPU e costuma pesar mais.
 
 ## Regras de estado
 - **Local à máquina.** `lightMode` e `lightPrev` estão em `DEVICE_KEYS` (não vão para a conta). Ao sincronizar, `unlite` envia para a conta os valores de antes no lugar dos valores leves, então o celular e outros PCs não herdam o modo leve.
@@ -27,12 +27,12 @@ Do procedimento original do Discord, ficaram de fora de propósito: **sobreposi�
 ## Desktop 1.0.14
 A economia em segundo plano precisa do app desktop **1.0.14** (`desktop/main.js` ganhou o IPC `set-throttle`, `preload.js` expõe `lcDesktop.setThrottle`). Em versões anteriores do app o resto do modo leve funciona normalmente; só a economia em segundo plano não existe (o renderer verifica `desktop.setThrottle` antes de usar).
 
-Build: `cd desktop && npm ci && npm run dist` gera `dist/LocalCord-Setup-1.0.14.exe` e `dist/LocalCord-Portable-1.0.14.exe`. O 7-Zip do electron-builder falha em caminhos com acento (ex.: `JoãoSantos`): rode o build a partir de uma cópia da pasta `desktop` num caminho só com ASCII. **A versão não foi publicada**: a atualização automática só a oferece depois de criada a release `v1.0.14` no GitHub com o instalador anexado.
+Build: `cd desktop && npm ci && npm run dist` gera `dist/Resenha-Setup-1.0.14.exe` e `dist/Resenha-Portable-1.0.14.exe`. O 7-Zip do electron-builder falha em caminhos com acento (ex.: `JoãoSantos`): rode o build a partir de uma cópia da pasta `desktop` num caminho só com ASCII. **A versão não foi publicada**: a atualização automática só a oferece depois de criada a release `v1.0.14` no GitHub com o instalador anexado.
 
 ### Como testar a economia (manual)
 1. Instale o 1.0.14 e entre no servidor. Ligue o **Modo leve**.
-2. Abra o Gerenciador de Tarefas → aba Detalhes e deixe visível a coluna CPU dos processos `LocalCord.exe`.
-3. Fora de chamada, minimize o LocalCord para a bandeja e espere ~1 min: a CPU do processo do renderer deve cair (timers da página passam a rodar no máximo 1×/s, depois de 5 min 1×/min). Mensagens e notificações continuam chegando (são eventos do WebSocket, não timers).
+2. Abra o Gerenciador de Tarefas → aba Detalhes e deixe visível a coluna CPU dos processos `Resenha.exe`.
+3. Fora de chamada, minimize a Resenha para a bandeja e espere ~1 min: a CPU do processo do renderer deve cair (timers da página passam a rodar no máximo 1×/s, depois de 5 min 1×/min). Mensagens e notificações continuam chegando (são eventos do WebSocket, não timers).
 4. Entre numa sala de voz e minimize de novo: voz, indicador de quem fala e push-to-talk global continuam normais (a economia é suspensa em chamada).
 5. Saia da chamada com a janela minimizada: a economia volta sozinha.
 6. Desligue o Modo leve: a página volta a rodar sem desaceleração mesmo escondida (comportamento anterior).

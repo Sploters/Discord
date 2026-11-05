@@ -39,7 +39,7 @@ export function openNews(id = latest()) {
   markSeen();
   let m;
   const close = () => m?.close();
-  const body = h('div.newsbody', h('p.newsintro', 'O que chegou desde a última vez que você abriu o LocalCord:'), h('div.newslist', n.items.map(it => card(it, close))));
+  const body = h('div.newsbody', h('p.newsintro', 'O que chegou desde a última vez que você abriu a Resenha:'), h('div.newslist', n.items.map(it => card(it, close))));
   m = modal(`Novidades — ${n.title}`, null, body, [{ label: 'Ver todas as novidades', cls: 'link', fn: () => { setTimeout(() => actions.settings?.(), 50); } }, { label: 'Legal!', cls: 'green' }], { width: '620px' });
 }
 export function markSeen() { if (S.prefs.newsSeen !== latest()) { S.prefs.newsSeen = latest(); savePrefs(); } }

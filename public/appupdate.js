@@ -8,7 +8,7 @@
 // "Depois" esconde o aviso até o app abrir de novo.
 import { h, icon } from './util.js';
 
-const REPO = 'Sploters/Discord';
+const REPO = 'Sploters/Resenha';
 const RELEASES = `https://github.com/${REPO}/releases/latest`;
 const newer = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
 
@@ -23,7 +23,7 @@ export async function checkAppUpdate() {
   if (!found.length) {
     try {
       const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' });
-      if (r.ok) { const j = await r.json(); if (j.assets?.some(a => /^LocalCord-Setup-.*\.exe$/i.test(a.name))) found.push(String(j.tag_name || '').replace(/^v/i, '')); }
+      if (r.ok) { const j = await r.json(); if (j.assets?.some(a => /^(Resenha|LocalCord)-Setup-.*\.exe$/i.test(a.name))) found.push(String(j.tag_name || '').replace(/^v/i, '')); }
     } catch { }
   }
   const fromApp = (await d.getUpdate?.().catch(() => null))?.version; if (fromApp) found.push(fromApp);
@@ -47,12 +47,12 @@ function showCard(version) {
   const btn = h('button.btn.green', { onclick: async () => {
     btn.disabled = true; later.disabled = true; btn.textContent = 'Baixando…';
     msg.textContent = 'O app fecha sozinho e abre o instalador quando o download terminar.';
-    if (!await installAppUpdate()) { btn.disabled = false; later.disabled = false; btn.textContent = 'Atualizar agora'; msg.textContent = 'Baixando o instalador: quando terminar, abra o LocalCord-Setup.'; }
+    if (!await installAppUpdate()) { btn.disabled = false; later.disabled = false; btn.textContent = 'Atualizar agora'; msg.textContent = 'Baixando o instalador: quando terminar, abra o Resenha-Setup.'; }
   } }, 'Atualizar agora');
   const later = h('button.btn.link', { onclick: () => { try { sessionStorage.setItem('lc_upd_later', version); } catch { } shown?.remove(); shown = null; } }, 'Depois');
   shown = h('div.appupd', { 'data-v': version, role: 'status' },
     h('div.au-ico', icon('dl', 20)),
-    h('div.au-body', h('b', `LocalCord ${version} disponível`), msg, h('div.au-btns', later, btn)));
+    h('div.au-body', h('b', `Resenha ${version} disponível`), msg, h('div.au-btns', later, btn)));
   document.body.append(shown);
 }
 

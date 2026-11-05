@@ -2,7 +2,7 @@
 name = "lc-stream"
 version = "0.1.0"
 edition = "2021"
-description = "LocalCord: transmissão de tela nativa (WGC sem limite de fps -> H.264 na placa de vídeo -> SRTP para o SFU)."
+description = "Resenha: transmissão de tela nativa (WGC sem limite de fps -> H.264 na placa de vídeo -> SRTP para o SFU)."
 publish = false
 
 [[bin]]
