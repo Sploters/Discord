@@ -10,16 +10,19 @@ let D, st = { tabs: [], active: null, favs: [] }, uid = 0;
 const same = (a, b) => a.gid === b.gid && (a.cid || null) === (b.cid || null);
 const save = () => store(st);
 
-function label(t) {
-  if (t.gid === '@me' && !t.cid) return 'Amigos';
-  if (t.cid === 'clips') return '🎬 Clipes'; // galeria de clipes do servidor
-  if (t.cid === 'lfg') return '🎮 Procurar jogadores';
-  if (t.cid === 'discover') return '🧭 Descobrir';
+// nome da aba/favorito: ícone em SVG + texto (title() usa só o texto)
+function parts(t) {
+  if (t.gid === '@me' && !t.cid) return ['users', 'Amigos'];
+  if (t.cid === 'clips') return ['clip', 'Clipes']; // galeria de clipes do servidor
+  if (t.cid === 'lfg') return ['gamepad', 'Procurar jogadores'];
+  if (t.cid === 'discover') return ['compass', 'Descobrir'];
   const ch = D.channelById(t.cid);
-  if (!ch) return 'Canal removido';
-  if (ch.type === 1) return '@' + D.user(D.dmPeer(ch).id).display_name;
-  return (ch.type === 2 ? '🔊 ' : '# ') + chName(ch);
+  if (!ch) return [null, 'Canal removido'];
+  if (ch.type === 1) return [null, '@' + D.user(D.dmPeer(ch).id).display_name];
+  return [ch.type === 2 ? 'voice' : 'hash', chName(ch)];
 }
+const label = (t) => parts(t)[1];
+const labelEl = (t) => { const [ic, txt] = parts(t); return [ic && h('span.ct-ico', icon(ic, 14)), h('span.ct-txt', txt)]; };
 const title = (t) => { const ch = D.channelById(t.cid), g = t.cid === 'clips' ? D.guild(t.gid) : ch?.guild_id && D.guild(ch.guild_id); return label(t) + (g ? ' — ' + g.name : ''); };
 const here = () => ({ gid: D.S.view.gid || '@me', cid: D.S.view.cid || null });
 const alive = (t) => !t.cid || t.cid === 'lfg' || t.cid === 'discover' || (t.cid === 'clips' ? !!D.guild(t.gid) : !!D.channelById(t.cid));
@@ -57,12 +60,12 @@ function build() {
   const tabEls = st.tabs.map(t => h('div.ct-tab' + (t.id === st.active ? '.active' : ''), {
     title: title(t), onclick: () => { st.active = t.id; save(); open(t); draw(); },
     onauxclick: (e) => { if (e.button === 1) { e.preventDefault(); closeTab(t.id); } }, oncontextmenu: (e) => tabMenu(e, t),
-  }, h('span.ct-name', label(t)), badge(t), st.tabs.length > 1 && h('button.ct-x', { title: 'Fechar aba', onclick: (e) => { e.stopPropagation(); closeTab(t.id); } }, icon('x', 12))));
+  }, h('span.ct-name', labelEl(t)), badge(t), st.tabs.length > 1 && h('button.ct-x', { title: 'Fechar aba', onclick: (e) => { e.stopPropagation(); closeTab(t.id); } }, icon('x', 12))));
   const favEls = st.favs.filter(alive).map(f => h('div.ct-fav', {
     title: title(f), onclick: () => { const a = st.tabs.find(t => t.id === st.active); if (a) { a.gid = f.gid; a.cid = f.cid; save(); } open(f); },
     onauxclick: (e) => { if (e.button === 1) { e.preventDefault(); addTab({ gid: f.gid, cid: f.cid }); open(f); draw(); } },
     oncontextmenu: (e) => { e.preventDefault(); D.menu(e, [{ label: 'Abrir em nova aba', fn: () => { addTab({ gid: f.gid, cid: f.cid }); open(f); } }, { label: 'Remover dos favoritos', fn: () => toggleFav(f) }]); },
-  }, label(f)));
+  }, labelEl(f)));
   const isFav = st.favs.some(f => same(f, cur));
   return h('div#chtabs',
     h('div.ct-list', tabEls, h('button.ct-add', { title: 'Nova aba (duplica a atual)', onclick: () => { addTab({ ...cur }); draw(); } }, icon('plus', 14))),
@@ -137,7 +140,13 @@ export function initPlugins(deps) {
     try { follow(); if (document.getElementById('chtabs') !== main.firstElementChild) { document.getElementById('chtabs')?.remove(); main.prepend(build()); } else draw(); hideButton(); }
     finally { busy = false; }
   };
-  new MutationObserver(() => { if (document.getElementById('chtabs') !== main.firstElementChild || !document.getElementById('hide-side')) sync(); }).observe(main, { childList: true });
+  // Procurar jogadores e Descobrir redesenham a própria barra de cima (#topbar) depois de carregar: por isso olha
+  // também dentro do #main (subtree) e recoloca o botão de mostrar/ocultar canais se ele sumiu
+  new MutationObserver(() => {
+    if (busy) return;
+    if (document.getElementById('chtabs') !== main.firstElementChild) sync();
+    else if (!document.getElementById('hide-side') && document.getElementById('topbar')) hideButton();
+  }).observe(main, { childList: true, subtree: true });
   window.addEventListener('hashchange', () => setTimeout(sync, 0));
   document.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;

@@ -186,7 +186,7 @@ function interestsBox() {
 // cartão genérico do "Para você" (cada item usa o cartão do seu tipo)
 const mixCard = (x) => (x.kind === 'deal' ? dealCard : x.kind === 'tour' ? tourCard : x.kind === 'up' ? upCard : x.kind === 'news' ? newsCard : riseCard)(x);
 function homeTab() {
-  const ch = st.data.charts, deals = st.data.deals?.items || [], ups = st.data.upcoming?.items || [], news = st.data.news?.items || [];
+  const ch = st.data.charts?.playing ? st.data.charts : null, deals = st.data.deals?.items || [], ups = st.data.upcoming?.items || [], news = st.data.news?.items || [];
   const tours = (st.data.tournaments?.items || []).filter(inRegion);
   const out = [interestsBox()];
   // Para você: o que combina com os interesses; cada tipo numa fila e intercalados (promoção, torneio, Steam, lançamento, notícia...)

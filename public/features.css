@@ -60,13 +60,14 @@ html.anim .btn:active, html.anim .roundbtn:active { transform: scale(.95); }
 #chtabs .ct-list { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; } #chtabs .ct-list::-webkit-scrollbar { display: none; }
 .ct-tab { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 6px 0 10px; border-radius: 6px; color: var(--interactive); cursor: pointer; font-size: 13px; font-weight: 500; flex: 0 1 170px; min-width: 70px; max-width: 170px; }
 .ct-tab:hover { background: var(--bg-mod-hover); color: var(--interactive-hover); } .ct-tab.active { background: var(--bg-pri); color: #fff; }
-.ct-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.ct-name { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1; } .ct-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ct-ico { display: inline-flex; flex: none; color: var(--text-muted); } .ct-ico svg { fill: currentColor; } .ct-tab.active .ct-ico { color: var(--interactive); }
 .ct-x, .ct-add, .ct-star { border: 0; background: none; color: inherit; display: flex; align-items: center; justify-content: center; border-radius: 4px; cursor: pointer; padding: 3px; opacity: .7; } .ct-x:hover, .ct-add:hover, .ct-star:hover { opacity: 1; background: var(--bg-mod-hover); }
 .ct-add, .ct-star { color: var(--interactive); } .ct-star.on { color: #f0b232; opacity: 1; }
 .ct-pill { background: var(--red); color: #fff; border-radius: 8px; padding: 0 5px; font-size: 11px; font-weight: 700; } .ct-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; flex: none; }
 .ct-favs { display: flex; align-items: center; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; } .ct-favs::-webkit-scrollbar { display: none; }
 .ct-sep { width: 1px; height: 18px; background: var(--divider); margin: 0 4px; flex: none; }
-.ct-fav { padding: 2px 8px; border-radius: 10px; font-size: 12px; background: var(--bg-mod-hover); color: var(--interactive); cursor: pointer; white-space: nowrap; flex: none; max-width: 140px; overflow: hidden; text-overflow: ellipsis; } .ct-fav:hover { color: #fff; }
+.ct-fav { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; font-size: 12px; background: var(--bg-mod-hover); color: var(--interactive); cursor: pointer; white-space: nowrap; flex: none; max-width: 140px; overflow: hidden; text-overflow: ellipsis; } .ct-fav:hover { color: #fff; } .ct-fav .ct-ico { color: inherit; opacity: .75; }
 
 /* ---- esconder lista de canais ---- */
 #hide-side.sel { color: #fff; }
