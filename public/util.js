@@ -87,8 +87,6 @@ const I = {
   wifi: 'M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3a4.24 4.24 0 0 0-6 0zm-4-4l2 2a7.07 7.07 0 0 1 10 0l2-2C15.14 9.14 8.87 9.14 5 13z',
   music: 'M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6Z',
   play: 'M8 5v14l11-7Z',
-  vol: 'M3 9v6h4l5 5V4L7 9Zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4ZM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6Z',
-  volmute: 'M3 9v6h4l5 5V4L7 9Zm13.6 3 2.7-2.7-1.4-1.4-2.7 2.7-2.7-2.7-1.4 1.4 2.7 2.7-2.7 2.7 1.4 1.4 2.7-2.7 2.7 2.7 1.4-1.4Z',
   pause: 'M6 5h4v14H6Zm8 0h4v14h-4Z',
   stop: 'M6 6h12v12H6Z',
   send: 'M3 20.5v-6.2l9-2.3-9-2.3V3.5L22 12Z',
@@ -207,16 +205,12 @@ for (const fn of ['append', 'prepend', 'replaceChildren']) for (const P of [Elem
 // (sobreposição de hardware, realce de vídeo do driver); em alguns PCs isso deixa a imagem escura e
 // com cores estouradas. Assim o vídeo continua sendo desenhado pela página, igual fora da tela cheia.
 export function fsVideo(attrs = {}, cls = '') {
-  // app desktop: controles próprios EMBAIXO do vídeo, nunca por cima. Com algo sobreposto (os controles nativos) o
-  // Chromium troca o caminho de desenho do vídeo; numa RTX isso dava piscadas pretas e imagem escura enquanto os
-  // controles apareciam. Sem nada por cima, o vídeo fica sempre no mesmo caminho. No navegador seguem os nativos.
-  const own = !!window.lcDesktop;
-  const v = h('video', { controls: !own, playsInline: true, disablePictureInPicture: true, ...attrs });
+  const v = h('video', { controls: true, playsInline: true, disablePictureInPicture: true, ...attrs });
   v.setAttribute('controlslist', 'nofullscreen noremoteplayback');
-  const box = h('div.fsvid' + cls + (own ? '.ownbar' : ''), v);
+  const box = h('div.fsvid' + cls, v);
   const toggle = () => { if (document.fullscreenElement === box) document.exitFullscreen?.().catch(() => { }); else box.requestFullscreen?.().catch(() => { }); };
   const btn = h('button.fsvbtn', { type: 'button', title: 'Tela cheia (F)', onclick: (e) => { e.stopPropagation(); toggle(); } }, icon('expand', 18));
-  if (own) box.append(videoBar(v, btn)); else box.append(btn);
+  box.append(btn);
   v.addEventListener('dblclick', (e) => { e.preventDefault(); toggle(); });
   v.addEventListener('keydown', (e) => { if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggle(); } });
   // tocando: sem cantos arredondados no vídeo (a máscara dos cantos obriga a recompor a página a cada quadro; travava em PC fraco)
@@ -224,35 +218,6 @@ export function fsVideo(attrs = {}, cls = '') {
   v.addEventListener('play', on); v.addEventListener('pause', on); v.addEventListener('ended', on);
   box.video = v;
   return box;
-}
-// barra de controles abaixo do vídeo (app desktop): tocar/pausar, tempo, barra de progresso, volume e tela cheia
-const tfmt = (s) => { s = isFinite(s) ? Math.max(0, s) : 0; return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`; };
-function videoBar(v, fsBtn) {
-  const play = h('button.vb-btn', { type: 'button', title: 'Tocar / pausar (espaço)', onclick: () => (v.paused || v.ended ? v.play().catch(() => { }) : v.pause()) }, icon('play', 18));
-  const time = h('span.vb-time', '0:00 / 0:00');
-  const seek = h('input.vb-seek', { type: 'range', name: 'video-seek', 'aria-label': 'Posição do vídeo', min: 0, max: 1000, value: 0, step: 1 });
-  const mute = h('button.vb-btn', { type: 'button', title: 'Som', onclick: () => { v.muted = !v.muted; if (!v.muted && !v.volume) v.volume = 1; } }, icon('vol', 18));
-  const vol = h('input.vb-vol', { type: 'range', name: 'video-volume', 'aria-label': 'Volume', min: 0, max: 1, step: 0.05, value: v.volume });
-  let dragging = false;
-  const paint = () => {
-    const d = v.duration; time.textContent = `${tfmt(v.currentTime)} / ${tfmt(d)}`;
-    if (!dragging) seek.value = isFinite(d) && d ? Math.round((v.currentTime / d) * 1000) : 0;
-    seek.style.setProperty('--p', (seek.value / 10) + '%');
-  };
-  const paintPlay = () => play.replaceChildren(icon(v.paused || v.ended ? 'play' : 'pause', 18));
-  const paintVol = () => { mute.replaceChildren(icon(v.muted || !v.volume ? 'volmute' : 'vol', 18)); vol.value = v.muted ? 0 : v.volume; vol.style.setProperty('--p', (vol.value * 100) + '%'); };
-  seek.addEventListener('input', () => { dragging = true; const d = v.duration; if (isFinite(d)) v.currentTime = (seek.value / 1000) * d; paint(); });
-  seek.addEventListener('change', () => { dragging = false; });
-  vol.addEventListener('input', () => { v.volume = +vol.value; v.muted = !+vol.value; });
-  for (const ev of ['timeupdate', 'durationchange', 'loadedmetadata', 'seeked']) v.addEventListener(ev, paint);
-  for (const ev of ['play', 'pause', 'ended']) v.addEventListener(ev, paintPlay);
-  v.addEventListener('volumechange', paintVol);
-  v.addEventListener('click', () => (v.paused || v.ended ? v.play().catch(() => { }) : v.pause()));
-  v.tabIndex = 0;
-  v.addEventListener('keydown', (e) => { if (e.code === 'Space') { e.preventDefault(); v.paused ? v.play().catch(() => { }) : v.pause(); } });
-  fsBtn.className = 'vb-btn'; fsBtn.replaceChildren(icon('expand', 18));
-  paintVol();
-  return h('div.fvbar', { onclick: (e) => e.stopPropagation(), ondblclick: (e) => e.stopPropagation() }, play, time, seek, h('div.vb-volw', mute, vol), fsBtn);
 }
 
 // roda fn quando el sair da página (popups, painéis, páginas de configuração): solta ouvintes globais na hora,
