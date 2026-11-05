@@ -18,6 +18,7 @@ import { connectionsPage } from './activity.js';
 import { litePage, liteOn } from './lite.js';
 import { openNativeTest } from './nativetest.js';
 import { newsPage } from './changelog.js';
+import { checkAppUpdate, installAppUpdate } from './appupdate.js';
 
 const SWATCHES = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55d', '#faa61a', '#9b59b6', '#1abc9c', '#e67e22', '#3498db', '#95a5a6', '#2c2f33', '#ffffff'];
 const save = () => savePrefs();
@@ -521,6 +522,21 @@ function advancedPage(ctx) {
     section('Configurações'), card(h('div.btns', exportBtn, importBtn, resetBtn), hint('Suas preferências ficam salvas na conta e acompanham você em outros dispositivos (menos os dispositivos de áudio).')),
     section('Informações'), card(row('Contexto seguro (HTTPS)', 'Necessário para microfone, câmera e tela.', h('b', window.isSecureContext ? 'Sim' : 'Não')), row('Servidores ICE', (S.ice || []).map(i => i.urls).join(', ') || '—', null), row('Navegador', navigator.userAgent.slice(0, 90), null)));
 }
+// versão do app desktop com "Procurar atualização": diz se já está na mais nova ou oferece atualizar
+function versionRow(version) {
+  const status = h('span', `LocalCord Desktop ${version}`);
+  const btn = h('button.btn.grey', { onclick: async () => {
+    btn.disabled = true; btn.textContent = 'Procurando…';
+    const r = await checkAppUpdate();
+    btn.disabled = false;
+    if (!r?.latest) { btn.textContent = 'Procurar atualização'; return toast('Não consegui consultar as atualizações agora. Tente de novo em instantes.', true); }
+    if (!r.available) { btn.textContent = 'Procurar atualização'; status.textContent = `LocalCord Desktop ${version} — você está na versão mais nova`; return; }
+    status.textContent = `LocalCord Desktop ${version} — versão ${r.latest} disponível`;
+    btn.className = 'btn green'; btn.textContent = `Atualizar para ${r.latest}`;
+    btn.onclick = async () => { btn.disabled = true; btn.textContent = 'Baixando…'; if (!await installAppUpdate()) { btn.disabled = false; btn.textContent = `Atualizar para ${r.latest}`; toast('Abri a página da versão nova no navegador: baixe o LocalCord-Setup e abra.'); } };
+  } }, 'Procurar atualização');
+  return row('Versão', status, btn);
+}
 function appPage() {
   const box = h('div.card2', 'Carregando…');
   desktop.getSettings().then((s) => box.replaceChildren(
@@ -532,7 +548,7 @@ function appPage() {
       h('select.gpucompat', { onchange: async (e) => { await desktop.setSettings({ gpuCompat: e.target.value }); if (await confirmBox('Reiniciar o LocalCord?', 'A compatibilidade de vídeo só muda depois de reiniciar o app. Se estiver numa chamada, você sai dela.', 'Reiniciar agora')) desktop.relaunch(); else toast('Vale na próxima vez que abrir o app'); } },
         [['auto', 'Automático'], ['on', 'Ligada'], ['off', 'Desligada']].map(([v, l]) => h('option', { value: v, selected: (s.gpuCompat || 'auto') === v }, l)))),
     row('Servidor', s.server, h('button.btn.grey', { onclick: () => desktop.changeServer() }, 'Trocar servidor')),
-    row('Versão', `LocalCord Desktop ${s.version}`, null)));
+    versionRow(s.version)));
   return h('div', h('h2', 'Aplicativo (desktop)'), box);
 }
 
