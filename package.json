@@ -1,5 +1,5 @@
 {
-  "name": "localcord",
+  "name": "resenha",
   "version": "1.0.0",
   "description": "Servidor de chat/voz auto-hospedado com layout inspirado no Discord",
   "type": "module",

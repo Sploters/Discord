@@ -1,4 +1,4 @@
-# Teste da transmissao nativa a 120 FPS (LocalCord). Nao instala nada e nao muda configuracoes do PC.
+# Teste da transmissao nativa a 120 FPS (Resenha). Nao instala nada e nao muda configuracoes do PC.
 $ErrorActionPreference = 'Continue'
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $dir
@@ -15,7 +15,7 @@ Write-Host ''
 Write-Host '  TESTE DA TRANSMISSAO A 120 FPS' -ForegroundColor Cyan
 Write-Host "  Monitor: $hz Hz"
 Write-Host ''
-Write-Host '  1. Abra o LocalCord e entre numa sala de voz.'
+Write-Host '  1. Abra a Resenha e entre numa sala de voz.'
 Write-Host '  2. Configuracoes > Transmissao > "Teste: transmissao a 120 FPS" > Abrir teste > Gerar codigo.'
 Write-Host '     (o codigo e copiado sozinho)'
 Write-Host ''
@@ -25,10 +25,10 @@ while ($code -notmatch '^LC120 \S+ \d+ \d+ \d+( \S+ \S+)?$') {
   if ($code -notmatch '^LC120 \S+ \d+ \d+ \d+( \S+ \S+)?$') { Write-Host '     Codigo invalido: ele comeca com LC120. Tente de novo.' -ForegroundColor Yellow }
 }
 
-# animacao (muda a cada quadro) na metade esquerda da tela; o LocalCord fica na metade direita
+# animacao (muda a cada quadro) na metade esquerda da tela; a Resenha fica na metade direita
 Add-Type -AssemblyName System.Windows.Forms
 $scr = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-$prof = Join-Path $env:TEMP 'localcord-teste-120'
+$prof = Join-Path $env:TEMP 'resenha-teste-120'
 $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
 $url = ([System.Uri](Join-Path $dir 'animacao.html')).AbsoluteUri
 if ($edge) {
@@ -36,17 +36,17 @@ if ($edge) {
 } else { Start-Process $url }
 Write-Host ''
 Write-Host '  4. Abriu uma animacao colorida na metade ESQUERDA da tela.' -ForegroundColor Cyan
-Write-Host '     Coloque o LocalCord (com a janela do teste aberta) na metade DIREITA:'
-Write-Host '     clique no LocalCord e aperte  Windows + seta para a direita.'
+Write-Host '     Coloque a Resenha (com a janela do teste aberta) na metade DIREITA:'
+Write-Host '     clique na Resenha e aperte  Windows + seta para a direita.'
 Write-Host '     Esta janela preta pode ficar atras.'
 Read-Host '  5. Tudo visivel? Aperte Enter para comecar (leva 1 minuto, nao mexa no PC)'
 
 $raw = & $exe --code $code --secs 60 --fps 120 --height 1080 --kbps 16000
 $json = $raw | Where-Object { $_.Trim().StartsWith('{') } | Select-Object -Last 1
 
-try { Get-CimInstance Win32_Process -Filter "name='msedge.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*localcord-teste-120*' } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null } } catch { }
+try { Get-CimInstance Win32_Process -Filter "name='msedge.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*resenha-teste-120*' } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null } } catch { }
 
-$linhas = @("LocalCord - teste da transmissao nativa (lado de quem envia)", "Data: $(Get-Date -Format 'yyyy-MM-dd HH:mm')", "Monitor: $hz Hz", "GPU: $((Get-CimInstance Win32_VideoController | Select-Object -First 1).Name)", "Windows: $((Get-CimInstance Win32_OperatingSystem).Caption) $((Get-CimInstance Win32_OperatingSystem).BuildNumber)", '')
+$linhas = @("Resenha - teste da transmissao nativa (lado de quem envia)", "Data: $(Get-Date -Format 'yyyy-MM-dd HH:mm')", "Monitor: $hz Hz", "GPU: $((Get-CimInstance Win32_VideoController | Select-Object -First 1).Name)", "Windows: $((Get-CimInstance Win32_OperatingSystem).Caption) $((Get-CimInstance Win32_OperatingSystem).BuildNumber)", '')
 if ($json) {
   try {
     $r = $json | ConvertFrom-Json
@@ -64,5 +64,5 @@ Write-Host ''
 $linhas | Where-Object { $_ -notlike 'bruto:*' } | ForEach-Object { Write-Host "  $_" }
 Write-Host ''
 Write-Host "  Pronto! Resultado salvo em: $out" -ForegroundColor Green
-Write-Host '  Mande para o Claude: o conteudo do resultado.txt E o resultado da janela do LocalCord (botao "Copiar resultado").'
+Write-Host '  Mande para o Claude: o conteudo do resultado.txt E o resultado da janela da Resenha (botao "Copiar resultado").'
 Read-Host '  Enter para sair'

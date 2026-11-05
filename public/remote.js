@@ -93,7 +93,7 @@ addEventListener('blur', () => { if (S.remote) { setKb(false); releaseAll(); flu
 let askDlg = null, askTimer = 0;
 async function onRequest(s) {
   const who = ctx.name(s.controller);
-  const cap = desktop?.remoteCapable ? await desktop.remoteCapable() : { ok: false, reason: 'O controle remoto só funciona no app LocalCord para Windows.' };
+  const cap = desktop?.remoteCapable ? await desktop.remoteCapable() : { ok: false, reason: 'O controle remoto só funciona no app Resenha para Windows.' };
   if (!cap.ok) { ctx.send('REMOTE_ANSWER', { id: s.id, accept: false, capable: false }); toast(`${who} pediu para controlar seu PC, mas não é possível: ${cap.reason}`, true); return; }
   playSound('ring');
   const mouse = h('input', { type: 'checkbox', checked: true }), kb = h('input', { type: 'checkbox', checked: true });

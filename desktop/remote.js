@@ -1,6 +1,6 @@
 // Controle remoto no app desktop (processo principal): liga o programa nativo lc-input, diz a ele qual monitor
 // está sendo transmitido e mostra um aviso sempre por cima de tudo enquanto alguém controla.
-// O renderer (página do LocalCord) só chega aqui depois que o dono aceitou o pedido na própria tela.
+// O renderer (página da Resenha) só chega aqui depois que o dono aceitou o pedido na própria tela.
 const { BrowserWindow, screen } = require('electron');
 const { spawn, execFile } = require('child_process');
 const path = require('path');

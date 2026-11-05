@@ -41,7 +41,7 @@ export async function openReport(prefill = '') {
   const payload = () => ({ text: text.value.trim(), data: tech.checked ? data || {} : {} });
   const save = () => {
     const blob = new Blob([JSON.stringify({ quando: new Date().toISOString(), descricao: text.value.trim(), ...(tech.checked ? data : {}) }, null, 2)], { type: 'application/json' });
-    const a = h('a', { href: URL.createObjectURL(blob), download: `relatorio-localcord-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json` }); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    const a = h('a', { href: URL.createObjectURL(blob), download: `relatorio-resenha-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json` }); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   };
   modal('Algo deu errado?', 'Conte o que aconteceu. O relatório vai com as informações técnicas que ajudam a achar o problema.', h('div.report',
     h('label.f', 'O que aconteceu?', text),

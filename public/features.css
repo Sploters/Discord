@@ -1050,7 +1050,7 @@ html.anim .appupd { animation: lc-pop .25s cubic-bezier(.2, .9, .3, 1.15); }
 .report .rpchk { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0 10px; font-size: 13px; color: var(--text-muted); cursor: pointer; } .report .rpchk input { margin-top: 2px; flex: none; }
 .report .rpdet summary { cursor: pointer; font-size: 13px; color: var(--link, #00a8fc); }
 .report .rpdata { max-height: 220px; overflow: auto; margin: 8px 0 0; padding: 10px; border-radius: 6px; background: var(--bg-tert); font: 11.5px/1.45 Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
-/* cartão "Instale o LocalCord" (pwa.js): mesmo visual do aviso de atualização, com o ícone do app */
+/* cartão "Instale a Resenha" (pwa.js): mesmo visual do aviso de atualização, com o ícone do app */
 .pwacard .au-ico { background: none; } .pwacard .au-ico img { width: 36px; height: 36px; border-radius: 9px; display: block; }
 .pwacard .pwa-share { display: inline-flex; vertical-align: -2px; } .pwacard .pwa-share svg { fill: currentColor; } .pwacard .pwa-inline { display: inline; font-size: inherit; }
 

@@ -148,7 +148,7 @@ try {
   ok((await A.$$('.tpick')).length >= 12, 'seletor de temas abre pelo "+"');
   await clickText(A, '.tpick', 'Aurora'); await sleep(700);
   const sh = await B.evaluate(() => { const b = [...document.querySelectorAll('#msgs .msg')].at(-1); return { card: !!b.querySelector('.themeshare'), text: b.querySelector('.body').innerText, btn: b.querySelector('.themeshare .btn')?.textContent }; });
-  ok(sh.card && !sh.text.includes('localcord-theme') && sh.btn === 'Usar tema', 'bob recebe só o bloco do tema, sem o código: "' + sh.text.replace(/\n/g, ' ') + '"');
+  ok(sh.card && !/(resenha|localcord)-theme/.test(sh.text) && sh.btn === 'Usar tema', 'bob recebe só o bloco do tema, sem o código: "' + sh.text.replace(/\n/g, ' ') + '"');
   await B.evaluate(() => [...document.querySelectorAll('#msgs .themeshare .btn')].at(-1).click()); await sleep(300);
   const used = await B.evaluate(() => ({ t: window.__lc.S.prefs.theme, name: (window.__lc.S.prefs.customThemes || []).at(-1)?.name, btn: [...document.querySelectorAll('#msgs .themeshare .btn')].at(-1).textContent, grad: document.documentElement.classList.contains('grad') }));
   ok(used.t.startsWith('c:') && used.name === 'Aurora' && used.btn === 'Em uso' && used.grad, 'clicar em "Usar tema" aplica e o botão vira "Em uso"');

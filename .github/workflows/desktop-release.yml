@@ -64,5 +64,5 @@ jobs:
         run: |
           V=${{ steps.ver.outputs.v }}
           NOTES=$(git log -12 --format='- %s' -- . | head -12)
-          gh release create "v$V" "dist/LocalCord-Setup-$V.exe" "dist/LocalCord-Portable-$V.exe" \
-            --repo "$GITHUB_REPOSITORY" --title "LocalCord $V" --notes "${NOTES:-Atualização do app desktop}"
+          gh release create "v$V" "dist/Resenha-Setup-$V.exe" "dist/Resenha-Portable-$V.exe" \
+            --repo "$GITHUB_REPOSITORY" --title "Resenha $V" --notes "${NOTES:-Atualização do app desktop}"

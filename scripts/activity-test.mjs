@@ -173,6 +173,6 @@ try {
   apiMode = '403'; const c4 = calls.length; await sleep(2500);
   const afterKey = calls.length; await sleep(1500);
   ok(calls.length - c4 <= 2 && calls.length === afterKey, 'chave recusada (403): as consultas são suspensas (não insiste)', { chamadas: calls.length - c4 });
-  ok((await call(U.bob.tok, 'GET', '/integrations')).data[0].account.sync_state === 'unavailable' && (await call(U.bob.tok, 'GET', '/me/settings')).status === 200, 'estado "indisponível" e o resto do LocalCord segue normal');
+  ok((await call(U.bob.tok, 'GET', '/integrations')).data[0].account.sync_state === 'unavailable' && (await call(U.bob.tok, 'GET', '/me/settings')).status === 200, 'estado "indisponível" e o resto da Resenha segue normal');
 } catch (e) { console.log('ERRO', e); fails++; }
 finally { for (const n of NAMES) U[n].ws?.close(); srv.kill(); mock.close(); console.log(`\n${fails ? fails + ' FALHA(S)' : 'tudo ok'}`); setTimeout(() => process.exit(fails ? 1 : 0), 300); }

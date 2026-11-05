@@ -1208,7 +1208,7 @@ app.post('/api/integrations/:platform/link', auth, wrap((req, res) => {
   res.json({ url: ad.startLink({ returnTo, realm: base }) });
 }));
 app.get('/api/integrations/:platform/callback', (req, res) => { // aberto: quem chama é o navegador voltando da plataforma; o 'state' liga ao usuário
-  const page = (ok, msg) => res.status(ok ? 200 : 400).type('html').send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LocalCord</title><body style="font-family:system-ui;background:#1e1f22;color:#fff;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0"><div style="text-align:center;max-width:420px;padding:24px"><h2>${ok ? '✅' : '⚠️'} ${String(msg).replace(/[<>&]/g, '')}</h2><p style="opacity:.7">${ok ? 'Pode fechar esta janela e voltar ao LocalCord.' : 'Feche esta janela e tente vincular de novo pelo LocalCord.'}</p></div></body>`);
+  const page = (ok, msg) => res.status(ok ? 200 : 400).type('html').send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Resenha</title><body style="font-family:system-ui;background:#1e1f22;color:#fff;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0"><div style="text-align:center;max-width:420px;padding:24px"><h2>${ok ? '✅' : '⚠️'} ${String(msg).replace(/[<>&]/g, '')}</h2><p style="opacity:.7">${ok ? 'Pode fechar esta janela e voltar à Resenha.' : 'Feche esta janela e tente vincular de novo pela Resenha.'}</p></div></body>`);
   const ad = getAdapter(req.params.platform), state = String(req.query.state || ''), st = linkStates.get(state);
   if (!ad || !st || st.platform !== ad.id) return page(false, 'Pedido expirado ou inválido');
   linkStates.delete(state); // uso único
@@ -1255,7 +1255,7 @@ app.put('/api/activity/games/:platform/:gameId', auth, wrap((req, res) => { // e
   res.json({ hidden: !!hidden });
 }));
 app.get('/api/activity/hidden', auth, wrap((req, res) => res.json(all('SELECT gp.platform, gp.game_id, (SELECT a.title FROM activities a WHERE a.user_id=gp.user_id AND a.platform=gp.platform AND a.game_id=gp.game_id ORDER BY a.created_at DESC LIMIT 1) title FROM game_prefs gp WHERE gp.user_id=? AND gp.hidden=1', req.uid))));
-app.get('/api/server-info', (req, res) => res.json({ name: 'LocalCord', registration: OPEN_REGISTRATION, default_avatars: DEFAULT_AVATARS }));
+app.get('/api/server-info', (req, res) => res.json({ name: 'Resenha', registration: OPEN_REGISTRATION, default_avatars: DEFAULT_AVATARS }));
 mountDesktopUpdate(app, DATA_DIR); // atualizações do app desktop pelo servidor (repositório pode ser privado)
 if (process.env.STATIC_OFF !== '1') mountStatic(app, path.join(__dirname, '..', 'public')); // comprimido, versionado e com modulepreload (server/static.js)
 app.use(express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
@@ -1520,7 +1520,7 @@ function loadTls() {
     for (const bin of bins) {
       if (bin !== 'openssl' && !fs.existsSync(bin)) continue;
       try {
-        execFileSync(bin, ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyP, '-out', certP, '-days', '3650', '-subj', '/CN=LocalCord', '-addext', `subjectAltName=${san}`], { stdio: 'ignore' });
+        execFileSync(bin, ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyP, '-out', certP, '-days', '3650', '-subj', '/CN=Resenha', '-addext', `subjectAltName=${san}`], { stdio: 'ignore' });
         console.log('  Certificado HTTPS autoassinado gerado em', DATA_DIR);
         done = true; break;
       } catch { /* tenta o próximo */ }
@@ -1533,7 +1533,7 @@ function loadTls() {
 await startSfu();
 activity.start();
 server.listen(PORT, HOST, () => {
-  console.log(`\n  LocalCord rodando`);
+  console.log(`\n  Resenha rodando`);
   const tls = process.env.HTTPS === '0' ? null : loadTls();
   const addrs = Object.entries(os.networkInterfaces()).flatMap(([n, l]) => (l || []).filter(i => i.family === 'IPv4' && !i.internal).map(i => [n, i.address]));
   for (const [n, a] of addrs) console.log(`   http://${a}:${PORT}   (${n})`);

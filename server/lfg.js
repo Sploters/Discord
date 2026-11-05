@@ -1,4 +1,4 @@
-// Procurar jogadores (LFG): mural de anúncios entre quem usa este LocalCord, pedidos para entrar,
+// Procurar jogadores (LFG): mural de anúncios entre quem usa esta Resenha, pedidos para entrar,
 // perfil de jogador por jogo e atalhos para sites externos. Nada é coletado de sites de terceiros.
 // Quem vê um anúncio: quem divide algum servidor com o autor ou é amigo dele (a mesma ideia da presença).
 

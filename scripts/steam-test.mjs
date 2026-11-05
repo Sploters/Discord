@@ -1,4 +1,4 @@
-// Testes da integração Steam SEM chave e SEM internet: servidor LocalCord real + Steam simulada (OpenID e Web API).
+// Testes da integração Steam SEM chave e SEM internet: servidor Resenha real + Steam simulada (OpenID e Web API).
 // Uso: node scripts/steam-test.mjs
 import http from 'node:http';
 import { spawn } from 'node:child_process';

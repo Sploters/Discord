@@ -1,6 +1,6 @@
 {
-  "name": "LocalCord",
-  "short_name": "LocalCord",
+  "name": "Resenha",
+  "short_name": "Resenha",
   "description": "Chat, voz, vídeo e transmissão de tela com os seus amigos, no seu servidor.",
   "id": "/",
   "start_url": "/?app=pwa",

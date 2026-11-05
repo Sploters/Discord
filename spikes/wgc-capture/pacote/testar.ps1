@@ -1,4 +1,4 @@
-# Teste de FPS do capturador de tela nativo do Windows (LocalCord). Nao altera nada no PC.
+# Teste de FPS do capturador de tela nativo do Windows (Resenha). Nao altera nada no PC.
 $ErrorActionPreference = 'Continue'
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $dir
@@ -10,7 +10,7 @@ if ($dir -like "$env:TEMP*" -or -not (Test-Path (Join-Path $dir 'captura.exe')))
   Write-Host '  Feche esta janela, clique com o botao direito no .zip > Extrair tudo, e rode o TESTAR da pasta extraida.'
   Read-Host '  Enter para sair'; exit 1
 }
-$prof = Join-Path $env:TEMP 'localcord-teste-fps'
+$prof = Join-Path $env:TEMP 'resenha-teste-fps'
 $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $edge) { Write-Host 'Microsoft Edge nao encontrado.'; Read-Host 'Enter para sair'; exit 1 }
 
@@ -39,7 +39,7 @@ $testes = @(
   @{ nome = 'DXGI (comparacao)';     args = @('--secs', '15', '--verify', '1', '--api', 'dxgi') }
 )
 function Salvar { try { $linhas | Set-Content -Encoding UTF8 $out } catch { Write-Host "  Nao consegui salvar em $out : $($_.Exception.Message)" -ForegroundColor Red } }
-$linhas = @("LocalCord - teste de FPS da captura nativa", "Data: $(Get-Date -Format 'yyyy-MM-dd HH:mm')", "Monitor: $hz Hz", "GPU: $((Get-CimInstance Win32_VideoController | Select-Object -First 1).Name)", "Windows: $((Get-CimInstance Win32_OperatingSystem).Caption) $((Get-CimInstance Win32_OperatingSystem).BuildNumber)", '')
+$linhas = @("Resenha - teste de FPS da captura nativa", "Data: $(Get-Date -Format 'yyyy-MM-dd HH:mm')", "Monitor: $hz Hz", "GPU: $((Get-CimInstance Win32_VideoController | Select-Object -First 1).Name)", "Windows: $((Get-CimInstance Win32_OperatingSystem).Caption) $((Get-CimInstance Win32_OperatingSystem).BuildNumber)", '')
 Salvar
 $i = 0
 foreach ($t in $testes) {
@@ -53,7 +53,7 @@ foreach ($t in $testes) {
   Salvar  # salva a cada teste: se algo der errado depois, o que ja foi medido fica
 }
 # fecha so a janela da animacao (perfil proprio); erro aqui nunca impede o resultado
-try { Get-CimInstance Win32_Process -Filter "name='msedge.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*localcord-teste-fps*' } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null } } catch { }
+try { Get-CimInstance Win32_Process -Filter "name='msedge.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*resenha-teste-fps*' } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null } } catch { }
 Janela 9  # restaurar
 # a animacao muda todo quadro: se a captura viu quase so quadros repetidos, ela nao estava visivel na tela
 $baixo = $linhas | Where-Object { $_ -match '^WGC.*unicos\s+([\d,\.]+) fps' -and [double]($Matches[1] -replace ',', '.') -lt 20 }

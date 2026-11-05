@@ -6,6 +6,9 @@ const fs = require('node:fs');
 const https = require('node:https');
 const http = require('node:http');
 
+// O app se chamava LocalCord: a pasta de dados (servidor salvo, login, configurações) e o id do Windows continuam com o
+// nome antigo, para quem já usa não perder nada ao atualizar e os atalhos/notificações seguirem ligados ao mesmo app.
+app.setPath('userData', path.join(app.getPath('appData'), 'LocalCord'));
 app.setAppUserModelId('br.local.localcord');
 if (!app.requestSingleInstanceLock()) { app.quit(); return; }
 
@@ -102,7 +105,7 @@ function rememberServerIp() {
 }
 function createWindow(forceShow) {
   win = new BrowserWindow({
-    ...cfg.bounds, minWidth: 940, minHeight: 600, show: !(process.argv.includes('--hidden') || cfg.startMinimized) || !!forceShow, titleBarStyle: 'hidden', titleBarOverlay: OVERLAY, backgroundColor: '#1e1f22', title: 'LocalCord', icon: icon(), autoHideMenuBar: true,
+    ...cfg.bounds, minWidth: 940, minHeight: 600, show: !(process.argv.includes('--hidden') || cfg.startMinimized) || !!forceShow, titleBarStyle: 'hidden', titleBarOverlay: OVERLAY, backgroundColor: '#1e1f22', title: 'Resenha', icon: icon(), autoHideMenuBar: true,
     webPreferences: { devTools: false, preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, backgroundThrottling: false },
   });
   win.removeMenu(); Menu.setApplicationMenu(null);
@@ -111,7 +114,7 @@ function createWindow(forceShow) {
   const CSS = 'html.lc-fs #lc-titlebar{display:none} html.lc-desk .fsbox video{will-change:auto;transform:none} :fullscreen{margin:0!important;border:0!important;border-radius:0!important;transform:none!important;animation:none!important} html.lc-desk #app{margin-top:28px;height:calc(100vh - 28px)} html.lc-desk #settings{top:28px} html.lc-desk #settings .close{top:40px} body.lc-connect{padding-top:28px} #lc-titlebar{position:fixed;top:0;left:0;right:0;height:28px;z-index:2147483000;-webkit-app-region:drag;background:#1e1f22;display:flex;align-items:center;padding-left:12px;font:600 12px "Segoe UI",sans-serif;color:#b5bac1;user-select:none}#lc-upd{display:none;-webkit-app-region:no-drag;margin-left:auto;margin-right:150px;width:28px;height:20px;padding:0;border:0;border-radius:4px;background:#248046;color:#fff;cursor:pointer;align-items:center;justify-content:center}#lc-upd:hover{background:#1a6334}#lc-upd.on{display:flex}#lc-upd svg{width:14px;height:14px;fill:currentColor}';
   win.webContents.on('dom-ready', () => {
     win.webContents.insertCSS(CSS).catch(() => { });
-    win.webContents.executeJavaScript("document.documentElement.classList.add('lc-desk');if(location.protocol==='file:')document.body.classList.add('lc-connect');if(!document.getElementById('lc-titlebar')){const t=document.createElement('div');t.id='lc-titlebar';t.textContent='LocalCord';document.documentElement.appendChild(t)}").catch(() => { });
+    win.webContents.executeJavaScript("document.documentElement.classList.add('lc-desk');if(location.protocol==='file:')document.body.classList.add('lc-connect');if(!document.getElementById('lc-titlebar')){const t=document.createElement('div');t.id='lc-titlebar';t.textContent='Resenha';document.documentElement.appendChild(t)}").catch(() => { });
     // ícone de download na barra do topo quando há versão nova
     win.webContents.executeJavaScript(`(()=>{const t=document.getElementById('lc-titlebar');if(!t||document.getElementById('lc-upd')||!window.lcDesktop)return;const b=document.createElement('button');b.id='lc-upd';b.innerHTML='<svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2ZM19 9h-4V3H9v6H5l7 7 7-7Z"/></svg>';let busy=false;b.onclick=async()=>{if(busy)return;busy=true;b.style.opacity='.6';const ok=await lcDesktop.installUpdate();if(!ok){busy=false;b.style.opacity=''}};t.appendChild(b);const on=v=>{b.title='Atualizar para a versão '+v.version;b.classList.add('on')};lcDesktop.onUpdate(on);lcDesktop.getUpdate().then(v=>v&&on(v))})()`).catch(() => { });
   });
@@ -162,10 +165,10 @@ function showWin() { if (!win) return; win.show(); win.focus(); }
 // ---------- bandeja / badge / atalhos ----------
 function buildTray() {
   tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'build', 'tray.png')));
-  tray.setToolTip('LocalCord');
+  tray.setToolTip('Resenha');
   const send = (k) => win?.webContents.send('hotkey', k);
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Abrir LocalCord', click: showWin },
+    { label: 'Abrir a Resenha', click: showWin },
     { label: 'Silenciar / ativar microfone', click: () => send('mute') },
     { label: 'Ensurdecer / ativar áudio', click: () => send('deafen') },
     { type: 'separator' },
@@ -186,7 +189,7 @@ function registerHotkeys() {
 }
 function setBadge(n) {
   badge = n | 0;
-  tray?.setToolTip(badge ? `LocalCord — ${badge} não lida(s)` : 'LocalCord');
+  tray?.setToolTip(badge ? `Resenha — ${badge} não lida(s)` : 'Resenha');
   if (process.platform === 'win32' && win) {
     if (!badge) return win.setOverlayIcon(null, '');
     // ponto vermelho 16x16 desenhado em memória (BGRA)
@@ -211,7 +214,7 @@ function setupSession() {
       const s = sources.find(x => x.id === pickedSource) || sources.find(x => x.id.startsWith('screen:')) || sources[0];
       if (!s) return callback({});
       remote.setShared(s); // o controle remoto precisa saber qual monitor está sendo transmitido
-      // áudio = loopback do sistema todo (o Windows não isola uma janela), tanto de tela quanto de janela; o renderer pede restrictOwnAudio para excluir o próprio LocalCord
+      // áudio = loopback do sistema todo (o Windows não isola uma janela), tanto de tela quanto de janela; o renderer pede restrictOwnAudio para excluir a própria Resenha
       callback(request.audioRequested ? { video: s, audio: 'loopback' } : { video: s });
     } catch (e) { console.error(e); callback({}); }
   }, { useSystemPicker: false });
@@ -224,7 +227,7 @@ ipcMain.handle('get-sources', async () => {
   const list = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: true });
   const now = Date.now(), out = [];
   for (const s of list) {
-    if (s.name === 'LocalCord' || /NVIDIA GeForce Overlay/i.test(s.name)) continue; // o overlay da NVIDIA só aparece preto
+    if (/^(Resenha|LocalCord)$/.test(s.name) || /NVIDIA GeForce Overlay/i.test(s.name)) continue; // o overlay da NVIDIA só aparece preto
     const type = s.id.startsWith('screen') ? 'screen' : 'window';
     const item = { id: s.id, name: s.name, type, thumbnail: s.thumbnail.toDataURL(), appIcon: s.appIcon && !s.appIcon.isEmpty() ? s.appIcon.toDataURL() : null };
     out.push(item);
@@ -271,11 +274,11 @@ ipcMain.handle('test-server', async (_e, input) => { const r = await resolveServ
 ipcMain.handle('save-server', async (_e, url) => { cfg.server = url; saveCfg(); trustedHosts.add(serverHost()); loadServer(); return true; });
 
 // ---------- atualização (GitHub Releases) ----------
-const REPO = 'Sploters/Discord';
+const REPO = 'Sploters/Resenha';
 let update = null, updating = false;
-// pedidos do atualizador: ao servidor LocalCord (certificado próprio aceito só para ele) ou ao GitHub
+// pedidos do atualizador: ao servidor Resenha (certificado próprio aceito só para ele) ou ao GitHub
 const fromServer = (url) => { try { return new URL(url).hostname === serverHost(); } catch { return false; } };
-const reqOpts = (url, accept) => ({ headers: { 'User-Agent': 'LocalCord', Accept: accept }, timeout: 8000, ...(fromServer(url) ? { rejectUnauthorized: false } : {}) });
+const reqOpts = (url, accept) => ({ headers: { 'User-Agent': 'Resenha', Accept: accept }, timeout: 8000, ...(fromServer(url) ? { rejectUnauthorized: false } : {}) });
 const libOf = (url) => (url.startsWith('http:') ? http : https);
 const getJson = (url) => new Promise((resolve) => {
   libOf(url).get(url, reqOpts(url, 'application/json'), (res) => {
@@ -283,17 +286,17 @@ const getJson = (url) => new Promise((resolve) => {
   }).on('error', () => resolve(null)).on('timeout', function () { this.destroy(); });
 });
 const newer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
-// 1º o servidor LocalCord (funciona com o repositório privado: o servidor consulta o GitHub com a chave dele);
+// 1º o servidor Resenha (funciona com o repositório privado: o servidor consulta o GitHub com a chave dele);
 // se o servidor ainda não tiver a rota ou a chave, tenta o GitHub direto (repositório público)
 async function checkUpdate() {
   let found = null;
   if (cfg.server) {
     const r = await getJson(new URL('/api/desktop/update', cfg.server).href);
-    if (r?.version && r.url) found = { version: r.version, url: new URL(r.url, cfg.server).href, name: r.name || `LocalCord-Setup-${r.version}.exe` };
+    if (r?.version && r.url) found = { version: r.version, url: new URL(r.url, cfg.server).href, name: r.name || `Resenha-Setup-${r.version}.exe` };
   }
   if (!found) {
     const rel = await getJson(`https://api.github.com/repos/${REPO}/releases/latest`);
-    const asset = rel?.assets?.find(a => /^LocalCord-Setup-.*\.exe$/i.test(a.name));
+    const asset = rel?.assets?.find(a => /^(Resenha|LocalCord)-Setup-.*\.exe$/i.test(a.name));
     if (rel?.tag_name && asset) found = { version: String(rel.tag_name).replace(/^v/i, ''), url: asset.browser_download_url, name: asset.name };
   }
   if (!found || !newer(found.version, app.getVersion())) return;

@@ -22,7 +22,7 @@ cada pessoa (jogos e assuntos que ela escolhe; salvos na conta).
   adiante, com filtro por jogo e "Com prêmio". A imagem de cada torneio vem da página dele (só o começo da página, 3
   por vez, guardada por 1 dia). Torneios que já passaram e os de teste ficam de fora.
   **GamersClub** e **Battlefy** aparecem como atalhos: não oferecem a lista de torneios para outros apps (a Battlefy
-  responde "Direct API access is not permitted" e a GamersClub só tem a API interna do próprio site), então o LocalCord
+  responde "Direct API access is not permitted" e a GamersClub só tem a API interna do próprio site), então a Resenha
   não puxa dados deles. No "Para você", torneios dos jogos escolhidos aparecem em "Torneios dos seus jogos".
   **Região:** o feed não informa o país, então cada torneio recebe uma região (Brasil, América Latina ou
   internacional) pelo nome, organizador e prêmio (português, "R$", "Brasil", "(NA)", "EU", moeda estrangeira...), e o
