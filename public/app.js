@@ -23,6 +23,7 @@ import { syncThrottle } from './lite.js';
 import { initRemote, onRemoteEvent, tileButton as remoteTileButton, controlling as remoteControlling } from './remote.js';
 import { pollModal, pollCard } from './polls.js';
 import { initLfg, renderLfg, onLfgEvent } from './lfg.js';
+import { renderDiscover } from './discover.js';
 import { initClipsGallery, renderClips, onClipEvent } from './clipsgallery.js';
 import { initCallInvite, callCard, onCallInvite, onCallInviteUpdate, canCallInvite, sendCallInvite } from './callinvite.js';
 import { seg, toggle as uiToggle, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
@@ -326,6 +327,7 @@ function applyRoute(first) {
     S.view = { kind: 'home', gid: '@me', cid: cid && S.dms.has(cid) ? cid : null, tab: S.view.tab || 'online' };
     if (S.view.cid) S.view.kind = 'dm';
     if (cid === 'lfg') S.view = { kind: 'lfg', gid: '@me', cid: 'lfg', tab: S.view.tab }; // aba Procurar jogadores (não é uma DM)
+    if (cid === 'discover') S.view = { kind: 'discover', gid: '@me', cid: 'discover', tab: S.view.tab }; // aba Descobrir: notícias, promoções, lançamentos
   } else {
     const g = guild(gid);
     if (!g) { location.hash = '#/@me'; return; }
@@ -482,6 +484,7 @@ function renderSide() {
     list = h('div#side-list',
       h('div.ch' + (S.view.kind === 'home' ? '.active' : ''), { onclick: () => go('@me') }, icon('users'), h('span.name', 'Amigos'), pending > 0 && h('span.pill', pending)),
       h('div.ch.lfgrow-side' + (S.view.kind === 'lfg' ? '.active' : ''), { onclick: () => go('@me', 'lfg'), title: 'Anúncios para fechar o squad' }, icon('gamepad'), h('span.name', 'Procurar jogadores')),
+      h('div.ch.lfgrow-side' + (S.view.kind === 'discover' ? '.active' : ''), { onclick: () => go('@me', 'discover'), title: 'Notícias, promoções e lançamentos de jogos' }, icon('compass'), h('span.name', 'Descobrir')),
       ...(() => {
         const pins = pinnedDMs(), all = [...S.dms.values()].sort((a, b) => (lastActivity(b) > lastActivity(a) ? 1 : -1));
         const pinned = pins.map(id => all.find(d => dmPeer(d)?.id === id)).filter(Boolean), rest = all.filter(d => !pinned.includes(d));
@@ -861,6 +864,7 @@ function renderMain() {
   if (v.kind === 'home') return renderHome(main);
   if (v.kind === 'clips') return renderClips(main, v.gid);
   if (v.kind === 'lfg') return renderLfg(main);
+  if (v.kind === 'discover') return renderDiscover(main);
   const ch = channelById(v.cid);
   if (!ch) return main.replaceChildren(h('div.empty', { style: { margin: 'auto' } }, h('h2', 'Sem canais'), h('p', 'Este servidor ainda não tem canais.')));
   const dm = ch.type === 1, vc = ch.type === 2, peer = dm && dmPeer(ch);

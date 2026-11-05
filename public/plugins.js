@@ -14,6 +14,7 @@ function label(t) {
   if (t.gid === '@me' && !t.cid) return 'Amigos';
   if (t.cid === 'clips') return '🎬 Clipes'; // galeria de clipes do servidor
   if (t.cid === 'lfg') return '🎮 Procurar jogadores';
+  if (t.cid === 'discover') return '🧭 Descobrir';
   const ch = D.channelById(t.cid);
   if (!ch) return 'Canal removido';
   if (ch.type === 1) return '@' + D.user(D.dmPeer(ch).id).display_name;
@@ -21,7 +22,7 @@ function label(t) {
 }
 const title = (t) => { const ch = D.channelById(t.cid), g = t.cid === 'clips' ? D.guild(t.gid) : ch?.guild_id && D.guild(ch.guild_id); return label(t) + (g ? ' — ' + g.name : ''); };
 const here = () => ({ gid: D.S.view.gid || '@me', cid: D.S.view.cid || null });
-const alive = (t) => !t.cid || t.cid === 'lfg' || (t.cid === 'clips' ? !!D.guild(t.gid) : !!D.channelById(t.cid));
+const alive = (t) => !t.cid || t.cid === 'lfg' || t.cid === 'discover' || (t.cid === 'clips' ? !!D.guild(t.gid) : !!D.channelById(t.cid));
 
 function open(t) { D.go(t.gid, t.cid); }
 function addTab(t, activate = true) {

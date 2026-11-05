@@ -20,6 +20,7 @@ import { mountDesktopUpdate } from './desktopupdate.js';
 import { trimWebm, keyframeTimes } from '../public/webm.js';
 import { mountGifs } from './gifs.js';
 import { mountLfg } from './lfg.js';
+import { mountDiscover } from './discover.js';
 import { translate, translateEnabled, engineName } from './translate.js';
 import { initMusic, handle as musicHandle, onVoiceJoin as musicOnJoin, onVoiceLeave as musicOnLeave, stopAll as musicStopAll } from './music.js';
 
@@ -793,6 +794,7 @@ mountLfg(app, {
   voiceCount: (cid) => voice.get(cid)?.size || 0, voiceChannelOf: (uid) => currentVoice(uid),
   callInvite: (from, to) => callInv.create(from, to), postDm: (a, b, c) => postDm(a, b, c),
 });
+mountDiscover(app, { auth, dataDir: DATA_DIR }); // aba Descobrir: notícias, promoções e lançamentos (server/discover.js)
 // ---------- Enquetes ----------
 const POLL_DURATIONS = new Set([0, 1, 4, 8, 24, 72, 168]); // horas (0 = sem prazo)
 const pollTimers = new Map();
