@@ -1008,14 +1008,3 @@ select.gpucompat:focus { outline: 2px solid var(--brand, #5865f2); outline-offse
 .clipplayer .pstage:has(.ownbar) .pnav { position: static; transform: none; opacity: 1; flex: none; width: 36px; background: var(--bg-tert, #1e1f22); color: var(--interactive); }
 .clipplayer .pstage:has(.ownbar) .pnav:disabled { opacity: .3; pointer-events: none; }
 .clipplayer .pstage:has(.ownbar) .fsvid { flex: 1; min-width: 0; }
-
-/* ---------- app desktop: nada por cima do vídeo das transmissões e câmeras ----------
-   Qualquer coisa sobreposta faz o Chromium trocar o caminho de desenho do vídeo (numa RTX: piscadas pretas e imagem
-   escura). O nome vai para uma faixa embaixo do vídeo e a camada de desenho só existe quando há desenho. */
-html.lc-desk .tile:has(> video) { background: #111214; }
-html.lc-desk .tile:has(> video) > video, html.lc-desk .tile:has(> video) > canvas.board.over { top: 0; bottom: auto; height: calc(100% - 30px); }
-html.lc-desk .tile:has(> video) > .label { bottom: 4px; background: none; padding-left: 4px; }
-html.lc-desk .tile canvas.board.over.empty:not(.live) { display: none; }
-html.lc-desk .tile:has(> video) .zoomctl { bottom: 36px; }
-html.lc-desk #stage .strip .tile:has(> video) > video, html.lc-desk #stage .strip .tile:has(> video) > canvas.board.over { height: calc(100% - 24px); }
-html.lc-desk #stage .strip .tile:has(> video) > .label { bottom: 2px; }
