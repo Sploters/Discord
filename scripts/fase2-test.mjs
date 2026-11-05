@@ -1,6 +1,6 @@
 // Teste da Fase 2 (Watch) contra um servidor real (ex.: Umbrel): 2 usuários em Edge headless, sala de voz, transmissão simulada
 // (canvas animado no lugar do getDisplayMedia, sem capturar a tela de ninguém). Uso:
-//   API=http://100.105.3.128:3000 UI=https://100.105.3.128:3443 node scripts/fase2-test.mjs
+//   API=http://IP-DA-VPN:3000 UI=https://IP-DA-VPN:3443 node scripts/fase2-test.mjs
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
 const API = process.env.API || 'http://localhost:3000', UI = process.env.UI || API;
