@@ -15,7 +15,8 @@ const rss = `<?xml version="1.0"?><rss xmlns:media="http://search.yahoo.com/mrss
 ${[['Estrela Cadente 2 ganha data de lançamento', 'O RPG de exploração espacial chega no próximo mês com modo cooperativo.', '#7b4cff'],
    ['Torneio de Arena Rápida terá premiação recorde', 'Equipes do Brasil confirmadas na fase final do campeonato.', '#e8484f'],
    ['Atualização de Blocos & Picaretas adiciona novo bioma', 'O jogo de construção recebe cavernas de cristal e novos inimigos.', '#2ea869'],
-   ['Guia: como melhorar a mira em jogos de tiro', 'Dicas de sensibilidade e treino para qualquer FPS competitivo.', '#f0a020']]
+   ['Guia: como melhorar a mira em jogos de tiro', 'Dicas de sensibilidade e treino para qualquer FPS competitivo.', '#f0a020'],
+   ...Array.from({ length: 26 }, (_, i) => [`Nota rápida número ${i + 1}`, 'Resumo curto de uma notícia fictícia.', '#4a5568'])]
   .map(([t, d, c], i) => `<item><title>${t}</title><link>${M}/n/${i}</link><pubDate>${new Date(now - i * 3 * 3600e3).toUTCString()}</pubDate><description>${d}</description><media:content url="${M}/img/${i}.svg?c=${encodeURIComponent(c)}" medium="image"/></item>`).join('')}
 </channel></rss>`;
 const featured = { specials: { items: [
@@ -72,23 +73,39 @@ try {
   await P.goto(BASE); await P.waitForSelector('#rail');
   ok(await P.evaluate(() => [...document.querySelectorAll('#side-list .ch .name')].some(x => x.textContent === 'Descobrir')), 'entrada "Descobrir" na Home, abaixo de Procurar jogadores');
   await P.evaluate(() => [...document.querySelectorAll('#side-list .ch')].find(x => /Descobrir/.test(x.textContent)).click());
-  await P.waitForSelector('#discoverview .dint');
-  ok(await P.evaluate(() => /Escolha seus jogos/.test(document.querySelector('#discoverview').textContent)), '"Para você" sem interesses pede para escolher');
+  await P.waitForSelector('#discoverview .dint'); await sleep(1500);
+  ok(await P.evaluate(() => [...document.querySelectorAll('.dtab')].map(x => x.textContent).join(',') === 'Início,Notícias,Torneios'), 'só 3 abas: Início, Notícias, Torneios');
+  const secs = () => P.evaluate(() => [...document.querySelectorAll('.dhsec')].map(s => ({ k: s.dataset.sec, cards: s.querySelectorAll('.dcard').length, rows: s.querySelectorAll('.drow').length, more: s.querySelector('.dmore')?.textContent || '' })));
+  const home = await secs(), cols = await P.evaluate(() => Math.max(1, Math.floor(((document.querySelector('#discoverview').clientWidth - 40) + 14) / 264)));
+  ok(['charts', 'deals', 'upcoming', 'tournaments', 'news'].every(k => home.some(x => x.k === k)), 'Início junta Em alta, Promoções, Lançamentos, Torneios e Notícias', home);
+  ok(home.find(x => x.k === 'deals').cards === Math.min(4, cols) && /Ver mais \(4\)/.test(home.find(x => x.k === 'deals').more), 'seções mostram uma linha e "Ver mais (N)"', { cols, deals: home.find(x => x.k === 'deals') });
+  ok(home.find(x => x.k === 'charts').rows === 7, 'Em alta resumido: listas curtas (até 5 cada)', home.find(x => x.k === 'charts'));
+  ok(await P.evaluate(() => /35,5 mi/.test(document.querySelector('.dstats')?.textContent || '')), 'números da Steam no topo');
+  const click = (sec, re) => P.evaluate((k, r) => [...document.querySelector(`.dhsec[data-sec="${k}"]`).querySelectorAll('.dmore')].find(b => new RegExp(r).test(b.textContent)).click(), sec, re);
+  await click('deals', 'Ver mais'); await sleep(300);
+  const deals = await P.evaluate(() => [...document.querySelectorAll('.dhsec[data-sec="deals"] .dcard')].map(c => c.querySelector('.dtitle').textContent + ' | ' + c.querySelector('.dprice').textContent));
+  ok(deals.length === 4 && /Grátis/.test(deals[0]) && /Em breve grátis/.test(deals[1]) && /-60%/.test(deals[2]) && /39,99/.test(deals[2]), 'promoções expandidas: grátis da Epic primeiro, depois Steam por desconto, em reais', deals);
+  await click('deals', 'Ver menos'); await click('charts', 'Ver mais'); await sleep(300);
+  const ch = await P.evaluate(() => ({ panels: [...document.querySelectorAll('.dpanel')].map(p => [...p.querySelectorAll('.drow')].map(r => r.innerText.replace(/\n+/g, ' | '))), rising: [...document.querySelectorAll('.dhsec[data-sec="charts"] .dcard .dtitle')].map(x => x.textContent) }));
+  ok(ch.panels[0].length === 4 && /Arena Rápida/.test(ch.panels[0][0]) && /900\.000/.test(ch.panels[0][0]), 'mais jogados agora, com jogadores', ch.panels[0]);
+  ok(ch.panels[1].length === 3 && /▲2/.test(ch.panels[1][0]) && /▼1/.test(ch.panels[1][1]) && /-40%/.test(ch.panels[1][1]) && /▲27/.test(ch.panels[1][2]), 'mais vendidos com subida/descida e preço', ch.panels[1]);
+  ok(ch.rising.includes('Blocos & Picaretas') && ch.rising.includes('Fazendinha Tranquila'), 'expandido mostra "Subindo rápido"', ch.rising);
+  await click('charts', 'Ver menos');
+  const up = await P.evaluate(() => [...document.querySelectorAll('.dhsec[data-sec="upcoming"] .dcard')].map(c => c.innerText.replace(/\n+/g, ' | ')));
+  ok(up.length === 2 && /12 dez/.test(up[0]) && /RPG/.test(up[0]), 'lançamentos com data e gêneros', up);
+  await P.screenshot({ path: OUT + '/disc-inicio.png' });
+
   const tab = async (name) => { await P.evaluate((n) => [...document.querySelectorAll('.dtab')].find(x => x.textContent === n).click(), name); await sleep(900); };
   await tab('Notícias');
-  const news = await P.evaluate(() => ({ cards: document.querySelectorAll('.dcard').length, first: document.querySelector('.dcard .dtitle')?.textContent, href: document.querySelector('a.dcard')?.target, note: document.querySelector('.dnote')?.textContent }));
-  ok(news.cards === 4 && /Estrela Cadente 2/.test(news.first) && news.href === '_blank', 'notícias: 4 cartões, mais nova primeiro, link abre fora', news);
-  ok(/Site Fora do Ar/.test(news.note || ''), 'fonte fora do ar aparece no aviso, sem quebrar as outras', news.note);
+  const pg = await P.evaluate(() => ({ cards: document.querySelectorAll('.dcard').length, first: document.querySelector('.dcard .dtitle')?.textContent, href: document.querySelector('a.dcard')?.target, pages: [...document.querySelectorAll('.dpg.num')].map(x => x.textContent), note: document.querySelector('.dnote')?.textContent }));
+  ok(pg.cards === 12 && /Estrela Cadente 2/.test(pg.first) && pg.href === '_blank' && pg.pages.join() === '1,2,3', 'notícias em páginas de 12, mais nova primeiro', pg);
+  ok(/Site Fora do Ar/.test(pg.note || ''), 'fonte fora do ar aparece no aviso, sem quebrar as outras', pg.note);
+  await P.evaluate(() => [...document.querySelectorAll('.dpg.num')].find(x => x.textContent === '3').click()); await sleep(200);
+  ok(await P.evaluate(() => document.querySelectorAll('.dcard').length === 6 && document.querySelector('.dpg.on').textContent === '3'), 'última página com o resto (30 notícias)');
   await P.screenshot({ path: OUT + '/disc-noticias.png' });
-  await tab('Promoções');
-  const deals = await P.evaluate(() => [...document.querySelectorAll('.dcard')].map(c => c.querySelector('.dtitle').textContent + ' | ' + c.querySelector('.dprice').textContent));
-  ok(deals.length === 4 && /Grátis/.test(deals[0]) && /Em breve grátis/.test(deals[1]) && /-60%/.test(deals[2]) && /39,99/.test(deals[2]), 'promoções: grátis da Epic primeiro, depois Steam por desconto, em reais', deals);
-  await P.screenshot({ path: OUT + '/disc-promocoes.png' });
-  await tab('Lançamentos');
-  const up = await P.evaluate(() => [...document.querySelectorAll('.dcard')].map(c => c.innerText.replace(/\n+/g, ' | ')));
-  ok(up.length === 2 && /12 dez/.test(up[0]) && /RPG/.test(up[0]), 'lançamentos com data e gêneros', up);
+
   await tab('Torneios');
-  const tr = await P.evaluate(() => ({ secs: [...document.querySelectorAll('.dsec')].map(x => x.textContent), cards: [...document.querySelectorAll('.dcard')].map(c => c.innerText.replace(/\n+/g, ' | ')), sites: [...document.querySelectorAll('.dsite b')].map(x => x.textContent), chips: [...document.querySelectorAll('.dchips .dchip')].map(x => x.textContent) }));
+  const tr = await P.evaluate(() => ({ secs: [...document.querySelectorAll('.dsec')].map(x => x.textContent), cards: [...document.querySelectorAll('.dcard')].map(c => c.innerText.replace(/\n+/g, ' | ')), sites: [...document.querySelectorAll('.dsite b')].map(x => x.textContent) }));
   ok(tr.cards.length === 3 && /Copa Relâmpago/.test(tr.cards[0]) && /R\$ 500/.test(tr.cards[0]) && /Hoje|Começa/.test(tr.cards[0]) && /Amanhã/.test(tr.cards[1]) && /Eliminação dupla/.test(tr.cards[2]) && !tr.cards.some(c => /Antigo/.test(c)), 'torneios: por data, com prêmio, formato traduzido e sem os que já passaram', tr.cards);
   ok(tr.secs.some(x => /^Hoje/.test(x)) && tr.secs.some(x => /Próximos 7 dias/.test(x)) && tr.secs.some(x => /Mais adiante/.test(x)), 'torneios separados por hoje / 7 dias / depois', tr.secs);
   ok(['GamersClub', 'Battlefy', 'Challengermode'].every(n => tr.sites.includes(n)), 'atalhos para GamersClub, Battlefy e Challengermode', tr.sites);
@@ -105,25 +122,17 @@ try {
   await sleep(9500); // as imagens chegam em segundo plano e a aba recarrega sozinha
   ok(await P.evaluate(() => document.querySelectorAll('.dtimg img').length === 3), 'imagens dos torneios (og:image) carregadas', await P.evaluate(() => document.querySelectorAll('.dtimg img').length));
   await P.screenshot({ path: OUT + '/disc-torneios.png' });
-  await tab('Tendências');
-  const ch = await P.evaluate(() => ({ stats: [...document.querySelectorAll('.dstat')].map(x => x.innerText.replace(/\n+/g, ' ')), panels: [...document.querySelectorAll('.dpanel')].map(p => [...p.querySelectorAll('.drow')].map(r => r.innerText.replace(/\n+/g, ' | '))), rising: [...document.querySelectorAll('.dcard .dtitle')].map(x => x.textContent) }));
-  ok(/35,5 mi/.test(ch.stats[0]) && /Arena Rápida/.test(ch.stats[2]), 'tendências: jogadores online e mais jogado', ch.stats);
-  ok(ch.panels[0].length === 4 && /Arena Rápida/.test(ch.panels[0][0]) && /900\.000/.test(ch.panels[0][0]) && /Gratuito|Ação|Indie/.test(ch.panels[0][0]), 'mais jogados agora, com jogadores e tags', ch.panels[0]);
-  ok(ch.panels[1].length === 3 && /▲2/.test(ch.panels[1][0]) && /▼1/.test(ch.panels[1][1]) && /-40%/.test(ch.panels[1][1]) && /▲27/.test(ch.panels[1][2]), 'mais vendidos com subida/descida e preço', ch.panels[1]);
-  ok(ch.rising.includes('Blocos & Picaretas') && ch.rising.includes('Fazendinha Tranquila'), 'em alta: subiu muito nos vendidos e estreou nos jogados', ch.rising);
-  await P.screenshot({ path: OUT + '/disc-tendencias.png' });
-  await tab('Para você');
-  await P.type('.dint-in', 'Estrela Cadente'); await P.keyboard.press('Enter'); await sleep(400);
-  await P.evaluate(() => [...document.querySelectorAll('.dsugg .dchip')].find(x => /Indie/.test(x.textContent))?.click()); await sleep(500);
-  const fy = await P.evaluate(() => ({ chips: [...document.querySelectorAll('.dint .dchip.on')].map(x => x.textContent), secs: [...document.querySelectorAll('.dsec')].map(x => x.textContent), cards: [...document.querySelectorAll('.dcard .dtitle')].map(x => x.textContent), why: [...document.querySelectorAll('.dwhy')].map(x => x.textContent) }));
-  await P.type('.dint-in', 'Valorant'); await P.keyboard.press('Enter'); await sleep(400);
-  const fy2 = await P.evaluate(() => [...document.querySelectorAll('.dsec')].map(x => x.textContent));
-  ok(fy2.some(x => /Torneios dos seus jogos/.test(x)), '"Para você" com torneios do jogo escolhido', fy2);
-  await P.evaluate(() => [...document.querySelectorAll('.dint .dchip.on')].find(x => /Valorant/.test(x.textContent)).querySelector('button').click()); await sleep(400);
-  ok(fy.chips.length === 2 && fy.cards.includes('Estrela Cadente') && fy.cards.includes('Estrela Cadente 2') && fy.cards.includes('Fazendinha Tranquila') && !fy.cards.some(t => /Arena/.test(t)), '"Para você" mostra só o que combina com os interesses (com o motivo)', fy);
+
+  await tab('Início');
+  const addInt = async (t) => { await P.waitForSelector('.dint-in'); await P.evaluate(() => document.querySelector('.dint-in').focus()); await P.keyboard.type(t); await P.keyboard.press('Enter'); await sleep(400); };
+  await addInt('Estrela Cadente'); await addInt('Valorant');
+  const fy = await P.evaluate(() => { const s = document.querySelector('.dhsec[data-sec="foryou"]'); return { titles: [...s.querySelectorAll('.dcard .dtitle')].map(x => x.textContent), more: s.querySelector('.dmore')?.textContent }; });
+  ok(fy.titles.includes('Estrela Cadente') && fy.titles.includes('Copa Relâmpago') && !fy.titles.some(t => /Arena/.test(t)), '"Para você" mistura promoções, torneios etc. do que combina', fy);
+  await P.evaluate(() => [...document.querySelectorAll('.dint .btn')].find(b => /Pronto/.test(b.textContent)).click()); await sleep(200);
+  ok(await P.evaluate(() => !!document.querySelector('.dint.mini') && document.querySelectorAll('.dint.mini .dchip').length === 2), 'interesses ficam resumidos numa linha com "Editar"');
   await sleep(1800); const saved = await P.evaluate(async () => (await (await fetch('/api/me/settings', { headers: { authorization: 'Bearer ' + localStorage.lc_token } })).json()));
   ok(JSON.stringify(saved).includes('Estrela Cadente'), 'interesses salvos na conta');
-  await P.screenshot({ path: OUT + '/disc-paravoce.png' });
+  await P.evaluate(() => document.querySelector('.dbodywrap').scrollTo(0, 0)); await P.screenshot({ path: OUT + '/disc-paravoce.png' });
   await P.setViewport({ width: 412, height: 860, isMobile: true, hasTouch: true }); await sleep(500);
   await P.screenshot({ path: OUT + '/disc-celular.png' });
 } catch (e) { console.log('ERRO', e.message); fails++; }

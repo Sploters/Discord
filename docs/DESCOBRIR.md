@@ -1,5 +1,13 @@
 # Aba Descobrir (Home → Descobrir)
 
+Três abas:
+- **Início:** tudo resumido em seções, cada uma com uma linha de cartões e **Ver mais** para expandir: Para você
+  (o que combina com os interesses, intercalando promoções, torneios, jogos da Steam, lançamentos e notícias), Em alta
+  na Steam (5 de cada lista; expandido mostra 15 e os que estão subindo), Promoções, Lançamentos, Torneios e Últimas
+  notícias (estas duas com atalho para a aba completa). Os interesses ficam numa linha com "Editar".
+- **Notícias:** em páginas de 12, com filtro por site.
+- **Torneios:** lista completa com região, jogo e prêmio.
+
 Notícias de jogos, promoções, próximos lançamentos e torneios abertos, mais um feed **Para você** com o que combina com os interesses de
 cada pessoa (jogos e assuntos que ela escolhe; salvos na conta).
 

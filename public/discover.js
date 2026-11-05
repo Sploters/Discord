@@ -1,13 +1,17 @@
-// Aba "Descobrir" (Home, abaixo de Procurar jogadores): Para você, Notícias, Promoções, Lançamentos e Torneios.
-// O servidor busca as fontes (server/discover.js); aqui só mostramos. "Para você" junta o que combina com os
-// interesses da pessoa (jogos e assuntos que ela escolhe), salvos na conta junto com as outras preferências.
-// Notícias: título, resumo curto e imagem; o texto completo abre no site original.
+// Aba "Descobrir" (Home, abaixo de Procurar jogadores), em 3 abas:
+// - Início: tudo resumido em seções (Para você, Em alta na Steam, Promoções, Lançamentos, Torneios, Notícias); cada
+//   seção mostra uma linha e "Ver mais" expande. "Para você" junta o que combina com os interesses da pessoa (jogos e
+//   assuntos que ela escolhe), salvos na conta junto com as outras preferências.
+// - Notícias: em páginas (título, resumo curto e imagem; o texto completo abre no site original).
+// - Torneios: com filtro de região, jogo e prêmio.
+// O servidor busca as fontes (server/discover.js); aqui só mostramos.
 import { h, icon } from './util.js';
 import { S, api, savePrefs } from './state.js';
 
-const TABS = [['foryou', 'Para você'], ['news', 'Notícias'], ['deals', 'Promoções'], ['upcoming', 'Lançamentos'], ['tournaments', 'Torneios'], ['charts', 'Tendências']];
-const ALL = ['news', 'deals', 'upcoming', 'tournaments'];
-const st = { tab: 'foryou', data: {}, loading: {}, error: {}, at: {}, root: null, srcFilter: null, game: null, prize: false };
+const TABS = [['home', 'Início'], ['news', 'Notícias'], ['tournaments', 'Torneios']];
+const ALL = ['charts', 'deals', 'upcoming', 'tournaments', 'news'];
+const PER_PAGE = 12;
+const st = { tab: 'home', data: {}, loading: {}, error: {}, at: {}, root: null, srcFilter: null, game: null, prize: false, page: 1, open: {}, editInt: false, cols: 3 };
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const interests = () => (Array.isArray(S.prefs.discoverInterests) ? S.prefs.discoverInterests : []);
 const setInterests = (list) => { S.prefs.discoverInterests = [...new Set(list.map(x => x.trim()).filter(Boolean))].slice(0, 40); savePrefs(); draw(); };
@@ -25,7 +29,7 @@ async function load(kind, force) {
   if (r?.items) { st.data[kind] = r; st.at[kind] = Date.now(); if (kind === 'tournaments') refreshImages(); } else st.error[kind] = r?.error || 'Não consegui buscar agora. Tente de novo em instantes.';
   draw();
 }
-const ensure = () => { if (st.tab === 'foryou') ALL.forEach(k => load(k)); else load(st.tab); };
+const ensure = () => { if (st.tab === 'home') ALL.forEach(k => load(k)); else load(st.tab); };
 // torneios: as imagens chegam aos poucos (o servidor busca em segundo plano); recarrega uma vez para pegá-las
 let imgRetry = 0;
 const refreshImages = () => { const it = st.data.tournaments?.items || []; if (imgRetry < 2 && it.some(t => !t.image)) { imgRetry++; setTimeout(() => load('tournaments', true), 8000); } };
@@ -77,23 +81,36 @@ function state(kind, items, empty) {
   return null;
 }
 
-// ---------- abas ----------
+// ---------- seções do Início ----------
+// cabeçalho com "Ver mais (N)" / "Ver menos", ou um atalho para a aba completa
+const goTab = (k) => { st.tab = k; st.page = 1; ensure(); draw(); st.root?.querySelector('.dbodywrap')?.scrollTo(0, 0); };
+function section(key, ic, title, sub, total, shown, body, opts = {}) {
+  const open = !!st.open[key];
+  const more = opts.tab ? h('button.dmore', { onclick: () => goTab(opts.tab) }, opts.tabLabel || 'Ver tudo', icon('chevr', 16))
+    : total > shown || open ? h('button.dmore', { onclick: () => { st.open[key] = !open; draw(); } }, open ? 'Ver menos' : `Ver mais (${total})`, h('span.dchev' + (open ? '.up' : ''), icon('chevdown', 16))) : null;
+  return h('section.dhsec', { 'data-sec': key }, h('div.dhead', icon(ic, 18), h('b', title), sub && h('small', sub), h('div.spacer'), more), body);
+}
+const rowOf = (list, open, rows = 1) => (open ? list : list.slice(0, st.cols * rows));
+
 function newsTab() {
   const all = st.data.news?.items || [], sources = [...new Set(all.map(n => n.source))];
   const hidden = new Set(S.prefs.discoverHide || []);
   const items = all.filter(n => !hidden.has(n.source) && (!st.srcFilter || n.source === st.srcFilter));
-  const chips = sources.length > 1 && h('div.dchips', h('button.dchip' + (!st.srcFilter ? '.on' : ''), { onclick: () => { st.srcFilter = null; draw(); } }, 'Todos'),
-    sources.map(s => h('button.dchip' + (st.srcFilter === s ? '.on' : '') + (hidden.has(s) ? '.off' : ''), { onclick: () => { st.srcFilter = st.srcFilter === s ? null : s; draw(); }, oncontextmenu: (e) => { e.preventDefault(); const set = new Set(S.prefs.discoverHide || []); set.has(s) ? set.delete(s) : set.add(s); S.prefs.discoverHide = [...set]; savePrefs(); draw(); }, title: 'Clique: só este site · Clique direito: esconder/mostrar' }, s)));
+  const pages = Math.max(1, Math.ceil(items.length / PER_PAGE)); if (st.page > pages) st.page = pages;
+  const setSrc = (v) => { st.srcFilter = v; st.page = 1; draw(); };
+  const chips = sources.length > 1 && h('div.dchips', h('button.dchip' + (!st.srcFilter ? '.on' : ''), { onclick: () => setSrc(null) }, 'Todos'),
+    sources.map(s => h('button.dchip' + (st.srcFilter === s ? '.on' : '') + (hidden.has(s) ? '.off' : ''), { onclick: () => setSrc(st.srcFilter === s ? null : s), oncontextmenu: (e) => { e.preventDefault(); const set = new Set(S.prefs.discoverHide || []); set.has(s) ? set.delete(s) : set.add(s); S.prefs.discoverHide = [...set]; savePrefs(); draw(); }, title: 'Clique: só este site · Clique direito: esconder/mostrar' }, s)));
   const failed = st.data.news?.failed?.length ? h('p.dnote', `Não consegui buscar agora: ${st.data.news.failed.join(', ')}.`) : null;
-  return [chips, state('news', items, 'Nenhuma notícia por aqui.') || grid(items, newsCard), failed];
+  const go = (p) => { st.page = Math.min(pages, Math.max(1, p)); draw(); st.root?.querySelector('.dbodywrap')?.scrollTo(0, 0); };
+  // páginas: 1 … 4 5 [6] 7 8 … 12
+  const nums = [...new Set([1, st.page - 2, st.page - 1, st.page, st.page + 1, st.page + 2, pages])].filter(p => p >= 1 && p <= pages).sort((a, b) => a - b);
+  const pager = pages > 1 && h('nav.dpager', { 'aria-label': 'Páginas' },
+    h('button.dpg', { disabled: st.page === 1, onclick: () => go(st.page - 1), title: 'Página anterior' }, icon('chevl', 16), 'Anterior'),
+    nums.flatMap((p, i) => [i && p - nums[i - 1] > 1 ? h('span.dpgdots', '…') : null, h('button.dpg.num' + (p === st.page ? '.on' : ''), { onclick: () => go(p), 'aria-current': p === st.page ? 'page' : null }, String(p))]),
+    h('button.dpg', { disabled: st.page === pages, onclick: () => go(st.page + 1), title: 'Próxima página' }, 'Próxima', icon('chevr', 16)));
+  const pageItems = items.slice((st.page - 1) * PER_PAGE, st.page * PER_PAGE);
+  return [chips, state('news', items, 'Nenhuma notícia por aqui.') || grid(pageItems, newsCard), pager, failed];
 }
-function dealsTab() {
-  const items = st.data.deals?.items || [], free = items.filter(d => d.free), paid = items.filter(d => !d.free);
-  return state('deals', items, 'Nenhuma promoção encontrada agora.') || [
-    free.length && h('h3.dsec', icon('gift', 18), 'Grátis'), free.length && grid(free, dealCard),
-    paid.length && h('h3.dsec', icon('tag', 18), 'Em promoção'), paid.length && grid(paid, dealCard)];
-}
-const upcomingTab = () => { const items = st.data.upcoming?.items || []; return state('upcoming', items, 'Nenhum lançamento na lista agora.') || grid(items, upCard); };
 
 function tournamentsTab() {
   const data = st.data.tournaments, every = data?.items || [], all = every.filter(inRegion);
@@ -130,64 +147,101 @@ const row = (g, right) => h('a.drow' + (matchOf(g) ? '.mine' : ''), { href: g.ur
   h('div.dname', h('b', g.title), h('small', [g.tags?.slice(0, 2).join(' · '), g.reviews && `${g.reviews.pct}% positivas`].filter(Boolean).join(' · '))), h('div.dright', ...right));
 const panel = (ic, title, sub, list, right, n = 15) => h('section.dpanel', h('header', icon(ic, 18), h('b', title), sub && h('small', sub)), list.length ? h('div.drows', list.slice(0, n).map(g => row(g, right(g)))) : h('p.dnote', 'Sem dados agora.'));
 const riseCard = (g) => link(g.url, img(g.image),
-  h('div.dbody', h('div.dmeta', h('b', g.chart === 'sold' ? 'Mais vendidos' : 'Mais jogados'), h('span', g.last === -1 ? `estreou em ${g.rank}º` : `subiu ${g.last - g.rank} posições (agora ${g.rank}º)`), why(g)),
+  h('div.dbody', h('div.dmeta', h('b', g.chart === 'sold' ? 'Mais vendidos' : 'Mais jogados'), h('span', g.top ? `${g.rank}º${g.now ? ` · ${big(g.now)} jogando` : ''}` : g.last === -1 ? `estreou em ${g.rank}º` : `subiu ${g.last - g.rank} posições (agora ${g.rank}º)`), why(g)),
     h('div.dtitle', g.title), g.tags?.length && h('div.dtags', g.tags.map(t => h('span', t))), h('div.dprice', priceTag(g), g.reviews && h('small.drev', `${g.reviews.pct}% positivas`))));
-function chartsTab() {
-  const d = st.data.charts;
-  const wait = state('charts', d ? [1] : [], 'Sem dados da Steam agora.'); if (wait) return wait;
-  const on = d.online && h('div.dstats',
-    h('div.dstat', h('small', 'Online na Steam agora'), h('b', big(d.online.users))),
-    h('div.dstat', h('small', 'Jogando agora'), h('b', big(d.online.ingame))),
-    d.playing[0] && h('div.dstat', h('small', 'Mais jogado'), h('b', d.playing[0].title), h('small', `${big(d.playing[0].now)} jogando`)),
-    d.sellers[0] && h('div.dstat', h('small', 'Mais vendido da semana'), h('b', d.sellers[0].title)));
-  return [on,
-    h('div.dpanels',
-      panel('users', 'Mais jogados agora', 'jogadores agora · pico de hoje', d.playing, (g) => [h('b', full(g.now)), h('small', 'pico ' + big(g.peak))]),
-      panel('tag', 'Mais vendidos da semana', d.country === 'BR' ? 'no Brasil, por faturamento' : 'por faturamento', d.sellers, (g) => [trend(g.last, g.rank), h('div.dstack', priceTag(g), g.weeks > 1 && h('small', `${g.weeks} semanas na lista`))])),
-    d.rising.length && h('h3.dsec', icon('rocket', 18), 'Em alta', h('small.dcount', 'entraram ou subiram rápido nas listas')), d.rising.length && grid(d.rising, riseCard),
-    h('p.dnote', `Dados da própria Steam (mais jogados, vendas da semana e jogadores online), atualizados a cada 15 min a 1 h. Última leitura: ${new Date(d.at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`)];
-}
-
 // "Para você": interesses (editar) + o que combina com eles nas três listas
 async function suggestions() {
   const lfg = await api('GET', '/lfg/meta').catch(() => null);
   return [...(lfg?.games || []).map(g => g.name), 'Steam', 'PlayStation', 'Xbox', 'Nintendo', 'Indie', 'FPS', 'RPG'];
 }
 let sugg = null;
-function forYouTab() {
+function interestsBox() {
   const mine = interests();
   if (!sugg) suggestions().then(s => { sugg = s; draw(); });
+  if (mine.length && !st.editInt) // resumido: uma linha com os interesses e "Editar"
+    return h('div.dint.mini', h('span.dlabel', icon('star', 14), 'Seus interesses:'), h('div.dintlist', mine.map(i => h('span.dchip.on.sm', i))),
+      h('button.dmore', { onclick: () => { st.editInt = true; draw(); setTimeout(() => st.root?.querySelector('.dint-in')?.focus(), 0); } }, icon('edit', 14), 'Editar'));
   const input = h('input.dint-in', { name: 'discover-interest', placeholder: 'Adicionar jogo ou assunto (ex.: Valorant, Minecraft, RPG)', maxLength: 40,
-    onkeydown: (e) => { if (e.key === 'Enter' && e.target.value.trim()) { setInterests([...mine, e.target.value]); } } });
-  const box = h('div.dint',
-    h('div.dint-head', h('b', 'Seus interesses'), h('small', 'O "Para você" mostra notícias, promoções, lançamentos e torneios destes jogos ou assuntos.')),
+    onkeydown: (e) => { if (e.key === 'Enter' && e.target.value.trim()) { st.editInt = true; const v = e.target.value; e.target.value = ''; setInterests([...mine, v]); setTimeout(() => st.root?.querySelector('.dint-in')?.focus(), 0); } } });
+  return h('div.dint',
+    h('div.dint-head', h('div', h('b', 'Seus interesses'), h('small', 'A seção "Para você" junta notícias, promoções, lançamentos, torneios e jogos em alta destes jogos ou assuntos.')),
+      mine.length > 0 && h('button.btn.green.sm', { onclick: () => { st.editInt = false; draw(); } }, 'Pronto')),
     h('div.dchips', mine.map(i => h('span.dchip.on.rm', i, h('button', { title: 'Remover', onclick: () => setInterests(mine.filter(x => x !== i)) }, icon('x', 12)))), input),
-    sugg && h('div.dsugg', h('small', 'Sugestões:'), sugg.filter(s => !mine.some(m => norm(m) === norm(s))).slice(0, 12).map(s => h('button.dchip', { onclick: () => setInterests([...mine, s]) }, '+ ' + s))));
-  if (!mine.length) return [box, h('div.dempty', h('b', 'Escolha seus jogos e assuntos'), h('p', 'Adicione o que você joga ou acompanha e o seu feed aparece aqui.'))];
-  const n = (st.data.news?.items || []).filter(matchOf).slice(0, 30), d = (st.data.deals?.items || []).filter(matchOf), u = (st.data.upcoming?.items || []).filter(matchOf);
-  const t = (st.data.tournaments?.items || []).filter(x => inRegion(x) && matchOf(x)).slice(0, 12);
-  const loading = ALL.some(k => st.loading[k] && !st.data[k]);
-  if (!n.length && !d.length && !u.length && !t.length) return [box, loading ? state('news', [], '') : h('div.dempty', h('b', 'Nada sobre seus interesses agora'), h('p', 'Volte mais tarde ou adicione outros jogos e assuntos.'))];
-  return [box,
-    d.length && h('h3.dsec', icon('tag', 18), 'Promoções para você'), d.length && grid(d, dealCard),
-    t.length && h('h3.dsec', icon('trophy', 18), 'Torneios dos seus jogos'), t.length && grid(t, tourCard),
-    u.length && h('h3.dsec', icon('calendar', 18), 'Lançamentos que você acompanha'), u.length && grid(u, upCard),
-    n.length && h('h3.dsec', icon('news', 18), 'Notícias'), n.length && grid(n, newsCard)];
+    sugg && h('div.dsugg', h('small', 'Sugestões:'), sugg.filter(s => !mine.some(m => norm(m) === norm(s))).slice(0, 12).map(s => h('button.dchip', { onclick: () => { st.editInt = true; setInterests([...mine, s]); } }, '+ ' + s))));
+}
+
+// cartão genérico do "Para você" (cada item usa o cartão do seu tipo)
+const mixCard = (x) => (x.kind === 'deal' ? dealCard : x.kind === 'tour' ? tourCard : x.kind === 'up' ? upCard : x.kind === 'news' ? newsCard : riseCard)(x);
+function homeTab() {
+  const ch = st.data.charts, deals = st.data.deals?.items || [], ups = st.data.upcoming?.items || [], news = st.data.news?.items || [];
+  const tours = (st.data.tournaments?.items || []).filter(inRegion);
+  const out = [interestsBox()];
+  // números da Steam no topo
+  if (ch?.online) out.push(h('div.dstats',
+    h('div.dstat', h('small', 'Online na Steam agora'), h('b', big(ch.online.users))),
+    h('div.dstat', h('small', 'Jogando agora'), h('b', big(ch.online.ingame))),
+    ch.playing[0] && h('div.dstat', h('small', 'Mais jogado'), h('b', ch.playing[0].title), h('small', `${big(ch.playing[0].now)} jogando`)),
+    ch.sellers[0] && h('div.dstat', h('small', 'Mais vendido da semana'), h('b', ch.sellers[0].title))));
+  // Para você: o que combina com os interesses, misturado (promoções e torneios primeiro)
+  if (interests().length) {
+    // cada tipo numa fila; intercala (promoção, torneio, Steam, lançamento, notícia...) para não ficar tudo igual
+    const seen = new Set(), lists = [];
+    const take = (list, kind) => { const out = []; for (const x of list) { const k = norm(x.title); if (matchOf(x) && !seen.has(k)) { seen.add(k); out.push({ ...x, kind }); } } lists.push(out); };
+    take(deals, 'deal'); take(tours.slice(0, 40), 'tour'); take([...(ch?.rising || []), ...(ch?.sellers || []).map(g => ({ ...g, chart: 'sold', top: true })), ...(ch?.playing || []).map(g => ({ ...g, chart: 'played', top: true }))], 'rise'); take(ups, 'up'); take(news.slice(0, 80), 'news');
+    const mix = []; for (let i = 0; lists.some(l => l[i]); i++) for (const l of lists) if (l[i]) mix.push(l[i]);
+    const open = st.open.foryou;
+    out.push(section('foryou', 'star', 'Para você', 'do que você escolheu', mix.length, st.cols * 2,
+      mix.length ? grid(rowOf(mix, open, 2), mixCard) : ALL.some(k => st.loading[k] && !st.data[k]) ? state('news', [], '') : h('p.dnote', 'Nada sobre seus interesses agora. Volte mais tarde ou adicione outros jogos e assuntos.')));
+  }
+  // Em alta na Steam: listas curtas lado a lado; expandido mostra 15 de cada e os que estão subindo
+  {
+    const open = st.open.charts;
+    const body = state('charts', ch ? [1] : [], 'Sem dados da Steam agora.') || [
+      h('div.dpanels',
+        panel('users', 'Mais jogados agora', 'jogadores agora · pico de hoje', ch.playing, (g) => [h('b', full(g.now)), h('small', 'pico ' + big(g.peak))], open ? 15 : 5),
+        panel('tag', 'Mais vendidos da semana', ch.country === 'BR' ? 'no Brasil' : '', ch.sellers, (g) => [trend(g.last, g.rank), h('div.dstack', priceTag(g), g.weeks > 1 && h('small', `${g.weeks} semanas na lista`))], open ? 15 : 5)),
+      open && ch.rising.length && h('h4.dsub', icon('rocket', 16), 'Subindo rápido', h('small', 'estrearam ou subiram 10+ posições')), open && ch.rising.length && grid(ch.rising, riseCard),
+      open && h('p.dnote', `Dados da própria Steam, atualizados a cada 15 min a 1 h. Última leitura: ${new Date(ch.at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`)];
+    out.push(section('charts', 'rocket', 'Em alta na Steam', null, 15, 5, body));
+  }
+  // Promoções: grátis primeiro
+  {
+    const open = st.open.deals, free = deals.filter(d => d.free), paid = deals.filter(d => !d.free);
+    const body = state('deals', deals, 'Nenhuma promoção encontrada agora.') || (open
+      ? [free.length && h('h4.dsub', icon('gift', 16), 'Grátis'), free.length && grid(free, dealCard), paid.length && h('h4.dsub', icon('tag', 16), 'Em promoção'), paid.length && grid(paid, dealCard)]
+      : grid(rowOf(deals, false), dealCard));
+    out.push(section('deals', 'tag', 'Promoções', free.length ? `${free.length} grátis agora` : null, deals.length, st.cols, body));
+  }
+  out.push(section('upcoming', 'calendar', 'Lançamentos', 'em breve na Steam', ups.length, st.cols,
+    state('upcoming', ups, 'Nenhum lançamento na lista agora.') || grid(rowOf(ups, st.open.upcoming), upCard)));
+  out.push(section('tournaments', 'trophy', 'Torneios', region() === 'br' ? 'no Brasil' : region() === 'latam' ? 'Brasil e América Latina' : null, tours.length, st.cols,
+    state('tournaments', tours, 'Nenhum torneio aberto na sua região agora.') || grid(tours.slice(0, st.cols), tourCard), { tab: 'tournaments', tabLabel: `Ver todos (${tours.length})` }));
+  out.push(section('news', 'news', 'Últimas notícias', null, news.length, st.cols,
+    state('news', news, 'Nenhuma notícia por aqui.') || grid(news.slice(0, st.cols), newsCard), { tab: 'news', tabLabel: 'Ver todas' }));
+  return out;
 }
 
 function draw() {
   const root = st.root; if (!root?.isConnected) return;
-  const body = st.tab === 'news' ? newsTab() : st.tab === 'deals' ? dealsTab() : st.tab === 'upcoming' ? upcomingTab() : st.tab === 'tournaments' ? tournamentsTab() : st.tab === 'charts' ? chartsTab() : forYouTab();
+  const wrapOld = root.querySelector('.dbodywrap'), scroll = wrapOld?.scrollTop || 0;
+  const typing = document.activeElement?.name === 'discover-interest' ? document.activeElement.value : null;
+  const body = st.tab === 'news' ? newsTab() : st.tab === 'tournaments' ? tournamentsTab() : homeTab();
   root.replaceChildren(
     h('div#topbar', h('span.hash', icon('compass', 24)), h('span', 'Descobrir'),
-      h('div.dtabs', TABS.map(([k, l]) => h('button.dtab' + (st.tab === k ? '.on' : ''), { onclick: () => { st.tab = k; ensure(); draw(); } }, l))),
-      h('div.spacer'), h('button.ibtn', { title: 'Atualizar', onclick: () => (st.tab === 'foryou' ? ALL : [st.tab]).forEach(k => load(k, true)) }, icon('refresh', 20))),
+      h('div.dtabs', TABS.map(([k, l]) => h('button.dtab' + (st.tab === k ? '.on' : ''), { onclick: () => goTab(k) }, l))),
+      h('div.spacer'), h('button.ibtn', { title: 'Atualizar', onclick: () => (st.tab === 'home' ? ALL : [st.tab]).forEach(k => load(k, true)) }, icon('refresh', 20))),
     h('div.dbodywrap', ...[body].flat().filter(Boolean)));
-  if (document.activeElement?.name !== 'discover-interest') return;
+  const wrap = root.querySelector('.dbodywrap'); if (wrap && scroll) wrap.scrollTop = scroll;
+  if (typing !== null) { const inp = root.querySelector('.dint-in'); if (inp) { inp.value = typing; inp.focus(); } }
 }
+
+// quantos cartões cabem numa linha (as seções do Início mostram uma linha fechadas)
+let ro = null;
+const measure = () => { const w = (st.root?.clientWidth || 900) - 40; return Math.max(1, Math.floor((w + 14) / (250 + 14))); };
 
 export function renderDiscover(main) {
   st.root = h('div#discoverview'); main.replaceChildren(st.root);
-  ensure(); draw();
-  if (st.tab === 'foryou') setTimeout(() => st.root?.querySelector('.dint-in') && !interests().length && st.root.querySelector('.dint-in').focus(), 0);
+  st.cols = measure(); ensure(); draw();
+  ro?.disconnect(); ro = new ResizeObserver(() => { const c = measure(); if (c !== st.cols) { st.cols = c; draw(); } }); ro.observe(st.root);
+  if (st.tab === 'home' && !interests().length) setTimeout(() => st.root?.querySelector('.dint-in')?.focus(), 0);
 }

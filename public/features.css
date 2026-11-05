@@ -1130,5 +1130,24 @@ html.anim .dcard.skel { animation: lc-fade 1.2s ease-in-out infinite alternate; 
 #discoverview .dtr.new { padding: 1px 6px; border-radius: 4px; background: var(--brand, #5865f2); color: #fff; font-size: 11px; }
 #discoverview .dpr { display: inline-flex; align-items: center; gap: 5px; color: var(--header); font-weight: 600; } #discoverview .dpr .doff { padding: 1px 5px; border-radius: 4px; background: #23a55a; color: #fff; font-size: 11px; font-weight: 800; }
 .dcard .drev { color: var(--text-muted); font-size: 12px; }
+/* Início: seções compactas com "Ver mais" */
+#discoverview .dhsec { margin-bottom: 26px; }
+#discoverview .dhead { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; min-width: 0; } #discoverview .dhead > svg { fill: currentColor; color: var(--interactive); flex: none; }
+#discoverview .dhead b { color: var(--header); font-size: 17px; white-space: nowrap; } #discoverview .dhead small { color: var(--text-muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } #discoverview .dhead .spacer { flex: 1; }
+#discoverview .dmore { flex: none; display: inline-flex; align-items: center; gap: 4px; border: 0; background: var(--bg-sec); color: var(--interactive); font-weight: 600; font-size: 13px; padding: 5px 10px; border-radius: 6px; cursor: pointer; }
+#discoverview .dmore:hover { color: var(--header); background: var(--bg-mod-hover); } #discoverview .dmore svg { fill: currentColor; }
+#discoverview .dchev { display: inline-flex; transition: transform .15s; } #discoverview .dchev.up { transform: rotate(180deg); }
+#discoverview .dsub { display: flex; align-items: center; gap: 6px; margin: 18px 0 10px; font-size: 14px; color: var(--header); } #discoverview .dsub svg { fill: currentColor; color: var(--interactive); } #discoverview .dsub small { color: var(--text-muted); font-weight: 400; font-size: 12px; }
+#discoverview .dint.mini { display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin-bottom: 16px; }
+#discoverview .dintlist { display: flex; gap: 6px; flex: 1; min-width: 0; overflow: hidden; flex-wrap: nowrap; mask-image: linear-gradient(90deg, #000 85%, transparent); }
+#discoverview .dchip.sm { padding: 2px 9px; font-size: 12px; white-space: nowrap; cursor: default; }
+#discoverview .dint-head { flex-direction: row; justify-content: space-between; align-items: flex-start; gap: 12px; } #discoverview .dint-head > div { display: flex; flex-direction: column; gap: 2px; }
+#discoverview .dint { margin-bottom: 16px; }
+/* páginas das notícias */
+#discoverview .dpager { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: 22px; }
+#discoverview .dpg { display: inline-flex; align-items: center; gap: 4px; min-width: 34px; height: 34px; justify-content: center; padding: 0 10px; border: 1px solid var(--divider); border-radius: 8px; background: var(--bg-sec); color: var(--interactive); font-weight: 600; font-size: 13px; cursor: pointer; }
+#discoverview .dpg:hover:not(:disabled) { color: var(--header); background: var(--bg-mod-hover); } #discoverview .dpg:disabled { opacity: .4; cursor: default; } #discoverview .dpg svg { fill: currentColor; }
+#discoverview .dpg.on { background: var(--brand, #5865f2); border-color: var(--brand, #5865f2); color: #fff; } #discoverview .dpgdots { color: var(--text-muted); padding: 0 4px; }
+@media (max-width: 700px) { #discoverview .dpg:not(.num) { font-size: 0; gap: 0; } #discoverview .dhead small { display: none; } }
 @media (max-width: 700px) { #discoverview .dpanels { grid-template-columns: 1fr; } #discoverview .drow { grid-template-columns: 22px 64px minmax(0, 1fr) auto; padding: 6px 10px; gap: 8px; } #discoverview .dthumb { width: 64px; height: 24px; } #discoverview .dpanel header small { display: none; } }
 @media (max-width: 700px) { #discoverview .dbodywrap { padding: 12px 12px 32px; } #discoverview .dgrid { grid-template-columns: 1fr; } #discoverview #topbar { overflow-x: auto; } }
