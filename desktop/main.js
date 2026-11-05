@@ -14,6 +14,15 @@ const defaults = { server: '', autoStart: false, startMinimized: false, closeToT
 let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; } catch { /* primeira execução */ }
 const saveCfg = () => { try { fs.mkdirSync(path.dirname(cfgPath()), { recursive: true }); fs.writeFileSync(cfgPath(), JSON.stringify(cfg, null, 2)); } catch (e) { console.error(e); } };
+const ms = () => Math.round(process.uptime() * 1000); // tempo desde que o programa abriu (diagnóstico da abertura no main.log)
+
+// Abertura rápida: o endereço do servidor (ex.: "umbrel", nome sem domínio) é guardado depois da 1ª resolução e usado
+// direto nas próximas aberturas. No Windows, resolver um nome curto passa por DNS/LLMNR/NetBIOS e podia levar vários
+// segundos antes de a página começar a carregar. Se o endereço guardado falhar, ele é esquecido e o app reabre.
+const srvHost = (() => { try { return new URL(cfg.server).hostname; } catch { return ''; } })();
+const isIp = (h) => /^[\d.]+$/.test(h) || h.includes(':');
+const pinnedIp = srvHost && !isIp(srvHost) && cfg.serverIp && cfg.serverIp.host === srvHost ? cfg.serverIp.ip : null;
+if (pinnedIp) app.commandLine.appendSwitch('host-resolver-rules', `MAP ${srvHost} ${pinnedIp}`);
 
 // Vídeo: por padrão o app desenha igual ao Chrome/Edge (mesmas opções de GPU). Antes ele desligava a sobreposição de
 // vídeo da placa e os recursos de vídeo dos drivers para todo mundo, e justo no PC em que isso devia ajudar o vídeo
@@ -34,7 +43,8 @@ const gpuCompat = cfg.gpuCompat === 'on' || (cfg.gpuCompat !== 'off' && cfg.gpuO
 if (gpuCompat && cfg.hardwareAcceleration !== false) {
   // interface desenhada pela CPU: só nas placas antigas (letras borradas). Ligado numa placa moderna (RTX 3080), a
   // janela parava de se redesenhar sozinha: transmissão nova só aparecia ao passar o mouse e "Assistir" não abria
-  if (cfg.gpuOld === true) { app.commandLine.appendSwitch('disable-gpu-rasterization'); app.commandLine.appendSwitch('disable-zero-copy'); }
+  if (cfg.gpuOld === true) app.commandLine.appendSwitch('disable-gpu-rasterization');
+  app.commandLine.appendSwitch('disable-zero-copy'); // quadros de vídeo copiados (sem isso o vídeo voltava a piscar ao repetir/voltar)
   app.commandLine.appendSwitch('disable-gpu-memory-buffer-video-frames');
   app.commandLine.appendSwitch('disable-accelerated-video-decode'); // clipes e transmissões decodificados pela CPU
   app.commandLine.appendSwitch('force-color-profile', 'srgb'); // sem conversão de cor do monitor/HDR
@@ -78,11 +88,21 @@ function showConnect(error) {
 function loadServer() {
   if (!cfg.server) return showConnect();
   trustedHosts.add(serverHost());
+  log('abertura', ms(), 'ms: carregando', cfg.server, pinnedIp ? `(endereço guardado ${pinnedIp})` : '');
   win.loadURL(cfg.server).catch(() => { });
+}
+// guarda (ou atualiza) o endereço do servidor para a próxima abertura; roda depois que a página já carregou
+function rememberServerIp() {
+  if (!srvHost || isIp(srvHost)) return;
+  const t = ms();
+  require('node:dns').lookup(srvHost, (err, ip) => {
+    log('abertura: nome', srvHost, err ? 'não resolveu (' + err.code + ')' : '-> ' + ip, 'em', ms() - t, 'ms');
+    if (!err && ip && cfg.serverIp?.ip !== ip) { cfg.serverIp = { host: srvHost, ip }; saveCfg(); }
+  });
 }
 function createWindow(forceShow) {
   win = new BrowserWindow({
-    ...cfg.bounds, minWidth: 940, minHeight: 600, show: false, titleBarStyle: 'hidden', titleBarOverlay: OVERLAY, backgroundColor: '#1e1f22', title: 'LocalCord', icon: icon(), autoHideMenuBar: true,
+    ...cfg.bounds, minWidth: 940, minHeight: 600, show: !(process.argv.includes('--hidden') || cfg.startMinimized) || !!forceShow, titleBarStyle: 'hidden', titleBarOverlay: OVERLAY, backgroundColor: '#1e1f22', title: 'LocalCord', icon: icon(), autoHideMenuBar: true,
     webPreferences: { devTools: false, preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, backgroundThrottling: false },
   });
   win.removeMenu(); Menu.setApplicationMenu(null);
@@ -120,18 +140,22 @@ function createWindow(forceShow) {
   });
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/i.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith(cfg.server) && !url.startsWith('file:')) { e.preventDefault(); if (/^https?:/i.test(url)) shell.openExternal(url); } });
-  win.webContents.on('did-fail-load', (_e, code, desc, url, isMain) => { if (isMain && code !== -3 && !url.startsWith('file:')) showConnect(`Não foi possível carregar ${cfg.server} (${desc}).`); });
+  win.webContents.on('did-fail-load', (_e, code, desc, url, isMain) => {
+    if (!isMain || code === -3 || url.startsWith('file:')) return;
+    if (pinnedIp) { log('endereço guardado falhou', pinnedIp, desc, '- reabrindo sem ele'); delete cfg.serverIp; saveCfg(); app.relaunch(); app.exit(0); return; }
+    showConnect(`Não foi possível carregar ${cfg.server} (${desc}).`);
+  });
+  // tempos da abertura (main.log): rede (DNS, conexão, 1º byte) e quando a página ficou pronta
+  win.webContents.once('dom-ready', () => log('abertura', ms(), 'ms: página montada'));
+  win.webContents.once('did-finish-load', () => {
+    log('abertura', ms(), 'ms: página carregada');
+    win.webContents.executeJavaScript("(()=>{const n=performance.getEntriesByType('navigation')[0];return n?JSON.stringify({dns:Math.round(n.domainLookupEnd-n.domainLookupStart),conexao:Math.round(n.connectEnd-n.connectStart),primeiroByte:Math.round(n.responseStart-n.requestStart),pronta:Math.round(n.domContentLoadedEventEnd)}):''})()").then(r => r && log('abertura: rede', r)).catch(() => { });
+    setTimeout(rememberServerIp, 1500);
+  });
   win.on('page-title-updated', (e, t) => { win.setTitle(t); });
 }
-// janelinha de abertura: mostra que o programa abriu enquanto a janela principal carrega
+// (a janelinha "Iniciando…" saiu: a janela principal já abre na hora)
 let splash = null;
-function showSplash() {
-  if (process.argv.includes('--hidden') || cfg.startMinimized) return;
-  splash = new BrowserWindow({ width: 300, height: 320, frame: false, resizable: false, movable: true, maximizable: false, minimizable: false, fullscreenable: false, center: true, alwaysOnTop: true, skipTaskbar: true, show: true, backgroundColor: '#1e1f22', icon: icon(), webPreferences: { devTools: false, sandbox: true } });
-  splash.loadFile(path.join(__dirname, 'splash.html')).catch(() => { });
-  splash.on('closed', () => { splash = null; });
-  setTimeout(closeSplash, 20000); // garantia: nunca fica preso na tela
-}
 function closeSplash() { if (splash && !splash.isDestroyed()) splash.destroy(); splash = null; }
 function showWin() { if (!win) return; win.show(); win.focus(); }
 
@@ -306,13 +330,14 @@ async function detectGpu() {
   } catch (e) { log('gpu info falhou', e.message); }
 }
 app.whenReady().then(() => {
-  showSplash(); // primeira coisa: a janelinha aparece na hora, o resto carrega logo depois (sem travar o desenho dela)
-  setTimeout(() => {
-    setupSession(); createWindow(); buildTray(); registerHotkeys();
-    if (cfg.server) trustedHosts.add(serverHost());
-    loadServer();
-    setTimeout(checkUpdate, 5000); setInterval(checkUpdate, 3600e3);
-    setTimeout(detectGpu, 3000);
-    if (process.env.LC_TEST_SERVER && !cfg.server) { cfg.server = process.env.LC_TEST_SERVER; trustedHosts.add(serverHost()); loadServer(); }
-  }, 80);
+  log('abertura', ms(), 'ms: Electron pronto');
+  // a janela principal abre na hora (fundo escuro + barra) e a página começa a carregar já; sem a janelinha
+  // "Iniciando…" no meio (era uma janela a mais para criar antes da principal). O resto vem depois.
+  setupSession();
+  if (cfg.server) trustedHosts.add(serverHost());
+  createWindow(); loadServer();
+  setTimeout(() => { buildTray(); registerHotkeys(); }, 0);
+  setTimeout(checkUpdate, 8000); setInterval(checkUpdate, 3600e3);
+  setTimeout(detectGpu, 5000);
+  if (process.env.LC_TEST_SERVER && !cfg.server) { cfg.server = process.env.LC_TEST_SERVER; trustedHosts.add(serverHost()); loadServer(); }
 });
