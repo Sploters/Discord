@@ -63,3 +63,19 @@ export function initAppUpdate() {
   const check = () => checkAppUpdate().then(r => { if (r?.available) showCard(r.latest); }).catch(() => { });
   check(); setInterval(check, 3600e3);
 }
+
+// ---------- versões na call: quem está desatualizado ----------
+// versão do app desktop deste aparelho (null no navegador): guardada para ir já na abertura da conexão
+export function myDesktopVersion() { try { return window.lcDesktop ? localStorage.getItem('lc_desk_ver') : null; } catch { return null; } }
+export async function refreshDesktopVersion() {
+  const v = (await window.lcDesktop?.getSettings?.().catch(() => null))?.version || null;
+  try { if (v) localStorage.setItem('lc_desk_ver', v); } catch { }
+  return v;
+}
+// versão mais nova publicada (perguntada ao servidor uma vez e renovada de hora em hora)
+let latestP = null, latestAt = 0;
+export function latestDesktop() {
+  if (!latestP || Date.now() - latestAt > 3600e3) { latestAt = Date.now(); latestP = fetch('/api/desktop/update', { cache: 'no-store' }).then(r => (r.ok ? r.json() : {})).then(j => j?.version || null).catch(() => null); }
+  return latestP;
+}
+export const isOlder = (v, than) => !!v && !!than && newer(than, v);

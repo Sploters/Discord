@@ -35,7 +35,8 @@ import { recordVoiceMessage, voiceEl } from './voicemsg.js';
 import { initPlugins, mentionUser, addMention, resolveMentions } from './plugins.js';
 import { initActivity, setActivities, onActivityUpdate, onIntegrationUpdate, activityTab, activityOf, playingLine, refreshFeedView } from './activity.js';
 import { toggleTranslation, isTranslated, translationBlock, translateOutgoing, draftMenu } from './translate.js';
-import { initAppUpdate } from './appupdate.js';
+import { initDiag, openReport } from './diag.js';
+import { initAppUpdate, installAppUpdate, myDesktopVersion, refreshDesktopVersion, latestDesktop, isOlder } from './appupdate.js';
 applyTheme();
 
 let ws, voice, retry = 0, ready = false, pendingInvite = null;
@@ -75,12 +76,37 @@ function logout() {
   localStorage.removeItem('lc_token'); S.token = null; voice?.leave(); ws?.close(); location.hash = ''; location.reload();
 }
 
+// =============== Versões do app desktop na call ===============
+// referência: a versão mais nova publicada (ou a minha, se for mais nova que a que o servidor conhece)
+const refVersion = () => { const mine = myDesktopVersion(), l = S.desktopLatest; return isOlder(l, mine) ? mine : l || mine; };
+const appOutdated = (v) => !!v?.app && isOlder(v.app, refVersion());
+// selinho ao lado do nome de quem está com o app desatualizado (na lista da sala e no quadro da call)
+const appBadge = (v) => appOutdated(v) ? h('span.appold', { title: `App desktop ${v.app} — desatualizado (a mais nova é ${refVersion()}). Se a tela ou a voz dessa pessoa não aparecer para você, peça para atualizar.` }, icon('dl', 12), v.app) : null;
+const warnedApp = new Set();
+function warnOutdated(v) {
+  if (v.user_id === S.me?.id || !appOutdated(v) || warnedApp.has(v.user_id + v.app)) return;
+  warnedApp.add(v.user_id + v.app);
+  toast(`${nameOf(v.user_id, S.view.gid) || 'Alguém'} está com o app numa versão antiga (${v.app}). Se a tela dele não aparecer, peça para atualizar.`);
+}
+// avisa de todos na minha sala (a versão mais nova pode chegar depois de as pessoas entrarem)
+const scanOutdated = () => { if (voice?.channelId) for (const v of S.voice.values()) if (v.channel_id === voice.channelId) warnOutdated(v); };
+function outdatedModal(d) {
+  modal('Atualize o app para entrar na call', d.reason, h('div'), [
+    { label: 'Agora não', cls: 'link' },
+    { label: 'Atualizar agora', cls: 'green', fn: () => { toast('Baixando a atualização…'); installAppUpdate(); } }]);
+}
+
 // =============== Gateway ===============
 function connect() {
   clearTimeout(connect.t);
   ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/gateway?token=${S.token}`);
   ws.onmessage = (e) => { const { t, d } = JSON.parse(e.data); try { onEvent(t, d); } catch (err) { console.error(t, err); } };
-  ws.onopen = () => { retry = 0; $('#reconnect')?.remove(); };
+  ws.onopen = () => {
+    retry = 0; $('#reconnect')?.remove();
+    // versão do app desktop desta conexão: a sala mostra quem está desatualizado e o servidor pode exigir uma mínima
+    const sent = myDesktopVersion(); gwSend('CLIENT_INFO', { desktop: sent });
+    refreshDesktopVersion().then(v => { if (v !== sent) gwSend('CLIENT_INFO', { desktop: v }); });
+  };
   ws.onclose = async () => {
     if (!S.token) return;
     try { await api('GET', '/users/0'); } catch (e) { if (e.status === 401) { localStorage.removeItem('lc_token'); S.token = null; return showAuth(); } }
@@ -104,7 +130,8 @@ function ingestGuild(g) {
 function onEvent(t, d) {
   switch (t) {
     case 'READY': {
-      S.me = d.user; S.users.set(d.user.id, d.user); S.ice = d.ice; S.unread = d.unread; S.mentions = {};
+      S.me = d.user; S.users.set(d.user.id, d.user); S.ice = d.ice; S.unread = d.unread; S.mentions = {}; S.desktopMin = d.desktop_min || null;
+      latestDesktop().then(v => { if (v && v !== S.desktopLatest) { S.desktopLatest = v; renderSide(); if (voice?.active) renderVoiceUI(); scanOutdated(); } });
       S.guilds.clear(); S.dms.clear(); S.rels.clear(); S.voice.clear();
       if (S.remote) onRemoteEvent('REMOTE_STATE', { ...S.remote, state: 'ended', reason: 'left' }); // reconectou: o servidor já encerrou a sessão
       d.guilds.forEach(ingestGuild);
@@ -179,6 +206,7 @@ function onEvent(t, d) {
     case 'VOICE_STATE': {
       const prevVs = S.voice.get(d.user_id), before = prevVs?.channel_id, mineCh = voice.channelId;
       if (d.channel_id) S.voice.set(d.user_id, d); else S.voice.delete(d.user_id);
+      if (d.channel_id && d.channel_id === voice.channelId) { if (d.user_id === S.me.id && before !== d.channel_id) scanOutdated(); else warnOutdated(d); }
       if (d.user_id !== S.me.id && (prevVs?.fx || null) !== (d.fx || null)) voice?.setPeerFx(d.user_id);
       if (S.view.kind === 'home') { setTimeout(renderActiveNow); setTimeout(refreshFeedView); }
       if (d.user_id === S.me.id && !d.channel_id) musicOnState({ active: false });
@@ -216,7 +244,7 @@ function onEvent(t, d) {
     case 'SOUNDS_UPDATE': { const g = guild(d.guild_id); if (g) { g.sounds = d.sounds; document.dispatchEvent(new Event('sb-changed')); } break; }
     case 'EMOJIS_UPDATE': { const g = guild(d.guild_id); if (g) { g.emojis = d.emojis; renderMessages(true); } break; }
     case 'VOICE_JOINED': voice.onJoined(d); break;
-    case 'VOICE_DENIED': if (voice.channelId === d.channel_id) { voice.leave(); toast(d.reason, true); } break;
+    case 'VOICE_DENIED': if (voice.channelId === d.channel_id) { voice.leave(); if (d.code === 'outdated') outdatedModal(d); else toast(d.reason, true); } break;
     case 'VOICE_PEER_LEFT': voice.onPeerLeft(d); break;
     case 'VOICE_SIGNAL': voice.onSignal(d); break;
     case 'SFU_RES': voice.onSfuRes(d); break;
@@ -504,7 +532,7 @@ function vuserRow(g, v) {
   const u = user(v.user_id);
   const row = h('div.vuser', { 'data-uid': v.user_id, oncontextmenu: (e) => userMenu(e, v.user_id, g.id), onclick: (e) => profile(e.currentTarget, v.user_id, g.id) },
     (() => { const a = avatar(u, 24, { status: false }); if (voice?.speaking.has(v.user_id)) a.classList.add('speaking'); if (voice?.sbActive.has(v.user_id)) a.classList.add('sbplay'); a.dataset.uid = v.user_id; return a; })(),
-    h('span.nm', nameOf(v.user_id, g.id), fxBadge(v.fx)), v.screen && h('span.live', 'Ao vivo'),
+    h('span.nm', nameOf(v.user_id, g.id), fxBadge(v.fx)), appBadge(v), v.screen && h('span.live', 'Ao vivo'),
     h('span.ico', v.video && icon('video', 14), muteIco(v), v.deaf && icon('headoff', 14)));
   if (v.screen) { const mine = v.user_id === S.me.id; streamHover(row, { uid: v.user_id, mine, getStream: () => (mine ? voice.screen : voice.peers.get(v.user_id)?.streams.screen), onWatch: () => watchFromList(v) }); }
   return row;
@@ -1663,7 +1691,7 @@ function renderVoiceUI(speakOnly) {
     if (cam && v.video) live.add(ckey);
     const t = h('div.tile.utile' + (voice.speaking.has(uid) ? '.speaking' : '') + (voice.sbActive.has(uid) ? '.sbplay' : ''), { 'data-uid': uid, 'data-key': ckey, oncontextmenu: (e) => userMenu(e, uid, gid), onclick: () => { S.focus = S.focus === ckey ? null : ckey; renderVoiceUI(); } },
       cam && v.video ? videoFor(ckey, cam) : avatar(user(uid), 96, { status: false }),
-      h('div.label', muteIco(v), v.deaf && icon('headoff', 14), styleName(h('span', nm(uid)), user(uid).name_style), fxBadge(v.fx)));
+      h('div.label', muteIco(v), v.deaf && icon('headoff', 14), styleName(h('span', nm(uid)), user(uid).name_style), fxBadge(v.fx), appBadge(v)));
     tiles.push(paintTile(t, user(uid)));
   }
   const room = S.room?.cid === voice.channelId ? S.room : null;
@@ -1941,7 +1969,7 @@ function setupDesktop() {
 initRemote({ savePrefs, send: gwSend, name: (uid) => nameOf(uid, channelById(voice?.channelId)?.guild_id) || user(uid).display_name, rerender: () => renderVoiceUI() });
 initLfg({ go, profile: (a, uid) => profile(a, uid), inVoice: () => !!voice?.channelId, voiceChannel: () => (voice?.channelId && channelById(voice.channelId)?.type === 2 ? voice.channelId : '') });
 initClipsGallery({ go, jumpTo: (mid) => jumpTo(mid) });
-setTimeout(initAppUpdate, 1500); // aviso de versão nova do app desktop (depois da abertura, sem atrasá-la)
+initDiag(() => voice); setTimeout(initAppUpdate, 1500); // aviso de versão nova do app desktop (depois da abertura, sem atrasá-la)
 initCallInvite({ go, joinVoice, voice: () => voice, channelById, guild });
 initActivity({ openDM, profile: (a, uid) => profile(a, uid), userMenu: (e, uid) => userMenu(e, uid), go, joinVoice, watchFriend, voice: () => voice, openSettings: (k) => openSettings(k, ctxSettings()), renderActiveNow });
 // testes: importa um módulo do app pelo mesmo endereço (com a versão) que o app usa, para pegar a mesma instância

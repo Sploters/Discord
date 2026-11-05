@@ -1041,3 +1041,11 @@ html.anim .appupd { animation: lc-pop .25s cubic-bezier(.2, .9, .3, 1.15); }
 .appupd .au-body { flex: 1; min-width: 0; } .appupd b { display: block; color: var(--header, #fff); font-size: 15px; }
 .appupd p { margin: 4px 0 10px; font-size: 13px; color: var(--text-muted, #949ba4); line-height: 1.35; }
 .appupd .au-btns { display: flex; justify-content: flex-end; gap: 8px; } .appupd .btn { min-height: 32px; padding: 4px 14px; }
+/* app desktop desatualizado: selinho ao lado do nome na sala de voz */
+.appold { display: inline-flex; align-items: center; gap: 2px; margin-left: 4px; padding: 0 5px; height: 16px; border-radius: 8px; font-size: 10.5px; font-weight: 700; line-height: 1;
+  color: #1e1f22; background: var(--yellow, #f0b232); white-space: nowrap; flex: none; } .appold svg { fill: currentColor; }
+/* relatório de problema (diag.js) */
+.report textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 84px; }
+.report .rpchk { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0 10px; font-size: 13px; color: var(--text-muted); cursor: pointer; } .report .rpchk input { margin-top: 2px; flex: none; }
+.report .rpdet summary { cursor: pointer; font-size: 13px; color: var(--link, #00a8fc); }
+.report .rpdata { max-height: 220px; overflow: auto; margin: 8px 0 0; padding: 10px; border-radius: 6px; background: var(--bg-tert); font: 11.5px/1.45 Consolas, monospace; white-space: pre-wrap; word-break: break-word; }

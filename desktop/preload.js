@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('lcDesktop', {
   changeServer: () => ipcRenderer.invoke('change-server'),
   testServer: (input) => ipcRenderer.invoke('test-server', input),
   getUpdate: () => ipcRenderer.invoke('get-update'),
+  getDiagnostics: () => ipcRenderer.invoke('get-diagnostics'), // relatório de problema (desde a 1.0.23)
   installUpdate: () => ipcRenderer.invoke('install-update'),
   onUpdate: (cb) => ipcRenderer.on('update-available', (_e, v) => cb(v)),
   saveServer: (url) => ipcRenderer.invoke('save-server', url),

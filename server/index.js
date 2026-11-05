@@ -109,7 +109,16 @@ function memberObj(gid, uid) {
 }
 const roomStart = new Map(); // channelId -> quando a sala deixou de estar vazia (cronômetro da chamada)
 const VOICE_FX = new Set(['robo', 'grossa', 'esquilo', 'monstro', 'alien', 'radio', 'megafone', 'eco', 'estadio']);
-const vsObj = (cid, uid, s) => ({ channel_id: cid, user_id: uid, mute: s.mute, deaf: s.deaf, video: s.video, screen: s.screen, fx: s.fx || null, started_at: roomStart.get(cid) });
+const vsObj = (cid, uid, s) => ({ channel_id: cid, user_id: uid, mute: s.mute, deaf: s.deaf, video: s.video, screen: s.screen, fx: s.fx || null, app: s.ws?.app || null, started_at: roomStart.get(cid) });
+// versão do app desktop: quem está na call vê quem está desatualizado; abaixo da mínima não entra na call
+// (mínima: DESKTOP_MIN_VERSION ou o arquivo <dados>/desktop-min-version.txt; sem nada, não há mínima)
+const VER_RE = /^\d+\.\d+\.\d+$/;
+const olderVer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i]; return false; };
+function desktopMin() {
+  let v = process.env.DESKTOP_MIN_VERSION || '';
+  if (!v) try { v = fs.readFileSync(path.join(DATA_DIR, 'desktop-min-version.txt'), 'utf8'); } catch { }
+  v = String(v).trim().replace(/^v/i, ''); return VER_RE.test(v) ? v : null;
+}
 function voiceStatesFor(gid) {
   const out = [];
   for (const [cid, m] of voice) {
@@ -1005,6 +1014,29 @@ app.post('/api/dms', auth, wrap((req, res) => {
   if (!getUser(other) || other === req.uid) return bad(res, 'Usuário inválido');
   res.json(ensureDm(req.uid, other));
 }));
+// ---- relatório de problema ("Algo deu errado?"): diagnóstico do app vira um arquivo .json, guardado em <dados>/reports
+// e enviado por DM ao administrador da instalação (LC_ADMIN = nome de usuário; sem isso, a conta mais antiga) ----
+const reportRate = new Map(); // uid -> [tempos]
+const reportAdmin = () => (process.env.LC_ADMIN && get('SELECT id FROM users WHERE username=?', process.env.LC_ADMIN)) || get('SELECT id FROM users ORDER BY created_at ASC, id ASC LIMIT 1');
+app.post('/api/reports', auth, wrap((req, res) => {
+  const now = Date.now(), hits = (reportRate.get(req.uid) || []).filter(t => now - t < 3600e3);
+  if (hits.length >= 6) return bad(res, 'Muitos relatórios seguidos. Tente de novo daqui a pouco.', 429);
+  hits.push(now); reportRate.set(req.uid, hits);
+  const text = clean(req.body.text, 2000), data = req.body.data && typeof req.body.data === 'object' ? req.body.data : {};
+  const u = getUser(req.uid), stamp = new Date(now).toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const body = Buffer.from(JSON.stringify({ quando: new Date(now).toISOString(), usuario: { id: req.uid, nome: u.username }, descricao: text, ...data }, null, 2));
+  if (body.length > 900 * 1024) return bad(res, 'Relatório grande demais');
+  const fname = crypto.randomBytes(12).toString('hex') + '.json', name = `relatorio-${u.username}-${stamp}.json`;
+  fs.writeFileSync(path.join(UPLOAD_DIR, fname), body);
+  try { fs.mkdirSync(path.join(DATA_DIR, 'reports'), { recursive: true }); fs.writeFileSync(path.join(DATA_DIR, 'reports', name), body); } catch { }
+  const url = `/files/${fname}/${encodeURIComponent(name)}`, admin = reportAdmin();
+  if (!admin || admin.id === req.uid) return res.json({ url, sent_to: null }); // o próprio administrador: só guarda
+  const dm = ensureDm(req.uid, admin.id), mid = newId();
+  run('INSERT INTO messages(id,channel_id,author_id,content,created_at,attachments) VALUES(?,?,?,?,?,?)', mid, dm.id, req.uid,
+    `🐞 **Relatório de problema**${text ? '\n' + text : ''}`, now, JSON.stringify([{ url, name, size: body.length, type: 'application/json' }]));
+  dispatch([req.uid, admin.id], 'MESSAGE_CREATE', { ...messageObj(get('SELECT * FROM messages WHERE id=?', mid)), guild_id: null, mentions: [] });
+  res.json({ url, sent_to: userPub(admin.id) });
+}));
 function setRel(a, b, type) {
   if (type == null) run('DELETE FROM relationships WHERE user_id=? AND other_id=?', a, b);
   else run('INSERT INTO relationships VALUES(?,?,?) ON CONFLICT(user_id,other_id) DO UPDATE SET type=excluded.type', a, b, type);
@@ -1309,7 +1341,7 @@ wss.on('connection', (ws) => {
   const first = !conns.has(uid);
   if (first) conns.set(uid, new Set());
   conns.get(uid).add(ws);
-  send(ws, 'READY', buildReady(uid));
+  send(ws, 'READY', { ...buildReady(uid), desktop_min: desktopMin() });
   if (first) { broadcastPresence(uid); activity.poke(); }
   ws.alive = true; ws.on('pong', () => (ws.alive = true));
 
@@ -1319,6 +1351,12 @@ wss.on('connection', (ws) => {
     try {
       switch (msg.t) {
         case 'PING': send(ws, 'PONG', { n: d.n }); break; // medida de latência do cliente
+        case 'CLIENT_INFO': { // versão do app desktop desta conexão (null = navegador)
+          ws.app = typeof d.desktop === 'string' && VER_RE.test(d.desktop) ? d.desktop : null;
+          const c = currentVoice(uid), st = c && voice.get(c).get(uid);
+          if (st?.ws === ws) { const ch = get('SELECT * FROM channels WHERE id=?', c); dispatch(channelAudience(ch), 'VOICE_STATE', { ...vsObj(c, uid, st), guild_id: ch.guild_id }); }
+          break;
+        }
         case 'TYPING': {
           const ch = get('SELECT * FROM channels WHERE id=?', String(d.channel_id));
           if (canAccessChannel(uid, ch)) dispatch(channelAudience(ch).filter(x => x !== uid), 'TYPING', { channel_id: ch.id, user_id: uid });
@@ -1328,6 +1366,7 @@ wss.on('connection', (ws) => {
           const ch = get('SELECT * FROM channels WHERE id=?', String(d.channel_id));
           if (!ch || (ch.type !== 2 && ch.type !== 1) || !canAccessChannel(uid, ch)) return;
           if (timedOut(ch.guild_id, uid)) return send(ws, 'VOICE_DENIED', { channel_id: ch.id, reason: 'Você está de castigo neste servidor' });
+          { const min = desktopMin(); if (min && ws.app && olderVer(ws.app, min)) return send(ws, 'VOICE_DENIED', { channel_id: ch.id, code: 'outdated', min, reason: `Seu app está na versão ${ws.app}. Para entrar nas calls, atualize para a ${min} ou mais nova.` }); }
           const prev = currentVoice(uid); if (prev) leaveVoice(uid, prev);
           if (!voice.has(ch.id)) { voice.set(ch.id, new Map()); roomStart.set(ch.id, Date.now()); }
           const room = voice.get(ch.id);

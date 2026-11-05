@@ -311,6 +311,19 @@ function download(url, dest, redirects = 5) {
   });
 }
 ipcMain.handle('get-update', () => update && { version: update.version });
+// diagnóstico para o relatório de problema: fim do main.log, placas de vídeo, aceleração e versões (sem senhas/chaves)
+ipcMain.handle('get-diagnostics', async () => {
+  let logTail = ''; try { logTail = fs.readFileSync(path.join(app.getPath('userData'), 'main.log'), 'utf8').split('\n').slice(-150).join('\n'); } catch { }
+  let gpus = []; try { const g = await app.getGPUInfo('basic'); gpus = (g.gpuDevice || []).map(d => ({ nome: d.deviceString || `${d.vendorId.toString(16)}:${d.deviceId.toString(16)}`, driver: d.driverVersion, ativa: !!d.active })); } catch { }
+  const os = require('node:os'), d = screen.getPrimaryDisplay();
+  return {
+    app: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome,
+    sistema: `${os.type()} ${os.release()} ${os.arch()}`, memoriaGB: Math.round(os.totalmem() / 2 ** 30), cpu: os.cpus()[0]?.model, nucleos: os.cpus().length,
+    tela: { largura: d.size.width, altura: d.size.height, escala: d.scaleFactor, hz: d.displayFrequency },
+    gpus, aceleracao: app.getGPUFeatureStatus(), compatibilidadeVideo: { escolha: cfg.gpuCompat, ativa: gpuCompat }, aceleracaoHardware: cfg.hardwareAcceleration !== false,
+    servidor: cfg.server, enderecoGuardado: pinnedIp || null, abertoHaMin: Math.round(process.uptime() / 60), log: logTail,
+  };
+});
 ipcMain.handle('install-update', async () => {
   if (!update || updating) return false;
   updating = true;
