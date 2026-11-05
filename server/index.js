@@ -789,7 +789,7 @@ function lfgAudience(uid) {
 }
 mountGifs(app, { auth, wrap, bad, all, run, get, canSeeChannel: canAccessChannel, dataDir: DATA_DIR, clean });
 mountLfg(app, {
-  auth, wrap, bad, get, all, run, newId, dispatch, userPub, clean,
+  auth, wrap, wrapA, bad, get, all, run, newId, dispatch, userPub, clean,
   audienceOf: lfgAudience, canSeeChannel: canAccessChannel,
   voiceCount: (cid) => voice.get(cid)?.size || 0, voiceChannelOf: (uid) => currentVoice(uid),
   callInvite: (from, to) => callInv.create(from, to), postDm: (a, b, c) => postDm(a, b, c),
