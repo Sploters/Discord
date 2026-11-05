@@ -1,5 +1,5 @@
 // Aba Descobrir: notícias (RSS), promoções (Steam/Epic) e lançamentos, com fontes FALSAS locais (jogos e notícias
-// fictícios), fonte fora do ar, "Para você" filtrando pelos interesses e interesses salvos na conta.
+// fictícios), torneios (feed no formato do Challengermode), fonte fora do ar, "Para você" filtrando pelos interesses e interesses salvos na conta.
 // Uso: node scripts/discover-test.mjs  (prints em .testshots/discover)
 import puppeteer from 'puppeteer-core';
 import { spawn } from 'node:child_process'; import fs from 'node:fs'; import http from 'node:http';
@@ -29,7 +29,14 @@ const epic = { data: { Catalog: { searchStore: { elements: [
     promotions: { promotionalOffers: [{ promotionalOffers: [{ startDate: new Date(now - day).toISOString(), endDate: new Date(now + 5 * day).toISOString(), discountSetting: { discountPercentage: 0 } }] }], upcomingPromotionalOffers: [] } },
   { id: 'e2', title: 'Corrida Neon', productSlug: 'corrida-neon', keyImages: [{ type: 'OfferImageWide', url: `${M}/img/e2.svg?c=%23d946ef` }], price: { totalPrice: { originalPrice: 3999, currencyCode: 'BRL' } },
     promotions: { promotionalOffers: [], upcomingPromotionalOffers: [{ promotionalOffers: [{ startDate: new Date(now + 5 * day).toISOString(), endDate: new Date(now + 12 * day).toISOString(), discountSetting: { discountPercentage: 0 } }] }] } }] } } } };
+// torneios fictícios no formato do feed do Challengermode (um hoje, um amanhã, um daqui a 10 dias, um que já passou)
+const tours = [['Copa Relâmpago', 'VALORANT', '5 vs 5', 16, 'Prize R$ 500, ', now + 3 * 3600e3, '#e8484f'], ['Liga dos Amigos', 'CS2', '5 vs 5', 32, '', now + day + 3600e3, '#f0a020'],
+  ['Desafio Solo', 'Rocket League', '1 vs 1', 64, '', now + 10 * day, '#2ea869'], ['Torneio Antigo', 'VALORANT', '5 vs 5', 8, '', now - 2 * day, '#555']];
+const atom = `<?xml version="1.0" encoding="utf-8" ?><feed xmlns="http://www.w3.org/2005/Atom"><title>Tournament Feed</title>${tours.map(([t, g, m, n, p, at], i) =>
+  `<entry><id>cm:tournament:${i}</id><link href="${M}/t/${i}" /><title>${t} - Overview - Tournament</title><summary>${g}, ${m}, ${n} Slots, ${p}Free to enter, ${i === 2 ? 'Double' : 'Single'} Elimination, Start time ${new Date(at).toUTCString()}. Hosted by Clube Fictício..</summary></entry>`).join('')}</feed>`;
 const mock = http.createServer((q, r) => {
+  if (q.url === '/tours.xml') { r.setHeader('content-type', 'application/atom+xml'); return r.end(atom); }
+  if (q.url.startsWith('/t/')) { const t = tours[+q.url.slice(3)]; r.setHeader('content-type', 'text/html'); return r.end(`<html><head><meta property="og:image" content="${M}/img/t.svg?c=${encodeURIComponent(t[6])}" /></head><body>${'x'.repeat(5000)}</body></html>`); }
   const u = new URL(q.url, M);
   if (u.pathname === '/feed.xml') { r.setHeader('content-type', 'application/rss+xml'); return r.end(rss); }
   if (u.pathname === '/steam/api/featuredcategories') { r.setHeader('content-type', 'application/json'); return r.end(JSON.stringify(featured)); }
@@ -40,7 +47,7 @@ const mock = http.createServer((q, r) => {
   r.statusCode = 404; r.end();
 }).listen(MOCK);
 fs.rmSync(DATA, { recursive: true, force: true }); fs.mkdirSync(DATA, { recursive: true });
-fs.writeFileSync(DATA + '/discover.json', JSON.stringify({ news: [{ name: 'Jogos Hoje', url: M + '/feed.xml', lang: 'pt' }, { name: 'Site Fora do Ar', url: M + '/broken.xml', lang: 'pt' }], steamBase: M + '/steam', epicUrl: M + '/epic' }));
+fs.writeFileSync(DATA + '/discover.json', JSON.stringify({ news: [{ name: 'Jogos Hoje', url: M + '/feed.xml', lang: 'pt' }, { name: 'Site Fora do Ar', url: M + '/broken.xml', lang: 'pt' }], steamBase: M + '/steam', epicUrl: M + '/epic', cmFeed: M + '/tours.xml' }));
 const srv = spawn('node', ['server/index.js'], { env: { ...process.env, PORT, HTTPS: '0', DATA_DIR: DATA, RTC: '0' }, stdio: 'ignore' });
 for (let i = 0; i < 150; i++) { try { await fetch(BASE + '/api/server-info'); break; } catch { await sleep(200); } }
 const browser = await puppeteer.launch({ executablePath: EXE, headless: 'new', args: ['--no-sandbox'] });
@@ -67,10 +74,28 @@ try {
   await tab('Lançamentos');
   const up = await P.evaluate(() => [...document.querySelectorAll('.dcard')].map(c => c.innerText.replace(/\n+/g, ' | ')));
   ok(up.length === 2 && /12 dez/.test(up[0]) && /RPG/.test(up[0]), 'lançamentos com data e gêneros', up);
+  await tab('Torneios');
+  const tr = await P.evaluate(() => ({ secs: [...document.querySelectorAll('.dsec')].map(x => x.textContent), cards: [...document.querySelectorAll('.dcard')].map(c => c.innerText.replace(/\n+/g, ' | ')), sites: [...document.querySelectorAll('.dsite b')].map(x => x.textContent), chips: [...document.querySelectorAll('.dchips .dchip')].map(x => x.textContent) }));
+  ok(tr.cards.length === 3 && /Copa Relâmpago/.test(tr.cards[0]) && /R\$ 500/.test(tr.cards[0]) && /Hoje|Começa/.test(tr.cards[0]) && /Amanhã/.test(tr.cards[1]) && /Eliminação dupla/.test(tr.cards[2]) && !tr.cards.some(c => /Antigo/.test(c)), 'torneios: por data, com prêmio, formato traduzido e sem os que já passaram', tr.cards);
+  ok(tr.secs.some(x => /^Hoje/.test(x)) && tr.secs.some(x => /Próximos 7 dias/.test(x)) && tr.secs.some(x => /Mais adiante/.test(x)), 'torneios separados por hoje / 7 dias / depois', tr.secs);
+  ok(['GamersClub', 'Battlefy', 'Challengermode'].every(n => tr.sites.includes(n)), 'atalhos para GamersClub, Battlefy e Challengermode', tr.sites);
+  await P.evaluate(() => [...document.querySelectorAll('.dchips .dchip')].find(x => /^CS2/.test(x.textContent)).click()); await sleep(200);
+  ok(await P.evaluate(() => document.querySelectorAll('.dcard').length === 1 && /Liga dos Amigos/.test(document.querySelector('.dcard').textContent)), 'filtro por jogo');
+  await P.evaluate(() => [...document.querySelectorAll('.dchips .dchip')].find(x => /Todos os jogos/.test(x.textContent)).click());
+  await P.evaluate(() => document.querySelector('.dchip.dtoggle').click()); await sleep(200);
+  ok(await P.evaluate(() => document.querySelectorAll('.dcard').length === 1), 'filtro "Com prêmio"');
+  await P.evaluate(() => document.querySelector('.dchip.dtoggle').click());
+  await sleep(9500); // as imagens chegam em segundo plano e a aba recarrega sozinha
+  ok(await P.evaluate(() => document.querySelectorAll('.dtimg img').length === 3), 'imagens dos torneios (og:image) carregadas', await P.evaluate(() => document.querySelectorAll('.dtimg img').length));
+  await P.screenshot({ path: OUT + '/disc-torneios.png' });
   await tab('Para você');
   await P.type('.dint-in', 'Estrela Cadente'); await P.keyboard.press('Enter'); await sleep(400);
   await P.evaluate(() => [...document.querySelectorAll('.dsugg .dchip')].find(x => /Indie/.test(x.textContent))?.click()); await sleep(500);
   const fy = await P.evaluate(() => ({ chips: [...document.querySelectorAll('.dint .dchip.on')].map(x => x.textContent), secs: [...document.querySelectorAll('.dsec')].map(x => x.textContent), cards: [...document.querySelectorAll('.dcard .dtitle')].map(x => x.textContent), why: [...document.querySelectorAll('.dwhy')].map(x => x.textContent) }));
+  await P.type('.dint-in', 'Valorant'); await P.keyboard.press('Enter'); await sleep(400);
+  const fy2 = await P.evaluate(() => [...document.querySelectorAll('.dsec')].map(x => x.textContent));
+  ok(fy2.some(x => /Torneios dos seus jogos/.test(x)), '"Para você" com torneios do jogo escolhido', fy2);
+  await P.evaluate(() => [...document.querySelectorAll('.dint .dchip.on')].find(x => /Valorant/.test(x.textContent)).querySelector('button').click()); await sleep(400);
   ok(fy.chips.length === 2 && fy.cards.includes('Estrela Cadente') && fy.cards.includes('Estrela Cadente 2') && fy.cards.includes('Fazendinha Tranquila') && !fy.cards.some(t => /Arena/.test(t)), '"Para você" mostra só o que combina com os interesses (com o motivo)', fy);
   await sleep(1800); const saved = await P.evaluate(async () => (await (await fetch('/api/me/settings', { headers: { authorization: 'Bearer ' + localStorage.lc_token } })).json()));
   ok(JSON.stringify(saved).includes('Estrela Cadente'), 'interesses salvos na conta');

@@ -6,6 +6,11 @@
 //   GET /api/discover/news      -> { items: [{ id, title, summary, url, image, source, lang, date }], failed: [nomes] }
 //   GET /api/discover/deals     -> { items: [{ id, title, url, image, store, price, old, currency, discount, free, starts, ends }] }
 //   GET /api/discover/upcoming  -> { items: [{ id, title, url, image, store, date, tags }] }
+//   GET /api/discover/tournaments -> { items: [{ id, title, url, image, source, game, mode, slots, prize, free, format, starts, host, tags }], links: [...] }
+// Torneios: o Challengermode publica um feed público (Atom) com os próximos torneios abertos; a imagem de cada um vem
+// da página do torneio (og:image), buscada aos poucos e guardada por 1 dia. GamersClub e Battlefy não oferecem os dados
+// abertos (a Battlefy recusa acesso direto e a GamersClub só tem a API interna do site), então aparecem como atalhos.
+// No discover.json: "tournaments": false desliga; "cmFeed" troca o endereço do feed (testes).
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -42,6 +47,29 @@ export function parseFeed(xml, source) {
     const d = Date.parse(strip(tag(it, ['pubDate', 'published', 'updated', 'dc:date'])));
     out.push({ id: `${source.name}:${url}`, title: cut(title, 160), summary: cut(strip(body), 220), url, image, source: source.name, lang: source.lang || '', date: isFinite(d) ? d : null });
   }
+  return out;
+}
+
+// ---------- torneios (Challengermode) ----------
+// resumo do feed: "VALORANT, 5 vs 5, 16 Slots, Prize $500, Free to enter, Single Elimination, Start time Fri, 18 Dec 2026 22:00:00 GMT. Hosted by X.."
+// nomes como aparecem no feed -> nome mais conhecido + outros nomes (para o "Para você" achar pelo que a pessoa digita)
+const GAMES = { 'VALORANT': ['Valorant'], 'R6S': ['Rainbow Six Siege', 'Rainbow Six', 'R6'], 'CS2': ['CS2', 'Counter-Strike 2', 'Counter-Strike', 'CS'], 'CS:GO': ['CS:GO', 'Counter-Strike'],
+  'TFT': ['Teamfight Tactics', 'TFT'], 'LoL': ['League of Legends', 'LoL'], 'League of Legends': ['League of Legends', 'LoL'], 'Wild Rift': ['Wild Rift', 'League of Legends'],
+  'PUBG': ['PUBG'], 'PUBG MOBILE': ['PUBG Mobile', 'PUBG'], 'Free Fire': ['Free Fire'], 'Dota 2': ['Dota 2', 'Dota'], 'EA SPORTS FC 25': ['EA FC', 'FIFA'] };
+const gameNames = (g) => GAMES[g] || GAMES[Object.keys(GAMES).find(k => k.toLowerCase() === g.toLowerCase())] || [g];
+export function parseTournament(title, summary) {
+  const s = decode(summary).replace(/\.+$/, '').trim();
+  const m = s.match(/^(.*?), (\d+) vs (\d+), (\d+) Slots?, (.*?)(?:, )?Start time ([^.]*?GMT)\.? ?(?:(?:Hosted|Powered) by (.*))?$/i);
+  const out = { tags: [], title: cut(decode(title).replace(/\s*-\s*Overview\s*-\s*Tournament\s*$/i, '').trim(), 140), game: '', mode: '', slots: 0, prize: '', free: null, format: '', starts: null, host: '' };
+  if (!m) return out;
+  out.game = gameNames(m[1].trim())[0]; out.tags = gameNames(m[1].trim()); out.mode = m[2] === m[3] ? `${m[2]}v${m[3]}` : `${m[2]} vs ${m[3]}`; out.slots = +m[4];
+  const d = Date.parse(m[6]); out.starts = isFinite(d) ? d : null; out.host = (m[7] || '').replace(/\.+$/, '').trim();
+  // o meio: [prêmio], entrada (grátis/paga), formato
+  const mid = m[5].replace(/,\s*$/, ''), fe = mid.match(/(?:^|, )(Free to enter|Entry fee[^,]*|Paid entry[^,]*)(?:, |$)/i);
+  if (fe) { out.free = /^free/i.test(fe[1]); out.prize = mid.slice(0, fe.index).replace(/^Prize\s*/i, '').trim(); out.format = mid.slice(fe.index + fe[0].length).trim(); }
+  else { const parts = mid.split(', '); out.format = parts.pop() || ''; out.prize = parts.join(', ').replace(/^Prize\s*/i, '').trim(); }
+  out.format = out.format.replace(/(Single Elimination)( \+ Single Elimination)+/g, '$1').trim();
+  if (/prize pool$/i.test(out.prize)) out.prize = out.prize.replace(/\s*prize pool$/i, '');
   return out;
 }
 
@@ -122,9 +150,46 @@ export function mountDiscover(app, { auth, dataDir }) {
     return out;
   }
 
+  // ---------- torneios ----------
+  const TLINKS = [
+    { name: 'GamersClub', url: 'https://gamersclub.gg/tournaments', desc: 'Campeonatos brasileiros de CS2 e Valorant.', games: [['CS2', 'https://gamersclub.gg/cs2/tournaments'], ['Valorant', 'https://gamersclub.gg/valorant/tournaments']] },
+    { name: 'Battlefy', url: 'https://battlefy.com/browse', desc: 'Torneios de vários jogos, de comunidades e de marcas.', games: [] },
+    { name: 'Challengermode', url: 'https://www.challengermode.com/', desc: 'Torneios abertos, ligas e desafios em mais de 200 jogos.', games: [] },
+  ];
+  const imgQueue = [], imgBusy = { n: 0 };
+  const ogImage = async (url) => { // só o começo da página (as tags og ficam no <head>)
+    const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'text/html' }, signal: AbortSignal.timeout(10000), redirect: 'follow' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const rd = r.body.getReader(), dec = new TextDecoder(); let html = '';
+    while (html.length < 150000) { const { done, value } = await rd.read(); if (done) break; html += dec.decode(value, { stream: true }); if (/<\/head>/i.test(html)) break; }
+    rd.cancel().catch(() => { });
+    return httpUrl(attr(html, 'meta', 'content', /property\s*=\s*["']og:image["']/i)) || '';
+  };
+  const pumpImages = () => {
+    while (imgBusy.n < 3 && imgQueue.length) {
+      const url = imgQueue.shift(); imgBusy.n++;
+      cached('timg:' + url, 24 * 3600e3, () => ogImage(url)).catch(() => '').finally(() => { imgBusy.n--; pumpImages(); });
+    }
+  };
+  async function tournaments() {
+    const c = conf(); if (c.tournaments === false) return { items: [], links: TLINKS };
+    const xml = await cached('tour:cm', 15 * 60e3, () => get(c.cmFeed || 'https://www.challengermode.com/xml/feed/tournaments'));
+    const now = Date.now(), items = [];
+    for (const it of (xml.match(/<entry\b[\s\S]*?<\/entry>/gi) || []).slice(0, 200)) {
+      const url = httpUrl(attr(it, 'link', 'href')); if (!url) continue;
+      const t = parseTournament(strip(tag(it, ['title'])), tag(it, ['summary']));
+      if (!t.title || (t.starts && t.starts < now - 3 * 3600e3) || /^test\b/i.test(t.title)) continue; // já passou ou é teste
+      items.push({ id: 'cm:' + url, url, source: 'Challengermode', image: cache.get('timg:' + url)?.v || '', ...t, host: /^challengermode$/i.test(t.host) ? '' : t.host });
+    }
+    items.sort((a, b) => (a.starts || Infinity) - (b.starts || Infinity));
+    // imagens: dos que começam antes primeiro (só o <head> de cada página, 3 por vez, guardadas por 1 dia)
+    if (c.cmImages !== false) { for (const t of items.slice(0, 100)) { const k = 'timg:' + t.url; if (!cache.has(k) && !busy.has(k) && !imgQueue.includes(t.url)) imgQueue.push(t.url); } pumpImages(); }
+    return { items, links: TLINKS };
+  }
+
   const send = (fn) => async (req, res) => {
     if (off()) return res.json({ items: [], off: true });
-    try { res.set('Cache-Control', 'private, max-age=120'); res.json(await fn()); }
+    try { res.set('Cache-Control', 'private, no-cache'); res.json(await fn()); }
     catch (e) { res.status(502).json({ items: [], error: 'Não consegui buscar agora. Tente de novo em instantes.' }); }
   };
   app.get('/api/discover/news', auth, send(news));
@@ -135,4 +200,5 @@ export function mountDiscover(app, { auth, dataDir }) {
     return { items };
   }));
   app.get('/api/discover/upcoming', auth, send(async () => ({ items: await steamUpcoming() })));
+  app.get('/api/discover/tournaments', auth, send(tournaments));
 }

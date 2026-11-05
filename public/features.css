@@ -1087,4 +1087,20 @@ html.anim .dcard.skel { animation: lc-fade 1.2s ease-in-out infinite alternate; 
 #discoverview .dsugg { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; } #discoverview .dsugg small { color: var(--text-muted); margin-right: 2px; } #discoverview .dsugg .dchip { padding: 3px 9px; font-size: 12px; }
 #discoverview .dempty { margin: 50px auto; max-width: 440px; text-align: center; color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 8px; } #discoverview .dempty b { color: var(--header); font-size: 16px; }
 #discoverview .dnote { font-size: 12px; color: var(--text-muted); margin-top: 16px; }
+/* torneios */
+.dcard .dtimg { position: relative; background: linear-gradient(135deg, color-mix(in srgb, var(--brand, #5865f2) 55%, #000), #1e1f22); }
+.dcard .dtimg img { position: absolute; inset: 0; }
+.dcard .dtgame, .dcard .dtwhen { position: absolute; left: 8px; padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; color: #fff; background: rgba(0,0,0,.62); backdrop-filter: blur(4px); display: inline-flex; align-items: center; gap: 4px; max-width: calc(100% - 16px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dcard .dtgame { top: 8px; } .dcard .dtwhen { bottom: 8px; } .dcard .dtwhen svg { fill: currentColor; flex: none; } .dcard .dtwhen.soon { background: #23a55a; }
+.dcard .dprize { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 5px; font-weight: 700; font-size: 13px; background: color-mix(in srgb, #f0b232 22%, transparent); color: #f0b232; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .dcard .dprize svg { fill: currentColor; flex: none; }
+.dcard .dpaid { padding: 2px 7px; border-radius: 5px; font-weight: 700; font-size: 13px; background: var(--bg-tert); color: var(--text-muted); }
+.dcard .dprice { flex-wrap: wrap; }
+#discoverview .dcount { font-size: 11px; font-weight: 700; opacity: .7; margin-left: 2px; } #discoverview .dsec .dcount { font-size: 12px; color: var(--text-muted); }
+#discoverview .dchip.dtoggle svg { fill: currentColor; }
+#discoverview .dsites { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+#discoverview .dsite { padding: 12px 14px; border-radius: 10px; background: var(--bg-sec); border: 1px solid var(--divider); display: flex; flex-direction: column; gap: 10px; }
+#discoverview .dsite-main { display: flex; flex-direction: column; gap: 3px; color: inherit; text-decoration: none; } #discoverview .dsite-main:hover b { text-decoration: underline; }
+#discoverview .dsite-main b { color: var(--header); display: inline-flex; align-items: center; gap: 6px; font-size: 15px; } #discoverview .dsite-main b svg { fill: currentColor; color: var(--text-muted); }
+#discoverview .dsite-main small { color: var(--text-muted); font-size: 13px; }
+#discoverview .dsite-games { display: flex; flex-wrap: wrap; gap: 6px; } #discoverview .dsite-games .dchip { text-decoration: none; padding: 3px 10px; font-size: 12px; }
 @media (max-width: 700px) { #discoverview .dbodywrap { padding: 12px 12px 32px; } #discoverview .dgrid { grid-template-columns: 1fr; } #discoverview #topbar { overflow-x: auto; } }
