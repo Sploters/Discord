@@ -481,7 +481,7 @@ function renderSide() {
   const keepScroll = $('#side-list')?.scrollTop || 0;
   let head, list;
   if (S.view.gid === '@me' || !guild(S.view.gid)) {
-    head = h('div#side-head', { style: { cursor: 'default' } }, h('input', { placeholder: 'Encontre ou comece uma conversa', style: { width: '100%', background: 'var(--bg-tert)', border: 0, borderRadius: '4px', padding: '4px 6px', fontSize: '13px', outline: 'none' }, onfocus: (e) => { e.target.blur(); quickSwitch(); } }));
+    head = h('div#side-head', { style: { cursor: 'default' } }, h('button.dm-find', { type: 'button', title: 'Busca rápida (Ctrl+K)', onclick: () => quickSwitch() }, 'Encontre ou comece uma conversa'));
     const pending = [...S.rels.values()].filter(r => r.type === 3).length;
     list = h('div#side-list',
       h('div.ch' + (S.view.kind === 'home' ? '.active' : ''), { onclick: () => go('@me') }, icon('users'), h('span.name', 'Amigos'), pending > 0 && h('span.pill', pending)),

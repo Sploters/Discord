@@ -266,3 +266,9 @@ html:not(.anim) .clipflash .cf-badge { animation: cfFade 2.4s step-end forwards;
 .pcard .pplaybox { background: rgba(0,0,0,.18); border-radius: 8px; overflow: hidden; margin: 2px 0 6px; }
 .pcard .pplaybox .pplay { background: none; margin: 0; } .pcard .pplaybox .gbanner { border-radius: 0; }
 .pcard .pplay .gicon { border-radius: 8px; }
+
+/* busca de conversas no topo das mensagens diretas: botão arredondado, como o do Discord */
+#side-head .dm-find { width: 100%; height: 30px; border-radius: 8px; border: 1px solid var(--divider); background: var(--bg-tert); color: var(--text-muted);
+  font-family: inherit; font-size: 13px; font-weight: 500; line-height: 1; cursor: pointer; padding: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background .15s, color .15s; }
+#side-head .dm-find:hover { background: var(--bg-mod-hover); color: var(--interactive-hover, var(--text)); }
+#side-head .dm-find:focus-visible { outline: 2px solid var(--brand, #5865f2); outline-offset: 1px; }

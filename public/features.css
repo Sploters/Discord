@@ -291,6 +291,14 @@ body:has(#lightbox) #layer { z-index: 130; } /* menus de clique direito por cima
   #app:has(#chtabs) #side { margin-top: 34px; }
   /* o primeiro ícone do menu lateral (Mensagens diretas) começa na altura do cabeçalho da lista (#side-head), logo abaixo das abas */
   #app:has(#chtabs) #rail { padding-top: 34px; }
+  /* como no Discord: o painel lateral tem o canto de cima arredondado e uma borda fina, encaixado no fundo escuro do menu.
+     A linha de baixo das abas só passa por cima do chat; em cima da lista quem desenha a linha é a borda do painel. */
+  #app:has(#chtabs) #side { margin-top: 33px; border-top: 1px solid var(--divider); border-left: 1px solid var(--divider); border-top-left-radius: 12px; }
+  #app.hide-side:has(#chtabs) #side { border: 0; }
+  #app:has(#chtabs) #side-head { border-top-left-radius: 11px; } /* fundo do hover e banner do servidor acompanham o canto */
+  #main > #chtabs { border-bottom-color: transparent; background-image: linear-gradient(var(--divider), var(--divider)); background-repeat: no-repeat;
+    background-size: calc(100% - var(--side-w) - 1px) 1px; background-position: right bottom; }
+  :root.grad #app { background: var(--g1); }
   #main > #chtabs { margin-left: calc(-1 * var(--side-w)); position: relative; z-index: 21; }
 }
 
