@@ -1,5 +1,7 @@
 const remote = require('./remote');
 const native = require('./native');
+const clipFlash = require('./clipflash');
+const appAudio = require('./appaudio');
 const { app, BrowserWindow, Tray, Menu, ipcMain, desktopCapturer, session, shell, globalShortcut, nativeImage, dialog, screen } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -23,7 +25,7 @@ app.setAppUserModelId('br.resenha.app');
 if (!app.requestSingleInstanceLock()) { app.quit(); return; }
 
 const cfgPath = () => path.join(app.getPath('userData'), 'config.json');
-const defaults = { server: '', autoStart: false, startMinimized: false, closeToTray: true, globalHotkeys: true, hotkeyMute: 'CommandOrControl+Shift+M', hotkeyDeafen: 'CommandOrControl+Shift+D', hotkeyClip: 'CommandOrControl+Alt+C', hardwareAcceleration: true, gpuCompat: 'auto', bounds: { width: 1360, height: 860 } };
+const defaults = { server: '', autoStart: false, startMinimized: false, closeToTray: true, globalHotkeys: true, hotkeyMute: 'CommandOrControl+Shift+M', hotkeyDeafen: 'CommandOrControl+Shift+D', hotkeyClip: 'F8', hardwareAcceleration: true, gpuCompat: 'auto', bounds: { width: 1360, height: 860 } };
 let cfg = { ...defaults };
 try { cfg = { ...defaults, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; } catch { /* primeira execução */ }
 const saveCfg = () => { try { fs.mkdirSync(path.dirname(cfgPath()), { recursive: true }); fs.writeFileSync(cfgPath(), JSON.stringify(cfg, null, 2)); } catch (e) { console.error(e); } };
@@ -66,7 +68,7 @@ if (gpuCompat && cfg.hardwareAcceleration !== false) {
   app.commandLine.appendSwitch('disable-direct-composition-video-overlays');
 }
 const log = (...a) => { try { fs.appendFileSync(path.join(app.getPath('userData'), 'main.log'), `${new Date().toISOString()} ${a.join(' ')}\n`); } catch { /* sem log */ } };
-let win, tray, quitting = false, pickedSource = null, badge = 0;
+let win, tray, quitting = false, pickedSource = null, pickedName = '', badge = 0;
 const serverHost = () => { try { return new URL(cfg.server).hostname; } catch { return ''; } };
 const trustedHosts = new Set();
 // no Windows a barra de tarefas usa o .ico com vários tamanhos (16–256); só o PNG deixava o ícone em branco em alguns PCs
@@ -221,8 +223,12 @@ function setupSession() {
   ses.setDisplayMediaRequestHandler(async (request, callback) => {
     try {
       const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] });
-      // janela minimizada (jogo em tela cheia após alt+tab) não pode ser capturada: cai para a tela inteira, que mostra o jogo quando ele volta
-      const s = sources.find(x => x.id === pickedSource) || sources.find(x => x.id.startsWith('screen:')) || sources[0];
+      // janela minimizada (jogo em tela cheia depois do alt+tab) não aparece na lista do Chromium, mas dá para capturá-la pelo
+      // id mesmo assim: enquanto está minimizada não chega imagem, e quando a pessoa volta para o jogo a transmissão mostra o jogo.
+      // Antes caía para a TELA INTEIRA (e com ela o áudio e tudo mais que estivesse aberto) — é o que o Discord evita.
+      const picked = /^(window|screen):\d+:\d+$/.test(pickedSource || '') ? pickedSource : null;
+      const s = sources.find(x => x.id === picked) || (picked?.startsWith('window:') ? { id: picked, name: pickedName || 'Janela' } : null)
+        || sources.find(x => x.id.startsWith('screen:')) || sources[0];
       if (!s) return callback({});
       remote.setShared(s); // o controle remoto precisa saber qual monitor está sendo transmitido
       // áudio = loopback do sistema todo (o Windows não isola uma janela), tanto de tela quanto de janela; o renderer pede restrictOwnAudio para excluir a própria Resenha
@@ -235,14 +241,24 @@ function setupSession() {
 // janelas já vistas ficam na lista por alguns minutos: jogo em tela cheia some do Windows ao dar alt+tab (minimiza)
 const seenWindows = new Map();
 ipcMain.handle('get-sources', async () => {
-  const list = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: true });
+  // janelas pelo programa nativo (em paralelo): inclui as MINIMIZADAS, com o processo (para o áudio só do jogo) e se é jogo
+  const [list, wins] = await Promise.all([desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: true }), appAudio.listWindows().catch(() => [])]);
+  const byHwnd = new Map(wins.map(w => [String(w.hwnd), w]));
+  const extra = (w) => (w ? { pid: w.pid, exe: w.exe, game: !!w.game, minimized: !!w.minimized, fullscreen: !!w.fullscreen } : {});
   const now = Date.now(), out = [];
   for (const s of list) {
     if (s.name === 'Resenha' || /NVIDIA GeForce Overlay/i.test(s.name)) continue; // o overlay da NVIDIA só aparece preto
-    const type = s.id.startsWith('screen') ? 'screen' : 'window';
-    const item = { id: s.id, name: s.name, type, thumbnail: s.thumbnail.toDataURL(), appIcon: s.appIcon && !s.appIcon.isEmpty() ? s.appIcon.toDataURL() : null };
+    const type = s.id.startsWith('screen') ? 'screen' : 'window', w = type === 'window' ? byHwnd.get(s.id.split(':')[1]) : null;
+    if (w) byHwnd.delete(String(w.hwnd));
+    const item = { id: s.id, name: s.name, type, thumbnail: s.thumbnail.toDataURL(), appIcon: s.appIcon && !s.appIcon.isEmpty() ? s.appIcon.toDataURL() : w?.icon || null, ...extra(w) };
     out.push(item);
     if (type === 'window') seenWindows.set(s.id, { item, at: now });
+  }
+  // o que o Chromium não lista (janela minimizada: jogo em tela cheia depois do alt+tab) — sem miniatura, com o ícone do programa
+  for (const w of byHwnd.values()) {
+    if (!w.minimized || /^(Resenha|Program Manager)$/.test(w.title)) continue;
+    const item = { id: `window:${w.hwnd}:0`, name: w.title, type: 'window', thumbnail: null, appIcon: w.icon || null, ...extra(w) };
+    out.push(item); seenWindows.set(item.id, { item, at: now });
   }
   const live = new Set(out.map(o => o.id));
   for (const [id, v] of seenWindows) {
@@ -251,15 +267,22 @@ ipcMain.handle('get-sources', async () => {
   }
   return out;
 });
-ipcMain.handle('select-source', (_e, id) => { pickedSource = id; return true; });
+ipcMain.handle('select-source', (_e, id, name) => { pickedSource = String(id || ''); pickedName = String(name || '').slice(0, 200); return true; });
+// áudio só do jogo (desktop/appaudio.js): o PCM vai direto para a página, que monta a trilha de áudio da transmissão
+ipcMain.handle('app-audio-capable', () => appAudio.capable());
+ipcMain.handle('app-audio-start', (e, o) => appAudio.start({ pid: +o?.pid || 0, mode: o?.mode === 'exclude' ? 'exclude' : 'include' },
+  (buf) => { if (!e.sender.isDestroyed()) e.sender.send('app-audio-data', buf); }));
+ipcMain.on('app-audio-stop', () => appAudio.stop());
 ipcMain.on('set-badge', (_e, n) => setBadge(n));
+// aviso de clipe capturado por cima do jogo (desktop/clipflash.js)
+ipcMain.on('clip-flash', (_e, o) => { if (o && typeof o === 'object') clipFlash.show({ ok: o.ok !== false, title: String(o.title || '').slice(0, 80), sub: String(o.sub || '').slice(0, 120) }); });
 // controle remoto (desktop/remote.js): o renderer só chama start depois que o dono aceitou
 ipcMain.handle('remote-capable', () => remote.capable());
 ipcMain.handle('remote-start', (_e, o) => remote.start(o || {}));
 ipcMain.on('remote-input', (_e, ev) => remote.input(ev));
 ipcMain.on('remote-stop', () => remote.stop());
 remote.onRemoteEvent((k) => { if (win && !win.isDestroyed()) win.webContents.send('remote-event', k); });
-app.on('before-quit', () => { remote.shutdown(); native.shutdown(); });
+app.on('before-quit', () => { remote.shutdown(); native.shutdown(); clipFlash.hide(); appAudio.shutdown(); });
 // transmissão a 120 FPS (desktop/native.js): o renderer pede a sessão ao servidor e passa as chaves para cá
 ipcMain.handle('native-capable', () => native.capable());
 ipcMain.handle('native-start', (_e, o) => native.start({ ...(o || {}), sourceId: (o && o.sourceId) || pickedSource }));

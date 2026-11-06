@@ -7,6 +7,28 @@ const KEEP = 65000;
 const liveTracks = (stream, audio) => [...stream.getVideoTracks(), ...(audio?.getAudioTracks() || []), ...stream.getAudioTracks()].filter(t => t.readyState === 'live');
 export const trackSig = (stream, audio) => liveTracks(stream, audio).map(t => t.id).join(',');
 
+// Mistura várias fontes de áudio numa trilha só, para o clipe (o MediaRecorder grava só UMA trilha de áudio).
+// Fontes podem entrar e sair sem reiniciar a gravação: trocar de microfone, o áudio da transmissão chegar depois do vídeo...
+// Limitador no fim: jogo + voz juntos não estouram.
+export function createMixer(ctx) {
+  const dest = ctx.createMediaStreamDestination(), lim = ctx.createDynamicsCompressor(), conn = new Map(); // id da trilha -> nó
+  lim.threshold.value = -3; lim.knee.value = 3; lim.ratio.value = 20; lim.attack.value = .002; lim.release.value = .15;
+  lim.connect(dest);
+  let had = false;
+  return {
+    stream: dest.stream,
+    get had() { return had; }, // alguma fonte de áudio já entrou (senão o clipe é mudo)
+    get size() { return conn.size; }, // fontes ligadas agora
+    set(streams) {
+      const want = new Map();
+      for (const s of streams) for (const t of s?.getAudioTracks?.() || []) if (t.readyState === 'live') want.set(t.id, t);
+      for (const [id, n] of conn) if (!want.has(id)) { n.disconnect(); conn.delete(id); }
+      for (const [id, t] of want) if (!conn.has(id)) { try { const n = ctx.createMediaStreamSource(new MediaStream([t])); n.connect(lim); conn.set(id, n); had = true; } catch { /* trilha inválida */ } }
+    },
+    stop() { for (const n of conn.values()) n.disconnect(); conn.clear(); lim.disconnect(); dest.stream.getTracks().forEach(t => t.stop()); },
+  };
+}
+
 export function createBuffer(stream, audio, opts = {}) {
   if (!stream || !window.MediaRecorder) return null;
   const tracks = liveTracks(stream, audio);

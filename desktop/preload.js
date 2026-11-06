@@ -3,8 +3,14 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('lcDesktop', {
   isDesktop: true,
   getSources: () => ipcRenderer.invoke('get-sources'),
-  selectSource: (id) => ipcRenderer.invoke('select-source', id),
+  selectSource: (id, name) => ipcRenderer.invoke('select-source', id, name),
+  // áudio da transmissão só do jogo (loopback por processo do Windows; desde a 1.0.24): ver desktop/appaudio.js
+  appAudioCapable: () => ipcRenderer.invoke('app-audio-capable'),
+  appAudioStart: (o) => ipcRenderer.invoke('app-audio-start', o),
+  appAudioStop: () => ipcRenderer.send('app-audio-stop'),
+  onAppAudio: (() => { let cb = null; ipcRenderer.on('app-audio-data', (_e, b) => cb?.(b)); return (f) => { cb = f; }; })(),
   setBadge: (n) => ipcRenderer.send('set-badge', n),
+  clipFlash: (o) => ipcRenderer.send('clip-flash', o), // aviso de clipe por cima do jogo (desde a 1.0.24)
   onHotkey: (cb) => ipcRenderer.on('hotkey', (_e, k) => cb(k)),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   setSettings: (p) => ipcRenderer.invoke('set-settings', p),

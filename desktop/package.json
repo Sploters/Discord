@@ -1,6 +1,6 @@
 {
   "name": "resenha-desktop",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "description": "Resenha Desktop — cliente do seu servidor Resenha",
   "main": "main.js",
   "author": "Resenha",
@@ -26,7 +26,9 @@
       "build/tray.png",
       "remote.js",
       "build/icon.ico",
-      "native.js"
+      "native.js",
+      "clipflash.js",
+      "appaudio.js"
     ],
     "win": {
       "target": [
@@ -54,6 +56,10 @@
       {
         "from": "native/lc-stream.exe",
         "to": "lc-stream.exe"
+      },
+      {
+        "from": "native/lc-audio.exe",
+        "to": "lc-audio.exe"
       }
     ]
   },

@@ -27,7 +27,7 @@ export const S = {
     zoom: 100, compact: false, desktopNotif: true, sounds: true, callSounds: true, inputId: '', outputId: '', videoId: '', theme: 'dark', accent: '#5865f2', reduceMotion: false,
     screen: { res: 1080, fps: 30, audio: true, hint: 'motion' },
     soundVolume: 80, fontFamily: 'default', msgGap: 17, radius: 8, hour12: false, highContrast: false, saturation: 100, underlineLinks: false, embedLinks: true, roleColors: true,
-    confirmLinks: false, devMode: false, notifPreview: true, voiceBitrate: 'auto', camRes: 720, camFps: 30, keyMute: 'Ctrl+Shift+KeyM', keyDeafen: 'Ctrl+Shift+KeyD' },
+    confirmLinks: false, devMode: false, notifPreview: true, voiceBitrate: 'auto', camRes: 720, camFps: 30, keyMute: 'Ctrl+Shift+KeyM', keyDeafen: 'Ctrl+Shift+KeyD', keyClip: 'F8', keyFx: 'Ctrl+Shift+KeyE' },
     JSON.parse(localStorage.getItem('lc_prefs') || '{}')),
   replyTo: null, editing: null, pending: [], membersOpen: true, viewers: new Map(), watching: new Set(),
 };

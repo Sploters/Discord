@@ -164,6 +164,7 @@ export class Voice {
     this.sfuClose();
     for (const uid of [...this.peers.keys()]) this.drop(uid);
     this.micGraph?.dispose(); this.micGraph = null;
+    this.stopAppAudio(); // programa de áudio do jogo também para
     for (const s of [this.cam, this.screen]) s?.getTracks().forEach(t => t.stop());
     this.mic = this.cam = this.screen = null; this.channelId = null; this.speaking.clear();
     for (const a of this.analysers.values()) a.src.disconnect(); this.analysers.clear();
@@ -733,10 +734,47 @@ export class Voice {
     const vt = this.screen.getVideoTracks()[0];
     vt.contentHint = opts.hint; vt.onended = () => this.stopLocal('screen');
     this.screenOpts = opts;
+    // app desktop: troca o áudio do PC inteiro pelo áudio só do jogo (ou "tudo menos a Resenha"); se não der, fica o do sistema
+    if (opts.audio && opts.appAudio && window.lcDesktop?.appAudioStart) await this.useAppAudio(opts.appAudio);
+    if (!this.screen) return; // parou enquanto preparava o áudio
     const nat = await this.wantNative(opts);
     if (nat) { this.native = { pending: true }; this.previewOnly(vt, true); }
     this.publish('screen', this.screen); playSound('selfStreamStart'); this.watchScreen(); this.meterCapture(); this.meterBlack();
     if (nat) this.startNative().catch(() => { });
+  }
+
+  // ---------- áudio da transmissão só do jogo (app desktop no Windows 10 2004+) ----------
+  // Como o Discord: o Windows entrega o áudio de UM programa (e dos filhos dele), em vez do PC inteiro. O programa nativo manda
+  // o som em PCM, um AudioWorklet toca numa trilha comum e ela substitui o áudio do sistema que o Chromium capturou.
+  // a: { mode: 'include', pid, name } (só o jogo) | { mode: 'exclude' } (tudo menos a Resenha: sem música da call, sem eco)
+  async useAppAudio(a) {
+    const d = window.lcDesktop; let node = null;
+    try {
+      const ctx = this.getCtx();
+      this._pcmMod ||= ctx.audioWorklet.addModule('/appaudio-worklet.js').catch((e) => { this._pcmMod = null; throw e; });
+      await this._pcmMod;
+      node = new AudioWorkletNode(ctx, 'lc-pcm', { numberOfInputs: 0, outputChannelCount: [2] });
+      const dest = ctx.createMediaStreamDestination(); node.connect(dest);
+      d.onAppAudio((b) => node.port.postMessage(b));
+      const r = await d.appAudioStart({ pid: a.pid, mode: a.mode });
+      if (!r?.ok) throw new Error(r?.error || 'falhou');
+      if (!this.screen) throw new Error('transmissão encerrada');
+      const t = dest.stream.getAudioTracks()[0];
+      for (const old of this.screen.getAudioTracks()) { this.screen.removeTrack(old); old.stop(); } // o loopback do PC inteiro sai
+      this.screen.addTrack(t);
+      this.appAudio = { node, dest, track: t, mode: a.mode, name: a.name || '' };
+      return true;
+    } catch (e) {
+      d.onAppAudio?.(null); d.appAudioStop?.(); node?.disconnect();
+      if (this.screen) { this.error = `Áudio só ${a.mode === 'exclude' ? 'dos outros programas' : 'do jogo'} indisponível (${e.message}). Transmitindo o áudio do PC inteiro.`; this.onUpdate(); }
+      return false;
+    }
+  }
+  stopAppAudio() {
+    const a = this.appAudio; if (!a) return;
+    this.appAudio = null;
+    window.lcDesktop?.onAppAudio?.(null); window.lcDesktop?.appAudioStop?.();
+    a.node.disconnect(); a.track.stop();
   }
 
   // ---------- 120 FPS: vídeo pelo programa nativo do app desktop (captura sem o limite de ~48 fps do Chromium) ----------
@@ -837,7 +875,7 @@ export class Voice {
     const s = this[kind]; if (!s) return;
     if (this.sfu) { this.sfuStop(kind); if (kind === 'screen') this.sfuStop('screenaudio'); }
     else for (const p of this.peers.values()) for (const t of s.getTracks()) { const snd = p.senders[kind + t.kind]; if (snd) { try { p.pc.removeTrack(snd); } catch { } delete p.senders[kind + t.kind]; } }
-    if (kind === 'screen') { this.stopNative(); clearInterval(this._sw); clearInterval(this._bk); this.captureFps = null; this.captureBlack = false; }
+    if (kind === 'screen') { this.stopNative(); this.stopAppAudio(); clearInterval(this._sw); clearInterval(this._bk); this.captureFps = null; this.captureBlack = false; }
     s.getTracks().forEach(t => t.stop()); this[kind] = null;
     playSound(kind === 'cam' ? 'camOff' : 'selfStreamStop');
     this.sendState(); this.onUpdate();
