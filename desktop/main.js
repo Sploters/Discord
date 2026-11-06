@@ -278,7 +278,11 @@ ipcMain.handle('set-settings', (_e, patch) => {
   saveCfg(); return true;
 });
 ipcMain.handle('clear-cache', async () => { await session.defaultSession.clearCache(); return true; });
-ipcMain.handle('relaunch', () => { app.relaunch(); quitting = true; app.exit(0); return true; });
+ipcMain.handle('relaunch', () => {
+  quitting = true;
+  if (update?.file && !updating && !portable) { updating = true; runInstaller(update.file, true); app.exit(0); return true; } // reabre já atualizado
+  app.relaunch(); app.exit(0); return true;
+});
 ipcMain.handle('change-server', () => { showConnect(); return true; });
 ipcMain.handle('test-server', async (_e, input) => { const r = await resolveServer(input); return r; });
 ipcMain.handle('save-server', async (_e, url) => { cfg.server = url; saveCfg(); trustedHosts.add(serverHost()); loadServer(); return true; });
@@ -310,20 +314,48 @@ async function checkUpdate() {
     if (rel?.tag_name && asset) found = { version: String(rel.tag_name).replace(/^v/i, ''), url: asset.browser_download_url, name: asset.name };
   }
   if (!found || !newer(found.version, app.getVersion())) return;
+  if (update?.version === found.version) return; // já encontrada (e baixada ou baixando)
   update = found;
   log('atualização disponível', found.version, found.url);
-  win?.webContents.send('update-available', { version: found.version });
+  // baixa em segundo plano e só então avisa: "Reiniciar agora" instala em segundos, sem abrir instalador
+  await prepareUpdate().catch((e) => log('download da atualização falhou', e.message));
+  if (update === found) win?.webContents.send('update-available', { version: found.version, ready: !!found.file });
+}
+// instalador da versão nova, baixado uma vez para a pasta temporária
+function prepareUpdate() {
+  const u = update; if (!u) return Promise.reject(new Error('sem atualização'));
+  return (u.downloading ||= (async () => {
+    const file = path.join(app.getPath('temp'), u.name), part = file + '.part';
+    await download(u.url, part);
+    fs.renameSync(part, file); u.file = file; log('atualização baixada', u.version, file);
+    return file;
+  })().catch((e) => { u.downloading = null; throw e; }));
+}
+// versão portátil (um .exe solto, sem instalação): o instalador silencioso criaria uma instalação, então abre o
+// instalador normal como antes
+const portable = !!process.env.PORTABLE_EXECUTABLE_DIR;
+// instalação silenciosa (sem janelas): /S = silencioso, --updated = atualização da instalação que já existe (mesmo
+// lugar, atalhos e dados), --force-run = abre o app de novo quando termina
+function runInstaller(file, reopen) {
+  const args = portable ? [] : ['/S', '--updated', ...(reopen ? ['--force-run'] : [])];
+  log('instalando atualização', update?.version, args.join(' '));
+  require('node:child_process').spawn(file, args, { detached: true, stdio: 'ignore' }).unref();
 }
 function download(url, dest, redirects = 5) {
   return new Promise((resolve, reject) => {
     libOf(url).get(url, { ...reqOpts(url, 'application/octet-stream'), timeout: 60000 }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) { res.resume(); return resolve(download(new URL(res.headers.location, url).href, dest, redirects - 1)); }
       if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
-      const f = fs.createWriteStream(dest); res.pipe(f); f.on('finish', () => f.close(resolve)); f.on('error', reject);
-    }).on('error', reject);
+      // download interrompido não pode virar "instalador pronto": confere o tamanho anunciado
+      const size = +res.headers['content-length'] || 0;
+      const f = fs.createWriteStream(dest); res.pipe(f); f.on('error', reject);
+      // conexão caiu no meio: sem isso o download nunca terminava nem falhava
+      res.on('aborted', () => reject(new Error('download interrompido'))); res.on('error', reject);
+      f.on('finish', () => f.close(() => { const got = fs.statSync(dest).size; if (size && got !== size) reject(new Error(`download incompleto (${got} de ${size} bytes)`)); else resolve(); }));
+    }).on('error', reject).on('timeout', function () { this.destroy(new Error('tempo esgotado')); });
   });
 }
-ipcMain.handle('get-update', () => update && { version: update.version });
+ipcMain.handle('get-update', () => update && { version: update.version, ready: !!update.file });
 // diagnóstico para o relatório de problema: fim do main.log, placas de vídeo, aceleração e versões (sem senhas/chaves)
 ipcMain.handle('get-diagnostics', async () => {
   let logTail = ''; try { logTail = fs.readFileSync(path.join(app.getPath('userData'), 'main.log'), 'utf8').split('\n').slice(-150).join('\n'); } catch { }
@@ -337,20 +369,23 @@ ipcMain.handle('get-diagnostics', async () => {
     servidor: cfg.server, enderecoGuardado: pinnedIp || null, abertoHaMin: Math.round(process.uptime() / 60), log: logTail,
   };
 });
+// "Reiniciar agora": instala sem janelas e o app reabre sozinho já na versão nova
 ipcMain.handle('install-update', async () => {
   if (!update || updating) return false;
   updating = true;
   try {
-    const file = path.join(app.getPath('temp'), update.name);
-    await download(update.url, file);
-    require('node:child_process').spawn(file, [], { detached: true, stdio: 'ignore' }).unref();
+    const file = update.file || await prepareUpdate();
+    runInstaller(file, true);
     quitting = true; app.quit(); return true;
   } catch (e) { log('update err', e.message); updating = false; return false; }
 });
 
 app.on('second-instance', () => showWin());
 app.on('before-quit', () => { quitting = true; });
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  if (update?.file && !updating && !portable) { updating = true; runInstaller(update.file, false); }
+});
 app.on('window-all-closed', () => { if (quitting) app.quit(); });
 
 // placa de vídeo: guarda o nome (mostrado nas configurações) e se é uma Intel antiga (até a 4ª geração, ex.: HD 4000),
