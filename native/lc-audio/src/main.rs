@@ -6,6 +6,7 @@
 //! Modos:
 //!   --probe     {"ok":bool,"build":n}  (o loopback por processo existe neste Windows?)
 //!   --windows   [{"hwnd","pid","title","exe","minimized","fullscreen"}...] (uma linha JSON)
+//!   --icon <exe> {"png": base64, "w", "h"} — ícone grande do programa (256 px quando existe, senão 48), sem a margem vazia
 //!   --capture   lê a configuração (JSON, 1 linha) da entrada padrão: {"pid":n,"mode":"include"|"exclude"}
 //!               include = só esse processo e os filhos dele (o jogo); exclude = tudo menos ele e os filhos (a Resenha).
 //!               Saída padrão: PCM float32 little-endian, 48 kHz, estéreo, intercalado (binário, sem cabeçalho).
@@ -36,6 +37,14 @@ fn main() {
     let has = |f: &str| args.iter().any(|a| a == f);
     if has("--probe") { println!("{}", sys::probe()); return; }
     if has("--windows") { println!("{}", sys::windows()); return; }
+    if let Some(i) = args.iter().position(|a| a == "--icon") {
+        let out = match args.get(i + 1).map(|p| sys::icon_rgba(p)) {
+            Some(Ok((w, h, px))) => serde_json::json!({ "png": png_b64(w, h, &px), "w": w, "h": h }),
+            Some(Err(e)) => serde_json::json!({ "error": e }),
+            None => serde_json::json!({ "error": "faltou o caminho do programa" }),
+        };
+        println!("{out}"); return;
+    }
     if has("--capture") {
         let mut line = String::new();
         if std::io::stdin().lock().read_line(&mut line).is_err() { emit_err(serde_json::json!({ "t": "error", "error": "sem configuração" })); std::process::exit(2); }
@@ -52,10 +61,42 @@ fn main() {
     std::process::exit(2);
 }
 
+// ---------- ícone: recorte + PNG (comum aos dois sistemas) ----------
+/// recorta a área com conteúdo (alfa > 0) num quadrado — ícones antigos vêm pequenos no canto de uma tela de 256 px
+pub fn crop_square(w: u32, h: u32, px: &[u8]) -> (u32, u32, Vec<u8>) {
+    let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0u32, 0u32);
+    for y in 0..h { for x in 0..w { if px[((y * w + x) * 4 + 3) as usize] > 8 { x0 = x0.min(x); y0 = y0.min(y); x1 = x1.max(x); y1 = y1.max(y); } } }
+    if x1 < x0 { return (w, h, px.to_vec()); }
+    let side = (x1 - x0 + 1).max(y1 - y0 + 1);
+    let (cx, cy) = ((x0 + x1 + 1) / 2, (y0 + y1 + 1) / 2);
+    let (sx, sy) = (cx as i64 - side as i64 / 2, cy as i64 - side as i64 / 2);
+    let mut out = vec![0u8; (side * side * 4) as usize];
+    for y in 0..side { for x in 0..side {
+        let (ox, oy) = (sx + x as i64, sy + y as i64);
+        if ox < 0 || oy < 0 || ox >= w as i64 || oy >= h as i64 { continue; }
+        let s = ((oy as u32 * w + ox as u32) * 4) as usize; let d = ((y * side + x) * 4) as usize;
+        out[d..d + 4].copy_from_slice(&px[s..s + 4]);
+    } }
+    (side, side, out)
+}
+pub fn png_b64(w: u32, h: u32, rgba: &[u8]) -> String {
+    use base64::Engine;
+    let mut buf = Vec::new();
+    { let mut e = png::Encoder::new(&mut buf, w, h); e.set_color(png::ColorType::Rgba); e.set_depth(png::BitDepth::Eight);
+      if let Ok(mut wr) = e.write_header() { let _ = wr.write_image_data(rgba); } }
+    base64::engine::general_purpose::STANDARD.encode(buf)
+}
+
 #[cfg(not(windows))]
 mod sys {
     use super::*;
     pub fn probe() -> serde_json::Value { serde_json::json!({ "ok": false, "build": 0, "error": "só no Windows" }) }
+    /// ícone de teste: círculo vermelho de 40 px numa tela de 64 (o recorte deixa só o círculo)
+    pub fn icon_rgba(_path: &str) -> Result<(u32, u32, Vec<u8>), String> {
+        let n = 64u32; let mut px = vec![0u8; (n * n * 4) as usize];
+        for y in 0..n { for x in 0..n { let d = ((x as f32 - 32.0).powi(2) + (y as f32 - 32.0).powi(2)).sqrt(); if d < 20.0 { let i = ((y * n + x) * 4) as usize; px[i..i + 4].copy_from_slice(&[230, 60, 60, 255]); } } }
+        Ok(crop_square(n, n, &px))
+    }
     pub fn windows() -> serde_json::Value {
         serde_json::json!([{ "hwnd": 1234, "pid": 42, "title": "Jogo de Teste", "exe": "C:\\Games\\Teste\\teste.exe", "minimized": true, "fullscreen": true }])
     }
@@ -85,7 +126,12 @@ mod sys {
     use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
     use windows::Win32::Media::Audio::*;
     use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
-    use windows::Win32::System::Com::{CoInitializeEx, BLOB, COINIT_MULTITHREADED};
+    use windows::Win32::System::Com::{CoInitializeEx, BLOB, COINIT_APARTMENTTHREADED, COINIT_MULTITHREADED};
+    use windows::core::PCWSTR;
+    use windows::Win32::Graphics::Gdi::{DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP};
+    use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
+    use windows::Win32::UI::Controls::{IImageList, ILD_TRANSPARENT};
+    use windows::Win32::UI::Shell::{SHGetFileInfoW, SHGetImageList, SHFILEINFOW, SHGFI_SYSICONINDEX, SHIL_EXTRALARGE, SHIL_JUMBO};
     use windows::Win32::System::Threading::{CreateEventW, OpenProcess, QueryFullProcessImageNameW, SetEvent, WaitForSingleObject, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
     use windows::Win32::System::Variant::VT_BLOB;
     use windows::Win32::UI::WindowsAndMessaging::*;
@@ -138,6 +184,57 @@ mod sys {
         let mut out: Vec<serde_json::Value> = Vec::new();
         unsafe { let _ = EnumWindows(Some(each), LPARAM(&mut out as *mut _ as isize)); }
         serde_json::Value::Array(out)
+    }
+
+    // ---------- ícone grande do programa ----------
+    unsafe fn rgba_of(hicon: HICON) -> Result<(u32, u32, Vec<u8>), String> {
+        let mut ii = ICONINFO::default();
+        GetIconInfo(hicon, &mut ii).map_err(|e| format!("GetIconInfo: {e}"))?;
+        let read = |bmp: HBITMAP| -> Option<(u32, u32, Vec<u8>)> {
+            if bmp.is_invalid() { return None; }
+            let mut bm = BITMAP::default();
+            if GetObjectW(bmp.into(), std::mem::size_of::<BITMAP>() as i32, Some(&mut bm as *mut _ as *mut _)) == 0 { return None; }
+            let (w, h) = (bm.bmWidth.max(0) as u32, bm.bmHeight.unsigned_abs());
+            if w == 0 || h == 0 || w > 1024 || h > 1024 { return None; }
+            let mut bi = BITMAPINFO::default();
+            bi.bmiHeader = BITMAPINFOHEADER { biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32, biWidth: w as i32, biHeight: -(h as i32), biPlanes: 1, biBitCount: 32, biCompression: BI_RGB.0, ..Default::default() };
+            let mut buf = vec![0u8; (w * h * 4) as usize];
+            let dc = GetDC(None);
+            let n = GetDIBits(dc, bmp, 0, h, Some(buf.as_mut_ptr() as *mut _), &mut bi, DIB_RGB_COLORS);
+            ReleaseDC(None, dc);
+            if n == 0 { None } else { Some((w, h, buf)) }
+        };
+        let color = read(ii.hbmColor); let mask = read(ii.hbmMask);
+        if !ii.hbmColor.is_invalid() { let _ = DeleteObject(ii.hbmColor.into()); }
+        if !ii.hbmMask.is_invalid() { let _ = DeleteObject(ii.hbmMask.into()); }
+        let (w, h, mut px) = color.ok_or("ícone sem imagem colorida")?;
+        for p in px.chunks_exact_mut(4) { p.swap(0, 2); } // BGRA -> RGBA
+        if px.chunks_exact(4).all(|p| p[3] == 0) { // ícone antigo sem alfa: a máscara diz o que é transparente (branco = fundo)
+            if let Some((mw, _, m)) = mask { if mw == w { for (i, p) in px.chunks_exact_mut(4).enumerate() { p[3] = if m.get(i * 4).copied().unwrap_or(0) == 0 { 255 } else { 0 }; } } }
+            else { for p in px.chunks_exact_mut(4) { p[3] = 255; } }
+        }
+        Ok((w, h, px))
+    }
+    pub fn icon_rgba(path: &str) -> Result<(u32, u32, Vec<u8>), String> {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            let wide: Vec<u16> = path.encode_utf16().chain(Some(0)).collect();
+            let mut sfi = SHFILEINFOW::default();
+            if SHGetFileInfoW(PCWSTR(wide.as_ptr()), FILE_FLAGS_AND_ATTRIBUTES(0), Some(&mut sfi), std::mem::size_of::<SHFILEINFOW>() as u32, SHGFI_SYSICONINDEX) == 0 {
+                return Err("o Windows não achou o ícone deste programa".into());
+            }
+            let mut last = String::from("sem ícone");
+            for (list, min) in [(SHIL_JUMBO, 49u32), (SHIL_EXTRALARGE, 1)] {
+                let il: IImageList = match SHGetImageList(list as i32) { Ok(x) => x, Err(e) => { last = e.to_string(); continue; } };
+                let hicon = match il.GetIcon(sfi.iIcon, ILD_TRANSPARENT.0) { Ok(x) => x, Err(e) => { last = e.to_string(); continue; } };
+                let r = rgba_of(hicon); let _ = DestroyIcon(hicon);
+                match r {
+                    Ok((w, h, px)) => { let (cw, ch, c) = crate::crop_square(w, h, &px); if cw >= min { return Ok((cw, ch, c)); } } // 256 só com o ícone pequeno no canto: usa o de 48
+                    Err(e) => last = e,
+                }
+            }
+            Err(last)
+        }
     }
 
     // ---------- captura por processo ----------

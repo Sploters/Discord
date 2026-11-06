@@ -160,7 +160,12 @@ export function createActivityService({ all, get, run, newId, dispatch, isOnline
     reportLocal(uid, game) {
       const k = uid + ':pc', prev = current.get(k);
       if (!game || pcVis(uid) === 'off' || hiddenGame(uid, 'pc', game.id)) return clear(uid, 'pc');
-      if (prev && prev.game.id === game.id) { prev.at = now(); return; }
+      game = { id: game.id, title: game.title, ...(game.icon ? { icon: game.icon } : {}), ...(game.steam ? { steam: game.steam } : {}) };
+      if (prev && prev.game.id === game.id) {
+        prev.at = now();
+        if ((game.icon && prev.game.icon !== game.icon) || (game.steam && prev.game.steam !== game.steam)) { prev.game = { ...prev.game, ...game }; publish(uid, 'pc', prev); } // a imagem chegou depois
+        return;
+      }
       if (prev) clear(uid, 'pc');
       const entry = { uid, platform: 'pc', game, since: now(), state: null, at: now() };
       current.set(k, entry); record(uid, 'pc', 'game_start', game, null);

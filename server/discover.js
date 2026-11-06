@@ -276,4 +276,14 @@ export function mountDiscover(app, { auth, dataDir }) {
   app.get('/api/discover/upcoming', auth, send(async () => ({ items: await steamUpcoming() })));
   app.get('/api/discover/tournaments', auth, send(tournaments));
   app.get('/api/discover/charts', auth, send(charts));
+  // arte oficial de jogos da Steam para a atividade "Jogando X" (endereço certo vem da loja: jogos novos não têm o caminho antigo)
+  app.get('/api/steam-art', auth, async (req, res) => {
+    const ids = [...new Set(String(req.query.ids || '').split(',').filter(x => /^\d{1,10}$/.test(x)))].slice(0, 20);
+    if (!ids.length || off() || conf().steam === false) return res.json({});
+    try {
+      const it = await storeItems(ids.map(Number));
+      res.set('Cache-Control', 'private, max-age=3600');
+      res.json(Object.fromEntries(Object.values(it).map(x => [x.appid, { image: x.image, thumb: x.thumb, title: x.title }])));
+    } catch { res.json({}); }
+  });
 }

@@ -1275,6 +1275,24 @@ app.put('/api/activity/games/:platform/:gameId', auth, wrap((req, res) => { // e
   res.json({ hidden: !!hidden });
 }));
 app.get('/api/activity/hidden', auth, wrap((req, res) => res.json(all('SELECT gp.platform, gp.game_id, (SELECT a.title FROM activities a WHERE a.user_id=gp.user_id AND a.platform=gp.platform AND a.game_id=gp.game_id ORDER BY a.created_at DESC LIMIT 1) title FROM game_prefs gp WHERE gp.user_id=? AND gp.hidden=1', req.uid))));
+// ícone do jogo (PNG pequeno mandado pelo app desktop): confere que é PNG de verdade, até 32 KB e 128x128; devolve o hash
+function saveGameIcon(b64) {
+  if (typeof b64 !== 'string' || b64.length > 44000) return null;
+  const buf = Buffer.from(b64, 'base64');
+  if (buf.length < 33 || buf.length > 32768 || !buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) || buf.toString('latin1', 12, 16) !== 'IHDR') return null;
+  const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20); if (!w || !h || w > 128 || h > 128) return null;
+  const hash = crypto.createHash('sha256').update(buf).digest('hex');
+  run('INSERT OR IGNORE INTO game_icons(hash,png,created_at,used_at) VALUES(?,?,?,?)', hash, buf, Date.now(), Date.now());
+  return hash;
+}
+run('DELETE FROM game_icons WHERE used_at < ?', Date.now() - 90 * 864e5);
+// público mas impossível de adivinhar (hash do conteúdo); servido como imagem pura, sem nada que rode
+app.get('/game-icons/:f', (req, res) => {
+  const m = /^([a-f0-9]{64})\.png$/.exec(req.params.f), r = m && get('SELECT png FROM game_icons WHERE hash=?', m[1]);
+  if (!r) return res.sendStatus(404);
+  res.set({ 'Content-Type': 'image/png', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox", 'Cache-Control': 'public, max-age=31536000, immutable' });
+  res.end(Buffer.from(r.png));
+});
 // jogo aberto no PC (app desktop): quem pode ver — 'servers' (amigos + quem está nos seus servidores), 'friends' ou 'off'
 const PC_VIS = new Set(['servers', 'friends', 'off']);
 app.get('/api/activity/pc', auth, wrap((req, res) => res.json({ visibility: getUser(req.uid).pc_activity || 'servers' })));
@@ -1494,11 +1512,16 @@ wss.on('connection', (ws) => {
           roomSend(c, 'ROOM_CODE', { channel_id: c, ...a.code, user_id: uid }, uid);
           break;
         }
-        case 'ACTIVITY_LOCAL': { // jogo aberto no PC, detectado pelo app desktop: { game: { id, title } | null }
+        case 'ACTIVITY_LOCAL': { // jogo aberto no PC, detectado pelo app desktop: { game: { id, title, icon?: PNG base64, steam?: appid } | null }
           if (Date.now() - (ws.lastAct || 0) < 3000) return; ws.lastAct = Date.now();
           const gid = String(d.game?.id || '').toLowerCase().replace(/[^a-z0-9._ -]/g, '').trim().slice(0, 60), title = clean(d.game?.title, 80);
-          ws.localGame = gid && title ? gid : null;
-          activity.reportLocal(uid, gid && title ? { id: gid, title } : null);
+          if (!gid || !title) { ws.localGame = null; ws.localIcon = null; activity.reportLocal(uid, null); break; }
+          // o ícone vem só na primeira vez (por conexão e jogo); depois vale o que já foi mandado
+          const icon = d.game.icon ? saveGameIcon(d.game.icon) : (ws.localGame === gid ? ws.localIcon : null);
+          const steam = /^\d{1,10}$/.test(String(d.game.steam || '')) ? String(d.game.steam) : null;
+          ws.localGame = gid; ws.localIcon = icon;
+          if (icon) run('UPDATE game_icons SET used_at=? WHERE hash=?', Date.now(), icon);
+          activity.reportLocal(uid, { id: gid, title, icon, steam });
           break;
         }
         case 'VOICE_LEAVE': { const c = currentVoice(uid); if (c) leaveVoice(uid, c); break; }

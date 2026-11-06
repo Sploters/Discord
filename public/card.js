@@ -1,5 +1,6 @@
 import { h, icon, avatar, framePos } from './util.js';
 import { lightbox, S } from './state.js';
+import { gameIcon, gameBanner } from './activity.js';
 import { isLightPair, styleName } from './themes.js';
 
 // "Jogando agora" no cartão: Steam vinculada ou jogo detectado no PC pelo app desktop (o servidor já filtrou quem pode ver)
@@ -7,7 +8,7 @@ function playing(uid) {
   let a = null; for (const x of S.activities?.values() || []) if (x.user_id === uid && (!a || a.platform === 'pc')) a = x;
   if (!a) return null;
   const m = Math.max(0, Math.round((Date.now() - a.since) / 60000)), t = m < 1 ? 'agora' : m < 60 ? `há ${m} min` : `há ${Math.floor(m / 60)}h${m % 60 ? ' ' + (m % 60) + 'min' : ''}`;
-  return [h('h4.pplay-h', 'Jogando agora'), h('div.pplay', icon('play', 16), h('div', h('b', a.game.title), h('small', `${a.platform === 'pc' ? 'No PC' : 'Steam'} · ${t}`)))];
+  return [h('h4.pplay-h', 'Jogando agora'), h('div.pplaybox', gameBanner(a), h('div.pplay', gameIcon(a, 40), h('div', h('b', a.game.title), h('small', `${a.platform === 'pc' ? 'No PC' : 'Steam'} · ${t}`))))];
 }
 
 export const STATUS_TXT = { online: 'Online', idle: 'Ausente', dnd: 'Não perturbe', invisible: 'Invisível', offline: 'Offline' };

@@ -22,11 +22,16 @@ windows = { version = "0.62", features = [
   "Win32_System_Variant",
   "Win32_System_SystemInformation",
   "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Shell",
+  "Win32_UI_Controls",
+  "Win32_Storage_FileSystem",
 ] }
 windows-core = "0.62"
 
 [dependencies]
 serde_json = "1"
+png = "0.17"
+base64 = "0.22"
 
 [profile.release]
 opt-level = 3

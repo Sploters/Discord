@@ -34,7 +34,7 @@ import { profileCard, STATUS_TXT } from './card.js';
 import { timeoutDialog, removeTimeout, banDialog, timedOutUntil } from './mod.js';
 import { recordVoiceMessage, voiceEl } from './voicemsg.js';
 import { initPlugins, mentionUser, addMention, resolveMentions } from './plugins.js';
-import { initActivity, setActivities, onActivityUpdate, onIntegrationUpdate, activityTab, activityOf, playingLine, refreshFeedView } from './activity.js';
+import { initActivity, setActivities, onActivityUpdate, onIntegrationUpdate, activityTab, activityOf, playingLine, refreshFeedView, gameIcon } from './activity.js';
 import { toggleTranslation, isTranslated, translationBlock, translateOutgoing, draftMenu } from './translate.js';
 import { initDiag, openReport } from './diag.js';
 import { initPwa } from './pwa.js';
@@ -1423,7 +1423,7 @@ function renderMembers() {
   const order = [...g.roles.filter(r => groups.has(r.id)).map(r => [r.id, r.name]), ['online', 'Online']];
   const row = ({ m, u }, offline) => h('div.mem' + (offline ? '.off' : ''), { onclick: (e) => profile(e.currentTarget, u.id, g.id), oncontextmenu: (e) => userMenu(e, u.id, g.id) },
     avatar(u, 32, { ring: 'var(--bg-sec)' }),
-    h('div', { style: { minWidth: 0 } }, h('div.mn', { style: { color: roleColor(g.id, u.id) || (offline ? '' : 'var(--header)') } }, styleName(h('span.mnn', m.nickname || u.display_name), u.name_style), g.owner_id === u.id && h('span.crown', { title: 'Dono do servidor', style: { marginLeft: '4px' } }, icon('crown', 12))), activityOf(u.id) && !offline ? h('div.cs.playing', { title: playingLine(activityOf(u.id)) }, 'Jogando ', h('b', activityOf(u.id).game.title)) : u.custom_status && h('div.cs', u.custom_status)));
+    h('div', { style: { minWidth: 0 } }, h('div.mn', { style: { color: roleColor(g.id, u.id) || (offline ? '' : 'var(--header)') } }, styleName(h('span.mnn', m.nickname || u.display_name), u.name_style), g.owner_id === u.id && h('span.crown', { title: 'Dono do servidor', style: { marginLeft: '4px' } }, icon('crown', 12))), activityOf(u.id) && !offline ? h('div.cs.playing', { title: playingLine(activityOf(u.id)) }, gameIcon(activityOf(u.id), 14), 'Jogando ', h('b', activityOf(u.id).game.title)) : u.custom_status && h('div.cs', u.custom_status)));
   const by = (a, b) => (a.m.nickname || a.u.display_name).localeCompare(b.m.nickname || b.u.display_name);
   box.replaceChildren(
     ...order.flatMap(([k, name]) => groups.has(k) ? [h('div.mgroup', `${name} — ${groups.get(k).length}`), ...groups.get(k).sort(by).map(x => row(x))] : []),
@@ -1446,7 +1446,7 @@ function renderActiveNow() {
       h('div.an-room', icon('voice', 16), h('span', g ? chName(ch) : 'Ligação'), v.screen && h('span.an-live', 'AO VIVO'), v.mute && icon('micoff', 14)));
   };
   const rows = ({ u }) => h('div.an-row', { onclick: () => openDM(u.id), oncontextmenu: (e) => userMenu(e, u.id) }, avatar(u, 32, { ring: 'var(--bg-sec)' }),
-    h('div.an-who', styleName(h('b', u.display_name), u.name_style), h('small', activityOf(u.id) ? playingLine(activityOf(u.id)) : (u.custom_status || STATUS_TXT[u.status]))));
+    h('div.an-who', styleName(h('b', u.display_name), u.name_style), h('small', activityOf(u.id) ? [gameIcon(activityOf(u.id), 14), ' ' + playingLine(activityOf(u.id))] : (u.custom_status || STATUS_TXT[u.status]))));
   box.replaceChildren(h('h3', 'Ativo agora'),
     ...(inVoice.length ? [h('div.an-cap', 'Em chamada de voz'), ...inVoice.sort(byName).map(voiceCard)] : []),
     ...(other.length ? [h('div.an-cap', 'Online'), ...other.sort(byName).map(rows)] : []),
@@ -2032,7 +2032,8 @@ function startGameDetect() {
   const tick = async () => {
     if (S.pcActivity === 'off' || ws?.readyState !== 1) return;
     const g = await desktop.detectGame().catch(() => null), id = g?.id || null;
-    if (g || sentGame !== null) gwSend('ACTIVITY_LOCAL', { game: g ? { id: g.id, title: g.title } : null });
+    // o ícone (PNG ~10 KB) só vai quando o jogo muda ou a conexão é nova; nas outras vezes o servidor usa o que já tem
+    if (g || sentGame !== null) gwSend('ACTIVITY_LOCAL', { game: g ? { id: g.id, title: g.title, steam: g.steam || null, ...(id !== sentGame && g.icon ? { icon: g.icon } : {}) } : null });
     sentGame = id;
   };
   setTimeout(tick, 3000); gameTimer = setInterval(tick, 20000);

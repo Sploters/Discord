@@ -1,7 +1,7 @@
 // Áudio da transmissão só do jogo + lista de janelas (inclusive minimizadas), pelo programa nativo lc-audio (ver
 // native/lc-audio). É o que o Discord faz no Windows: o loopback do PC inteiro pegava música, navegador e até a voz dos
 // amigos na call; o loopback por processo (Windows 10 2004+) pega só o programa escolhido (e os filhos dele).
-const { app } = require('electron');
+const { app, nativeImage } = require('electron');
 const { spawn, execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -63,6 +63,46 @@ const cleanTitle = (t) => {
   const cut = t.split(/ [-–|•] /)[0].replace(/\s*\(?v?\d+(\.\d+){1,3}\)?\s*$/i, '').trim(); // "Jogo - Capítulo 2" / "Jogo 1.2.3"
   return (cut.length >= 2 ? cut : t).slice(0, 60);
 };
+// ícone do jogo para a atividade: o ícone GRANDE do executável (o programa nativo pega o de 256 px, o Electron só dá 32),
+// reduzido para 96 px em PNG (~10 KB). Guardado por executável.
+const bigIcons = new Map();
+function gameIcon(exe) {
+  if (!exe) return Promise.resolve(null);
+  if (!bigIcons.has(exe)) bigIcons.set(exe, new Promise((res) => {
+    const bin = helperPath(); if (!bin) return res(null);
+    execFile(bin, ['--icon', exe], { windowsHide: true, timeout: 5000, maxBuffer: 4 << 20 }, (err, out) => {
+      let j = null; try { j = JSON.parse(String(out).trim()); } catch { }
+      if (!j?.png) return res(null);
+      try {
+        let img = nativeImage.createFromBuffer(Buffer.from(j.png, 'base64'));
+        if (img.isEmpty()) return res(null);
+        if (img.getSize().width > 96) img = img.resize({ width: 96, height: 96, quality: 'best' });
+        res(img.toPNG().toString('base64'));
+      } catch { res(null); }
+    });
+  }));
+  return bigIcons.get(exe);
+}
+// jogo instalado pela Steam: o número dele na loja (para a arte oficial). Lê os appmanifest_*.acf da biblioteca:
+// ...\steamapps\common\<pasta>\...exe  ->  ...\steamapps\appmanifest_<appid>.acf com "installdir" "<pasta>"
+const appIds = new Map();
+function steamAppId(exe) {
+  const m = /^(.*\\steamapps)\\common\\([^\\]+)\\/i.exec(String(exe || '')); if (!m) return null;
+  const key = (m[1] + '|' + m[2]).toLowerCase();
+  if (!appIds.has(key)) {
+    let id = null;
+    try {
+      for (const f of fs.readdirSync(m[1])) {
+        if (!/^appmanifest_\d+\.acf$/i.test(f)) continue;
+        const t = fs.readFileSync(path.join(m[1], f), 'utf8');
+        const dir = /"installdir"\s+"([^"]*)"/i.exec(t)?.[1];
+        if (dir && dir.toLowerCase() === m[2].toLowerCase()) { id = /"appid"\s+"(\d+)"/i.exec(t)?.[1] || null; break; }
+      }
+    } catch { /* biblioteca sem permissão de leitura */ }
+    appIds.set(key, id);
+  }
+  return appIds.get(key);
+}
 async function detectGame() {
   const list = (await listWindows()).filter(w => w.game);
   if (!list.length) return null;
@@ -70,7 +110,7 @@ async function detectGame() {
   const w = list.sort((a, b) => score(b) - score(a))[0];
   const base = path.win32.basename(w.exe).replace(/\.exe$/i, '').toLowerCase();
   if (base === 'javaw' && !/minecraft/i.test(w.title)) return null; // Java qualquer não é jogo
-  return { id: base, title: FRIENDLY[base] || cleanTitle(w.title) || base };
+  return { id: base, title: FRIENDLY[base] || cleanTitle(w.title) || base, icon: await gameIcon(w.exe), steam: steamAppId(w.exe) };
 }
 
 // ---------- captura ----------
@@ -109,4 +149,4 @@ function stop() {
   setTimeout(() => { try { p.kill(); } catch { } }, 1500);
 }
 
-module.exports = { capable, listWindows, detectGame, start, stop, shutdown: stop, isGame, cleanTitle };
+module.exports = { capable, listWindows, detectGame, start, stop, shutdown: stop, isGame, cleanTitle, steamAppId, gameIcon };

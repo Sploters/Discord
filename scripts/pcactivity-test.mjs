@@ -20,7 +20,11 @@ async function page(u, desk) {
   p.on('pageerror', e => { console.log('  PAGEERROR', u.name, e.message); fails++; });
   await p.evaluateOnNewDocument((t) => { localStorage.lc_token = t; }, u.tok);
   if (desk) await p.evaluateOnNewDocument(() => {
-    window.__game = { id: 'valorant-win64-shipping', title: 'VALORANT' };
+    // ícone de teste (96 px, como o app desktop manda) e jogo "da Steam" (appid 730)
+    const c = document.createElement('canvas'); c.width = c.height = 96; const x = c.getContext('2d'); x.fillStyle = '#ff4655'; x.beginPath(); x.moveTo(8, 12); x.lineTo(48, 84); x.lineTo(88, 12); x.closePath(); x.fill();
+    window.__icon = c.toDataURL('image/png').split(',')[1];
+    window.__game = { id: 'valorant-win64-shipping', title: 'VALORANT', icon: window.__icon, steam: '730' };
+    window.__sent = []; const os = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (m.t === 'ACTIVITY_LOCAL') window.__sent.push(m.d.game ? { icon: !!m.d.game.icon, steam: m.d.game.steam } : null); } catch { } return os.call(this, d); };
     window.lcDesktop = { isDesktop: true, detectGame: async () => window.__game, setSettings: async () => true, getSettings: async () => ({}), onHotkey: () => { }, setBadge: () => { }, setThrottle: () => { } };
   });
   await p.goto(BASE); await p.waitForSelector('#rail .rail-wrap');
@@ -43,18 +47,39 @@ try {
   ok((await seen(C, alice.id)) === null, 'quem não é amigo nem divide servidor NÃO vê', await seen(C, alice.id));
   ok((await seen(A, alice.id)) === 'pc:VALORANT', 'a própria pessoa vê');
 
+  // ---- imagem do jogo ----
+  const gB = await B.evaluate((uid) => { for (const a of window.__lc.S.activities.values()) if (a.user_id === uid) return a.game; }, alice.id);
+  ok(/^[a-f0-9]{64}$/.test(gB?.icon || '') && gB.steam === '730', 'a atividade leva o ícone (hash) e o número do jogo na Steam', gB);
+  const ir = await fetch(`${BASE}/game-icons/${gB.icon}.png`);
+  const ib = Buffer.from(await ir.arrayBuffer());
+  ok(ir.status === 200 && ir.headers.get('content-type') === 'image/png' && ir.headers.get('x-content-type-options') === 'nosniff' && ib.subarray(1, 4).toString() === 'PNG', 'ícone servido como PNG puro (nosniff, sandbox)', { status: ir.status, type: ir.headers.get('content-type'), bytes: ib.length });
+  ok((await fetch(`${BASE}/game-icons/${'0'.repeat(64)}.png`)).status === 404 && (await fetch(`${BASE}/game-icons/..%2F..%2Fetc.png`)).status === 404, 'ícone inexistente / caminho estranho: 404');
+
   // lista de membros e cartão de perfil de quem vê
   await B.evaluate((gid) => window.__lc.go(gid), g.id); await sleep(800);
   const mem = await B.evaluate(() => [...document.querySelectorAll('#members .cs.playing')].map(e => e.textContent));
   ok(mem.includes('Jogando VALORANT'), 'lista de membros mostra "Jogando VALORANT"', mem);
+  const memImg = await B.evaluate(() => { const i = document.querySelector('#members .cs.playing .gicon img'); return i && { src: i.getAttribute('src'), ok: i.complete && i.naturalWidth > 0 }; });
+  ok(/^\/game-icons\/[a-f0-9]{64}\.png$/.test(memImg?.src || '') && memImg.ok, 'lista de membros: ícone do jogo ao lado', memImg);
   await B.evaluate((uid) => [...document.querySelectorAll('#members .mem')].find(m => m.textContent.includes('alice'))?.click(), alice.id); await sleep(500);
   const card = await B.evaluate(() => document.querySelector('.pcard .pplay')?.innerText);
   ok(/VALORANT/.test(card || '') && /No PC/.test(card || ''), 'cartão de perfil mostra o jogo', card);
+  await sleep(2500); // arte da Steam (o servidor consulta a loja)
+  const cimg = await B.evaluate(() => ({ icon: document.querySelector('.pcard .pplay .gicon img')?.naturalWidth || 0, banner: document.querySelector('.pcard .gbanner:not(.hidden) img')?.naturalWidth || 0 }));
+  const artApi = await call(bruno.tok, 'GET', '/steam-art?ids=730');
+  ok(cimg.icon > 0, 'cartão de perfil: ícone do jogo carregado', cimg);
+  ok(artApi['730']?.image ? cimg.banner > 0 : true, artApi['730']?.image ? 'cartão de perfil: arte oficial da Steam (CS2 = 730)' : 'arte da Steam indisponível aqui (sem internet): cartão sem faixa, sem erro', { banner: cimg.banner, art: artApi['730']?.image });
   await B.screenshot({ path: '.testshots/pcactivity-card.png' });
   // feed da amiga
   const feed = await call(dani.tok, 'GET', '/activity/feed');
   const fa = feed.friends.find(f => f.user_id === alice.id);
   ok(fa?.playing?.[0]?.game?.title === 'VALORANT' && feed.events.some(e => e.user_id === alice.id && e.kind === 'game_start' && e.platform === 'pc'), 'feed da amiga: jogando agora + "começou a jogar"', { playing: fa?.playing, ev: feed.events.length });
+
+  // o ícone (PNG) vai só na primeira vez; nas outras rodadas só o nome
+  await A.evaluate(() => new Promise(r => setTimeout(r, 20500)));
+  const sent = await A.evaluate(() => window.__sent);
+  ok(sent.length >= 2 && sent[0]?.icon === true && sent.slice(1).every(x => x && !x.icon), 'ícone enviado uma vez só por jogo (depois só o nome)', sent);
+  ok((await B.evaluate((uid) => { for (const a of window.__lc.S.activities.values()) if (a.user_id === uid) return a.game.icon; }, alice.id)) === gB.icon, 'e o ícone continua o mesmo depois das outras rodadas');
 
   // privacidade: só amigos
   await call(alice.tok, 'PATCH', '/activity/pc', { visibility: 'friends' }); await sleep(400);
@@ -93,6 +118,15 @@ try {
   const own = await call(carla.tok, 'GET', '/activity/feed');
   const t = own.friends.find(f => f.user_id === carla.id)?.playing?.[0]?.game;
   ok(r && (!t || (t.title.length <= 80 && !/[<>]/.test(t.id))), 'gateway limpa id e título (sem HTML, título até 80)', t);
+  // ícone falso: HTML com cara de PNG, PNG gigante (dimensões), base64 enorme
+  const bad = await evil.evaluate(() => new Promise((res) => {
+    const ws = new WebSocket(location.origin.replace('http', 'ws') + '/gateway?token=' + localStorage.lc_token);
+    const html = btoa('<html><script>alert(1)</script></html>');
+    const big = (() => { const c = document.createElement('canvas'); c.width = c.height = 512; return c.toDataURL('image/png').split(',')[1]; })();
+    const tries = [{ id: 'a', title: 'A', icon: html }, { id: 'b', title: 'B', icon: big }, { id: 'c', title: 'C', icon: 'A'.repeat(200000) }, { id: 'd', title: 'D', steam: '1;DROP' }];
+    ws.onopen = async () => { const out = []; for (const g of tries) { ws.send(JSON.stringify({ t: 'ACTIVITY_LOCAL', d: { game: g } })); await new Promise(r => setTimeout(r, 3300)); out.push(await (await fetch('/api/activity/feed', { headers: { authorization: 'Bearer ' + localStorage.lc_token } })).json()); } res(out.map(f => f.friends[0]?.playing?.[0]?.game)); };
+  }));
+  ok(bad.every(g => g && !g.icon) && !bad[3].steam, 'ícones falsos/gigantes e appid inválido são recusados (o jogo aparece sem imagem)', bad);
 } catch (e) { console.log('ERRO', e); fails++; }
 await browser.close(); srv.kill();
 console.log(fails ? `\n${fails} falha(s)` : '\ntudo ok');

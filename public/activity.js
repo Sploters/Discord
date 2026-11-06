@@ -35,6 +35,40 @@ const ago = (t) => { const s = (Date.now() - t) / 1000; return s < 60 ? 'agora' 
 const secsTxt = (s) => (s == null ? '' : dur(s * 1000));
 export const playingLine = (a) => `Jogando ${a.game.title}`;
 
+// ---------------------------------------------------------------- imagem do jogo
+// 1) ícone do executável, mandado pelo app desktop de quem joga (/game-icons/<hash>.png)
+// 2) arte oficial da Steam (Steam vinculada, ou jogo instalado pela Steam): endereço resolvido pelo servidor (/api/steam-art)
+// 3) ícone genérico de controle
+const steamIdOf = (a) => (a.platform === 'steam' ? a.game.id : a.game.steam) || null;
+const iconUrl = (a) => (a.game.icon && /^[a-f0-9]{64}$/.test(a.game.icon) ? `/game-icons/${a.game.icon}.png` : null);
+const art = new Map(); let artQ = new Set(), artTimer = null;
+function steamArt(id) { // Promise<{ image, thumb } | null>, em lote (vários cartões ao mesmo tempo = 1 pedido)
+  if (!/^\d+$/.test(String(id))) return Promise.resolve(null);
+  if (art.has(id)) return art.get(id).p;
+  let res; const p = new Promise(r => (res = r)); art.set(id, { p, res }); artQ.add(id);
+  clearTimeout(artTimer); artTimer = setTimeout(async () => {
+    const ids = [...artQ]; artQ = new Set();
+    const r = await tryApi('GET', '/steam-art?ids=' + ids.join(',')).catch(() => null) || {};
+    for (const x of ids) art.get(x)?.res(r[x]?.image ? r[x] : null);
+  }, 30);
+  return p;
+}
+// quadradinho do jogo (lista de membros, cartão, painel): ícone do programa; sem ele, o recorte da arte da Steam; senão o controle
+export function gameIcon(a, size = 20) {
+  const box = h('span.gicon', { style: { width: size + 'px', height: size + 'px' } });
+  const set = (src, cover) => { const img = h('img', { src, alt: '', loading: 'lazy', referrerPolicy: 'no-referrer', onerror: () => box.replaceChildren(icon('gamepad', Math.round(size * .8))) }); if (cover) img.classList.add('cover'); box.replaceChildren(img); };
+  const ic = iconUrl(a), sid = steamIdOf(a);
+  if (ic) set(ic); else { box.append(icon('gamepad', Math.round(size * .8))); if (sid) steamArt(sid).then(x => { if (x?.thumb) set(x.thumb, true); }); }
+  return box;
+}
+// faixa com a arte da Steam (cartões maiores); some quando não há arte
+export function gameBanner(a) {
+  const sid = steamIdOf(a); if (!sid) return null;
+  const el = h('div.gbanner.hidden');
+  steamArt(sid).then(x => { if (!x?.image) return; el.replaceChildren(h('img', { src: x.image, alt: '', loading: 'lazy', referrerPolicy: 'no-referrer', onerror: () => el.remove() })); el.classList.remove('hidden'); });
+  return el;
+}
+
 // ---------------------------------------------------------------- ações reais (só aparecem quando a situação permite)
 function voiceActions(uid) {
   const v = S.voice.get(uid), ch = v && channelById(v.channel_id), voice = ctx.voice(), out = [];
@@ -58,7 +92,8 @@ function card(uid, a) {
     me && h('button.btn.grey.sm', { title: 'Este jogo nunca aparece como atividade', onclick: async (e) => { e.stopPropagation(); if (await tryApi('PUT', `/activity/games/${a.platform}/${a.game.id}`, { hidden: true }) && 1) { toast('Jogo escondido. Você pode reexibi-lo em Contas vinculadas.'); } } }, 'Esconder jogo')];
   return h('div.act-card', { oncontextmenu: (e) => ctx.userMenu(e, uid) },
     h('div.act-top', avatar(u, 44, { ring: 'var(--bg-sec)' }), h('div.act-who', h('b', me ? 'Você' : u.display_name), h('small', `${platformName(a.platform)} · ${since(a.since)}`))),
-    h('div.act-game', icon('play', 16), h('span', a.game.title)),
+    gameBanner(a),
+    h('div.act-game', gameIcon(a, 22), h('span', a.game.title)),
     lk && lk.profile_url && h('a.act-link', { href: lk.profile_url, target: '_blank', rel: 'noopener noreferrer' }, `Perfil ${platformName(a.platform)}${lk.name ? ' de ' + lk.name : ''}`),
     h('div.act-btns', btns));
 }

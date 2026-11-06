@@ -254,3 +254,15 @@ html:not(.anim) .clipflash .cf-badge { animation: cfFade 2.4s step-end forwards;
 .pcard .pplay { display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,.18); border-radius: 8px; padding: 8px 10px; margin: 2px 0 6px; }
 .pcard .pplay svg { color: #23a55a; flex: none; } .pcard .pplay b { display: block; } .pcard .pplay small { color: var(--text-muted); font-size: 12px; }
 .pcard h4.pplay-h { margin-top: 12px; }
+
+/* imagem do jogo na atividade: ícone do programa (PC) ou arte da Steam */
+.gicon { display: inline-flex; align-items: center; justify-content: center; flex: none; border-radius: 4px; overflow: hidden; vertical-align: -3px; color: var(--text-muted); }
+.gicon img { width: 100%; height: 100%; object-fit: contain; } .gicon img.cover { object-fit: cover; }
+#members .cs.playing .gicon { margin-right: 4px; }
+.an-who small .gicon { margin-right: 2px; }
+.gbanner { border-radius: 8px; overflow: hidden; aspect-ratio: 460 / 215; background: #111214; } .gbanner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.act-card .gbanner { margin: 8px 0 2px; }
+.act-game .gicon { margin-right: 2px; }
+.pcard .pplaybox { background: rgba(0,0,0,.18); border-radius: 8px; overflow: hidden; margin: 2px 0 6px; }
+.pcard .pplaybox .pplay { background: none; margin: 0; } .pcard .pplaybox .gbanner { border-radius: 0; }
+.pcard .pplay .gicon { border-radius: 8px; }
