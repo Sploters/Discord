@@ -4,7 +4,7 @@
 - A cada mudança em `desktop/` na `main`, o GitHub Actions (`.github/workflows/desktop-release.yml`) monta o instalador
   e publica a release (número da versão escolhido sozinho).
 - O servidor consulta a release com uma chave **somente leitura** e entrega aos apps (`/api/desktop/update`,
-  `/desktop/download/<instalador>`). Chave: arquivo `github-token.txt` na pasta de dados (Umbrel: `~/localcord-data`)
+  `/desktop/download/<instalador>`). Chave: arquivo `github-token.txt` na pasta de dados (Umbrel: `~/resenha-data`)
   ou a variável `GITHUB_TOKEN`. Sem chave, só funciona com o repositório público.
 - Apps a partir da 1.0.23 perguntam ao servidor; versões anteriores perguntam direto ao GitHub (só com repositório público).
 

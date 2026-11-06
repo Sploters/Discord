@@ -89,9 +89,9 @@ export function paintTheme(root, t) {
   root.style.setProperty('--grad', gradientCss(t)); root.style.setProperty('--gi', (1.5 - k / 2).toFixed(2));
 }
 
-// código para compartilhar: "resenha-theme:" + base64url(JSON); códigos antigos "localcord-theme:" continuam valendo
+// código para compartilhar: "resenha-theme:" + base64url(JSON)
 const PREFIX = 'resenha-theme:';
-export const THEME_CODE_RE = /(?:resenha|localcord)-theme:[A-Za-z0-9_-]{8,600}/;
+export const THEME_CODE_RE = /resenha-theme:[A-Za-z0-9_-]{8,600}/;
 export function encodeTheme(t) {
   const json = JSON.stringify({ n: t.name, b: t.base, c: t.colors, a: t.angle, i: t.intensity ?? 50 });
   return PREFIX + btoa(String.fromCharCode(...new TextEncoder().encode(json))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -102,7 +102,7 @@ export const stripThemeCodes = (s) => String(s || '').replace(CODE_G, '').trim()
 export const themeText = (s) => String(s || '').replace(CODE_G, (c) => { const t = decodeTheme(c); return t ? `🎨 Tema "${t.name}"` : c; });
 export function decodeTheme(code) {
   try {
-    const raw = String(code).trim().match(THEME_CODE_RE)?.[0].replace(/^[a-z]+-theme:/, ''); if (!raw) return null;
+    const raw = String(code).trim().match(THEME_CODE_RE)?.[0].slice(PREFIX.length); if (!raw) return null;
     const bin = atob(raw.replace(/-/g, '+').replace(/_/g, '/'));
     const o = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, ch => ch.charCodeAt(0))));
     const colors = Array.isArray(o.c) ? o.c.filter(c => HEX.test(c)).slice(0, MAX_COLORS) : [];

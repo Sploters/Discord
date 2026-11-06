@@ -23,7 +23,7 @@ export async function checkAppUpdate() {
   if (!found.length) {
     try {
       const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' });
-      if (r.ok) { const j = await r.json(); if (j.assets?.some(a => /^(Resenha|LocalCord)-Setup-.*\.exe$/i.test(a.name))) found.push(String(j.tag_name || '').replace(/^v/i, '')); }
+      if (r.ok) { const j = await r.json(); if (j.assets?.some(a => /^Resenha-Setup-.*\.exe$/i.test(a.name))) found.push(String(j.tag_name || '').replace(/^v/i, '')); }
     } catch { }
   }
   const fromApp = (await d.getUpdate?.().catch(() => null))?.version; if (fromApp) found.push(fromApp);

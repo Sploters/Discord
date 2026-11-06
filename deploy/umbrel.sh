@@ -12,18 +12,29 @@ IP=${2:-${TARGET#*@}}
 cd "$(dirname "$0")/.."
 tar czf - Dockerfile README.md package.json package-lock.json .gitignore deploy public server scripts | ssh "$TARGET" "
   set -e
-  mkdir -p ~/localcord ~/localcord-backups
-  # limpa o código antigo para não sobrar arquivo removido/renomeado (os dados ficam em ~/localcord-data)
-  cd ~/localcord && rm -rf deploy public server scripts && tar xzf -
-  docker build -q -t localcord . >/dev/null
-  # backup do banco antes de trocar o container
-  tar czf ~/localcord-backups/data-\$(date +%Y%m%d-%H%M%S).tgz -C ~/localcord-data \$(cd ~/localcord-data && ls localcord.db*)
-  # cookies do YouTube (opcional): coloque ~/localcord-data/cookies.txt no servidor
-  COOKIES=; [ -f \$HOME/localcord-data/cookies.txt ] && COOKIES='-e YTDLP_COOKIES=/data/cookies.txt'
+  # troca de nome (LocalCord -> Resenha), só na primeira vez: para o container antigo e renomeia as pastas.
+  # O banco localcord.db vira resenha.db sozinho quando o servidor novo abre.
+  if [ -d ~/localcord-data ] && [ ! -e ~/resenha-data ]; then
+    docker rm -f localcord >/dev/null 2>&1 || true
+    mv ~/localcord-data ~/resenha-data
+    echo 'pasta de dados renomeada: ~/localcord-data -> ~/resenha-data'
+  fi
+  if [ -d ~/localcord-backups ] && [ ! -e ~/resenha-backups ]; then mv ~/localcord-backups ~/resenha-backups; fi
   docker rm -f localcord >/dev/null 2>&1 || true
-  docker run -d --name localcord --restart=always \
-    -p 3000:3000 -p 3443:3443 -p 40000:40000/udp -p 40000:40000/tcp -p 40001-40010:40001-40010/udp \
-    -v \$HOME/localcord-data:/data -e TLS_SAN=IP:$IP -e RTC_ANNOUNCED_IP=$IP \$COOKIES localcord >/dev/null
+  rm -rf ~/localcord
+  mkdir -p ~/resenha ~/resenha-backups ~/resenha-data
+  # limpa o código antigo para não sobrar arquivo removido/renomeado (os dados ficam em ~/resenha-data)
+  cd ~/resenha && rm -rf deploy public server scripts && tar xzf -
+  docker build -q -t resenha . >/dev/null
+  # backup do banco antes de trocar o container
+  DB=\$(cd ~/resenha-data && ls resenha.db* localcord.db* 2>/dev/null || true)
+  [ -n \"\$DB\" ] && tar czf ~/resenha-backups/data-\$(date +%Y%m%d-%H%M%S).tgz -C ~/resenha-data \$DB
+  # cookies do YouTube (opcional): coloque ~/resenha-data/cookies.txt no servidor
+  COOKIES=; [ -f \$HOME/resenha-data/cookies.txt ] && COOKIES='-e YTDLP_COOKIES=/data/cookies.txt'
+  docker rm -f resenha >/dev/null 2>&1 || true
+  docker run -d --name resenha --restart=always \\
+    -p 3000:3000 -p 3443:3443 -p 40000:40000/udp -p 40000:40000/tcp -p 40001-40010:40001-40010/udp \\
+    -v \$HOME/resenha-data:/data -e TLS_SAN=IP:$IP -e RTC_ANNOUNCED_IP=$IP \$COOKIES resenha >/dev/null
   sleep 4
-  docker logs localcord 2>&1 | head -3
+  docker logs resenha 2>&1 | head -3
 "

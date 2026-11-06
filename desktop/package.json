@@ -12,7 +12,7 @@
     "native": "node build-native.mjs"
   },
   "build": {
-    "appId": "br.local.localcord",
+    "appId": "br.resenha.app",
     "productName": "Resenha",
     "directories": {
       "output": "dist"
@@ -36,6 +36,7 @@
       "icon": "build/icon.ico"
     },
     "nsis": {
+      "guid": "2c1e8a76-ec63-5cd5-8636-5e22fa2d2ccf",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,

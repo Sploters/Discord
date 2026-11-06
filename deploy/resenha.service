@@ -5,15 +5,15 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=localcord
-WorkingDirectory=/opt/localcord
+User=resenha
+WorkingDirectory=/opt/resenha
 Environment=PORT=3000
 Environment=HTTPS_PORT=3443
-Environment=DATA_DIR=/var/lib/localcord
+Environment=DATA_DIR=/var/lib/resenha
 ExecStart=/usr/bin/node server/index.js
 Restart=always
 RestartSec=3
-StateDirectory=localcord
+StateDirectory=resenha
 
 [Install]
 WantedBy=multi-user.target

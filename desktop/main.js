@@ -6,10 +6,20 @@ const fs = require('node:fs');
 const https = require('node:https');
 const http = require('node:http');
 
-// O app se chamava LocalCord: a pasta de dados (servidor salvo, login, configurações) e o id do Windows continuam com o
-// nome antigo, para quem já usa não perder nada ao atualizar e os atalhos/notificações seguirem ligados ao mesmo app.
-app.setPath('userData', path.join(app.getPath('appData'), 'LocalCord'));
-app.setAppUserModelId('br.local.localcord');
+// O app se chamava LocalCord: na primeira abertura depois da troca de nome, a pasta de dados antiga (servidor salvo,
+// login, configurações) passa a se chamar Resenha. Se não der para renomear agora (arquivo em uso), usa a antiga e tenta
+// de novo na próxima abertura.
+const OLD_ID = 'br.local.localcord';
+{
+  const base = app.getPath('appData'), dir = path.join(base, 'Resenha'), old = path.join(base, 'LocalCord');
+  let use = dir;
+  // uma pasta Resenha sem config.json nunca foi usada de verdade (o app guarda o servidor ali ao conectar): dá lugar à antiga
+  if (fs.existsSync(old) && !fs.existsSync(path.join(dir, 'config.json'))) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); fs.renameSync(old, dir); } catch { use = old; }
+  }
+  app.setPath('userData', use);
+}
+app.setAppUserModelId('br.resenha.app');
 if (!app.requestSingleInstanceLock()) { app.quit(); return; }
 
 const cfgPath = () => path.join(app.getPath('userData'), 'config.json');
@@ -227,7 +237,7 @@ ipcMain.handle('get-sources', async () => {
   const list = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: true });
   const now = Date.now(), out = [];
   for (const s of list) {
-    if (/^(Resenha|LocalCord)$/.test(s.name) || /NVIDIA GeForce Overlay/i.test(s.name)) continue; // o overlay da NVIDIA só aparece preto
+    if (s.name === 'Resenha' || /NVIDIA GeForce Overlay/i.test(s.name)) continue; // o overlay da NVIDIA só aparece preto
     const type = s.id.startsWith('screen') ? 'screen' : 'window';
     const item = { id: s.id, name: s.name, type, thumbnail: s.thumbnail.toDataURL(), appIcon: s.appIcon && !s.appIcon.isEmpty() ? s.appIcon.toDataURL() : null };
     out.push(item);
@@ -296,7 +306,7 @@ async function checkUpdate() {
   }
   if (!found) {
     const rel = await getJson(`https://api.github.com/repos/${REPO}/releases/latest`);
-    const asset = rel?.assets?.find(a => /^(Resenha|LocalCord)-Setup-.*\.exe$/i.test(a.name));
+    const asset = rel?.assets?.find(a => /^Resenha-Setup-.*\.exe$/i.test(a.name));
     if (rel?.tag_name && asset) found = { version: String(rel.tag_name).replace(/^v/i, ''), url: asset.browser_download_url, name: asset.name };
   }
   if (!found || !newer(found.version, app.getVersion())) return;
@@ -360,6 +370,8 @@ async function detectGpu() {
   } catch (e) { log('gpu info falhou', e.message); }
 }
 app.whenReady().then(() => {
+  // iniciar com o Windows: a entrada antiga no registro tinha o id antigo; apaga e recria com o novo
+  try { app.setLoginItemSettings({ openAtLogin: false, name: OLD_ID }); if (cfg.autoStart) app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] }); } catch { }
   log('abertura', ms(), 'ms: Electron pronto');
   // a janela principal abre na hora (fundo escuro + barra) e a página começa a carregar já; sem a janelinha
   // "Iniciando…" no meio (era uma janela a mais para criar antes da principal). O resto vem depois.

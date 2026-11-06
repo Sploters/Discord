@@ -35,7 +35,7 @@ cada pessoa (jogos e assuntos que ela escolhe; salvos na conta).
   pessoa ficam marcados na lista.
 
 ## Configurar as fontes
-Arquivo `discover.json` na pasta de dados do servidor (no Umbrel: `~/localcord-data/discover.json`). Vale na hora.
+Arquivo `discover.json` na pasta de dados do servidor (no Umbrel: `~/resenha-data/discover.json`). Vale na hora.
 ```json
 {
   "news": [
