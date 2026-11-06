@@ -34,7 +34,7 @@ import { profileCard, STATUS_TXT } from './card.js';
 import { timeoutDialog, removeTimeout, banDialog, timedOutUntil } from './mod.js';
 import { recordVoiceMessage, voiceEl } from './voicemsg.js';
 import { initPlugins, mentionUser, addMention, resolveMentions } from './plugins.js';
-import { initActivity, setActivities, onActivityUpdate, onIntegrationUpdate, activityTab, activityOf, playingLine, refreshFeedView, gameIcon } from './activity.js';
+import { initActivity, setActivities, onActivityUpdate, onIntegrationUpdate, activityPanel, activityOf, playingLine, refreshFeedView, gameIcon } from './activity.js';
 import { toggleTranslation, isTranslated, translationBlock, translateOutgoing, draftMenu } from './translate.js';
 import { initDiag, openReport } from './diag.js';
 import { initPwa } from './pwa.js';
@@ -1432,30 +1432,16 @@ function renderMembers() {
 
 // =============== Início / amigos ===============
 // painel "Ativo agora": amigos online, com servidor e sala de voz quando estão numa chamada
+// painel "Ativo agora" (à direita dos Amigos): o que os amigos fazem agora + destaques da semana (public/activity.js)
 function renderActiveNow() {
   const box = document.getElementById('active-now'); if (!box) return;
-  // quem está em chamada aparece mesmo invisível/offline; a lista "Online" continua só com quem está online
-  const friends = [...S.rels.values()].filter(r => r.type === 1).map(r => S.users.get(r.user.id) || r.user);
-  const inVoice = [], other = [];
-  for (const u of friends) { const v = S.voice.get(u.id), ch = v && channelById(v.channel_id); if (ch) inVoice.push({ u, v, ch }); else if (u.status && u.status !== 'offline') other.push({ u }); }
-  const byName = (a, b) => (a.u.display_name || '').localeCompare(b.u.display_name || '');
-  const voiceCard = ({ u, v, ch }) => {
-    const g = ch.type === 1 ? null : guild(ch.guild_id);
-    return h('div.an-card', { title: 'Ir para a sala', onclick: () => (g ? go(g.id, ch.id) : go('@me', ch.id)), oncontextmenu: (e) => userMenu(e, u.id, g?.id) },
-      h('div.an-top', avatar(u, 40, { ring: 'var(--bg-sec)' }), h('div.an-who', styleName(h('b', u.display_name), u.name_style), h('small', g ? g.name : 'Em uma ligação privada'))),
-      h('div.an-room', icon('voice', 16), h('span', g ? chName(ch) : 'Ligação'), v.screen && h('span.an-live', 'AO VIVO'), v.mute && icon('micoff', 14)));
-  };
-  const rows = ({ u }) => h('div.an-row', { onclick: () => openDM(u.id), oncontextmenu: (e) => userMenu(e, u.id) }, avatar(u, 32, { ring: 'var(--bg-sec)' }),
-    h('div.an-who', styleName(h('b', u.display_name), u.name_style), h('small', activityOf(u.id) ? [gameIcon(activityOf(u.id), 14), ' ' + playingLine(activityOf(u.id))] : (u.custom_status || STATUS_TXT[u.status]))));
-  box.replaceChildren(h('h3', 'Ativo agora'),
-    ...(inVoice.length ? [h('div.an-cap', 'Em chamada de voz'), ...inVoice.sort(byName).map(voiceCard)] : []),
-    ...(other.length ? [h('div.an-cap', 'Online'), ...other.sort(byName).map(rows)] : []),
-    ...(!inVoice.length && !other.length ? [h('div.an-empty', h('b', 'Tudo quieto por aqui…'), h('p', 'Quando seus amigos ficarem online ou entrarem numa sala de voz, eles aparecem aqui.'))] : []));
+  if (box.querySelector('#actfeed')) return refreshFeedView(); // já montado: só redesenha (presença/voz mudaram)
+  activityPanel(box);
 }
 function renderHome(main) {
-  if (S.view.tab === 'blocked' || S.view.tab === 'pending') S.view.tab = 'online'; // bloqueados ficam em Privacidade e segurança; pedidos pendentes aparecem em "Todos"
+  if (S.view.tab === 'blocked' || S.view.tab === 'pending' || S.view.tab === 'activity') S.view.tab = 'online'; // bloqueados: Privacidade e segurança; pendentes: "Todos"; a atividade virou o painel "Ativo agora"
   const tab = S.view.tab, rels = [...S.rels.values()];
-  const tabs = [['online', 'Online'], ['activity', 'Atividade'], ['all', 'Todos']];
+  const tabs = [['online', 'Online'], ['all', 'Todos']];
   const q = h('input.fsearch', { placeholder: 'Buscar', oninput: () => draw() });
   const ORD = { online: 0, idle: 1, dnd: 2, invisible: 3, offline: 4 };
   const pane = h('div.pane');
@@ -1466,7 +1452,6 @@ function renderHome(main) {
       const send = async () => { try { await api('POST', '/relationships', { username: inp.value }); msg.style.color = 'var(--green)'; msg.textContent = `Pedido de amizade enviado para ${inp.value}.`; inp.value = ''; } catch (e) { msg.style.color = 'var(--red)'; msg.textContent = e.message; } };
       return pane.append(h('h2', { style: { margin: '0 0 4px', color: 'var(--header)', fontSize: '16px' } }, 'Adicionar amigo'), h('p', { style: { color: 'var(--text-muted)', margin: '0 0 16px' } }, 'Você pode adicionar amigos pelo nome de usuário.'), h('div.addf', inp, h('button.btn', { onclick: send }, 'Enviar pedido')), msg);
     }
-    if (tab === 'activity') return activityTab(pane);
     let list = rels.filter(r => tab === 'online' ? r.type === 1 && S.users.get(r.user.id).status !== 'offline' : tab === 'all' ? r.type === 1 || r.type === 3 || r.type === 4 : tab === 'pending' ? r.type === 3 || r.type === 4 : r.type === 2);
     list = list.filter(r => r.user.username.toLowerCase().includes(q.value.toLowerCase()) || r.user.display_name.toLowerCase().includes(q.value.toLowerCase()));
     const nm = (r) => (r.user.display_name || r.user.username).toLowerCase();
@@ -1487,8 +1472,10 @@ function renderHome(main) {
   main.replaceChildren(h('div#home',
     h('div#topbar', h('button.ibtn.menu-btn', { onclick: () => $('#app').classList.toggle('nav-open') }, icon('more')), icon('users', 24), h('span', 'Amigos'), h('div', { style: { width: '1px', height: '24px', background: 'var(--divider)', margin: '0 8px' } }),
       h('div.tabs', tabs.map(([k, l]) => h('div.tab' + (tab === k ? '.active' : ''), { onclick: () => { S.view.tab = k; renderHome(main); } }, l)),
-        h('div.tab.green' + (tab === 'add' ? '.active' : ''), { onclick: () => { S.view.tab = 'add'; renderHome(main); } }, icon('plus', 18), 'Adicionar amigo'))),
-    h('div#homebody', pane, h('aside#active-now'))));
+        h('div.tab.green' + (tab === 'add' ? '.active' : ''), { onclick: () => { S.view.tab = 'add'; renderHome(main); } }, icon('plus', 18), 'Adicionar amigo')),
+      // janela estreita: o painel "Ativo agora" não cabe ao lado e abre como gaveta por este botão
+      h('button.ibtn.an-toggle', { title: 'Ativo agora', onclick: () => $('#home').classList.toggle('an-open') }, icon('gamepad', 22))),
+    h('div#homebody', pane, h('aside#active-now'), h('div.an-scrim', { onclick: () => $('#home').classList.remove('an-open') }))));
   draw(); renderActiveNow();
 }
 

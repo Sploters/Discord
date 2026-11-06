@@ -272,3 +272,51 @@ html:not(.anim) .clipflash .cf-badge { animation: cfFade 2.4s step-end forwards;
   font-family: inherit; font-size: 13px; font-weight: 500; line-height: 1; cursor: pointer; padding: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background .15s, color .15s; }
 #side-head .dm-find:hover { background: var(--bg-mod-hover); color: var(--interactive-hover, var(--text)); }
 #side-head .dm-find:focus-visible { outline: 2px solid var(--brand, #5865f2); outline-offset: 1px; }
+
+/* ---------- painel "Ativo agora": em destaque o que os amigos fazem agora; embaixo, os destaques da semana ---------- */
+#home #homebody { position: relative; }
+#active-now { width: 320px; display: flex; flex-direction: column; overflow-y: auto; }
+#active-now .an-body { display: flex; flex-direction: column; gap: 6px; }
+#active-now .an-now { display: flex; flex-direction: column; }
+#active-now .an-cap:first-child { margin-top: 2px; }
+#active-now .an-card.an-play { padding: 0 0 12px; overflow: hidden; }
+#active-now .an-card.an-play > :not(.gbanner) { margin-left: 12px; margin-right: 12px; }
+#active-now .an-card.an-play .gbanner { border-radius: 0; margin-bottom: 10px; }
+#active-now .an-card.an-play .an-top { margin-top: 12px; } #active-now .an-card.an-play .gbanner + .an-top { margin-top: 0; }
+#active-now .an-game { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-weight: 600; color: var(--header); min-width: 0; }
+#active-now .an-game span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#active-now .an-card .act-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+#active-now .an-card .act-btns:empty { display: none; }
+#active-now .an-card .act-link { display: inline-block; margin-top: 8px; font-size: 12.5px; }
+#active-now .an-me { display: flex; align-items: center; gap: 8px; margin: 10px 4px 0; padding: 8px 10px; border-radius: 8px; background: var(--bg-sec); font-size: 13px; color: var(--text-muted); }
+#active-now .an-me span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } #active-now .an-me b { color: var(--header); }
+#active-now .an-me .btn.link { padding: 0; min-height: 0; font-size: 12px; }
+#active-now .an-empty.small { padding: 10px 8px; font-size: 13px; }
+#active-now .an-hist { margin-top: 10px; border-top: 1px solid var(--divider); padding-top: 4px; }
+#active-now .hl-dayh { margin: 12px 4px 4px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+#active-now .hl-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px; border-radius: 8px; cursor: pointer; }
+#active-now .hl-item:hover { background: var(--bg-mod-hover); }
+#active-now .hl-item.hl-marathon { background: linear-gradient(90deg, rgba(240,178,50,.14), transparent 80%); }
+#active-now .hl-ic { position: relative; flex: none; width: 32px; height: 32px; }
+#active-now .hl-badge { position: absolute; right: -5px; bottom: -5px; padding: 2px; border-radius: 6px; background: var(--bg-pri); display: flex; }
+#active-now .hl-badge .gicon { border-radius: 4px; }
+#active-now .hl-clipic { background: var(--brand, #5865f2); color: #fff; border-radius: 4px; }
+#active-now .hl-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 13.5px; line-height: 1.35; color: var(--text); }
+#active-now .hl-txt b { color: var(--header); font-weight: 600; } #active-now .hl-txt i { color: var(--text-muted); }
+#active-now .hl-txt small { color: var(--text-muted); font-size: 11.5px; }
+#active-now .hl-tag { align-self: flex-start; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px; }
+#active-now .hl-tag.gold { background: rgba(240,178,50,.2); color: #f0b232; } #active-now .hl-tag.new { background: rgba(35,165,90,.2); color: #2dc770; }
+#active-now .hl-tag.fire { background: rgba(242,113,33,.2); color: #f57731; } #active-now .hl-tag.clip { background: rgba(88,101,242,.22); color: #949cf7; }
+:root[data-theme="light"] #active-now .hl-tag.gold { color: #9a6b06; } :root[data-theme="light"] #active-now .hl-tag.fire { color: #c2541a; } :root[data-theme="light"] #active-now .hl-tag.new { color: #1a8a4a; } :root[data-theme="light"] #active-now .hl-tag.clip { color: #4752c4; }
+/* janela estreita: o painel vira gaveta (botão de controle na barra de cima) */
+#home .an-toggle { display: none; margin-left: auto; flex: none; }
+#home .an-scrim { display: none; }
+@media (max-width: 1100px) {
+  #home .an-toggle { display: flex; }
+  #home #active-now { display: flex; position: absolute; top: 0; right: 0; bottom: 0; width: min(340px, 92vw); z-index: 25; background: var(--bg-pri); border-left: 1px solid var(--divider);
+    box-shadow: -8px 0 24px rgba(0,0,0,.35); transform: translateX(105%); transition: transform .2s ease; }
+  #home.an-open #active-now { transform: none; }
+  #home.an-open .an-scrim { display: block; position: absolute; inset: 0; z-index: 24; background: rgba(0,0,0,.4); }
+}
+#active-now .an-top .an-dm { margin-left: auto; flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--bg-tert); }
+#active-now .an-top .an-dm:hover { color: var(--interactive-hover); }

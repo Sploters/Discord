@@ -1263,8 +1263,9 @@ app.delete('/api/integrations/:platform', auth, wrap((req, res) => {
   res.json({});
 }));
 app.get('/api/activity/feed', auth, wrap((req, res) => { // amigos (e você), o que estão jogando e eventos recentes — tudo filtrado por activity.canSee
-  const f = activity.feedFor(req.uid), ids = f.friends.map(x => x.user_id);
-  res.json({ ...f, users: ids.map(id => userPub(id)) });
+  const f = activity.feedFor(req.uid), highlights = activity.highlightsFor(req.uid);
+  const ids = [...new Set([...f.friends.map(x => x.user_id), ...highlights.flatMap(x => [x.user_id, x.clip?.streamer_id]).filter(Boolean)])];
+  res.json({ ...f, highlights, users: ids.map(id => userPub(id)).filter(Boolean) });
 }));
 app.put('/api/activity/games/:platform/:gameId', auth, wrap((req, res) => { // esconder/mostrar um jogo (nunca vira atividade)
   const platform = req.params.platform, gid = clean(req.params.gameId, 40);

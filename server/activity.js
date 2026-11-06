@@ -50,13 +50,15 @@ export function createActivityService({ all, get, run, newId, dispatch, isOnline
     run('DELETE FROM activities WHERE user_id=? AND created_at<?', uid, now() - KEEP_DAYS * 864e5);
     run('DELETE FROM activities WHERE user_id=? AND id NOT IN (SELECT id FROM activities WHERE user_id=? ORDER BY created_at DESC LIMIT ?)', uid, uid, KEEP_PER_USER);
   };
+  // imagem do jogo guardada junto com o evento (o histórico mostra o ícone/arte mesmo depois que a pessoa parou de jogar)
+  const artOf = (game, platform) => { const o = {}; if (game.icon) o.icon = game.icon; const st = platform === 'steam' ? game.id : game.steam; if (st) o.steam = String(st); return Object.keys(o).length ? o : null; };
   const hiddenGame = (uid, platform, gameId) => !!get('SELECT 1 x FROM game_prefs WHERE user_id=? AND platform=? AND game_id=? AND hidden=1', uid, platform, gameId);
 
   // encerra o que está publicado (jogo parou, conta desvinculada, privacidade desligada…)
   const clear = (uid, platform, { notify = true, why = 'stop', audienceOverride = null } = {}) => {
     const k = uid + ':' + platform, cur = current.get(k); if (!cur) return;
     current.delete(k);
-    if (why === 'stop') record(uid, platform, 'game_stop', cur.game, { seconds: Math.max(0, Math.round((now() - cur.since) / 1000)) });
+    if (why === 'stop') record(uid, platform, 'game_stop', cur.game, { seconds: Math.max(0, Math.round((now() - cur.since) / 1000)), ...artOf(cur.game, platform) });
     if (notify) dispatch(audienceOverride || audience(uid, platform), 'ACTIVITY_UPDATE', { user_id: uid, platform, activity: null });
   };
 
@@ -72,7 +74,7 @@ export function createActivityService({ all, get, run, newId, dispatch, isOnline
     if (prev && prev.game.id === game.id) { prev.at = now(); prev.state = snap.state; if (prev.game.title !== game.title) prev.game = game; return; }
     if (prev) clear(a.user_id, a.platform); // trocou de jogo: fecha o anterior
     const entry = { uid: a.user_id, platform: a.platform, game, since: now(), state: snap.state, at: now() };
-    current.set(k, entry); record(a.user_id, a.platform, 'game_start', game, null);
+    current.set(k, entry); record(a.user_id, a.platform, 'game_start', game, artOf(game, a.platform));
     publish(a.user_id, a.platform, entry);
   }
 
@@ -139,12 +141,49 @@ export function createActivityService({ all, get, run, newId, dispatch, isOnline
     return { friends, events };
   }
 
+  // ---- destaques: o que os amigos fizeram de marcante (não cada "começou a jogar") ----
+  //   session  = jogou por 30 min ou mais        marathon = 3 h ou mais
+  //   new_game = primeiro registro daquele jogo (só para quem já tem histórico há mais de 3 dias: conta nova não vira "tudo novo")
+  //   streak   = o mesmo jogo em 3 dias diferentes ou mais na semana (um item por pessoa e jogo)
+  //   clip     = clipe salvo num servidor em que você também está
+  // Mesma regra de privacidade de tudo (canSee + jogos escondidos).
+  const TZ = process.env.TZ || 'America/Sao_Paulo';
+  const dayKey = (t) => { try { return new Date(t).toLocaleDateString('en-CA', { timeZone: TZ }); } catch { return new Date(t).toISOString().slice(0, 10); } };
+  function highlightsFor(viewer, { days = 7, limit = 40 } = {}) {
+    const fr = friendsOf(viewer); if (!fr.length) return [];
+    const since = now() - days * 864e5, ph = fr.map(() => '?').join(',');
+    const seeMemo = new Map(), see = (uid, platform) => { const k = uid + ':' + platform; if (!seeMemo.has(k)) seeMemo.set(k, canSee(viewer, uid, platform)); return seeMemo.get(k); };
+    const rows = all(`SELECT * FROM activities WHERE user_id IN (${ph}) AND created_at>? ORDER BY created_at DESC`, ...fr, since)
+      .filter(ev => see(ev.user_id, ev.platform) && !hiddenGame(ev.user_id, ev.platform, ev.game_id));
+    const data = (ev) => { try { return ev.data ? JSON.parse(ev.data) : {}; } catch { return {}; } };
+    const game = (ev, d) => ({ id: ev.game_id, title: ev.title, ...(d.icon ? { icon: d.icon } : {}), ...(d.steam ? { steam: d.steam } : {}) });
+    const out = [];
+    for (const ev of rows) {
+      const d = data(ev);
+      if (ev.kind === 'game_stop' && d.seconds >= 1800) out.push({ id: ev.id, kind: d.seconds >= 10800 ? 'marathon' : 'session', user_id: ev.user_id, platform: ev.platform, game: game(ev, d), seconds: d.seconds, at: ev.created_at });
+      if (ev.kind === 'game_start') {
+        const first = get('SELECT MIN(created_at) t FROM activities WHERE user_id=?', ev.user_id)?.t;
+        const before = get('SELECT 1 x FROM activities WHERE user_id=? AND game_id=? AND created_at<? LIMIT 1', ev.user_id, ev.game_id, ev.created_at);
+        if (first && first < ev.created_at - 3 * 864e5 && !before) out.push({ id: ev.id, kind: 'new_game', user_id: ev.user_id, platform: ev.platform, game: game(ev, d), at: ev.created_at });
+      }
+    }
+    const streaks = new Map(); // pessoa+jogo -> { dias, último evento }
+    for (const ev of rows) {
+      const k = ev.user_id + ':' + ev.game_id, s = streaks.get(k) || { days: new Set(), last: ev };
+      s.days.add(dayKey(ev.created_at)); if (ev.created_at > s.last.created_at) s.last = ev; streaks.set(k, s);
+    }
+    for (const s of streaks.values()) if (s.days.size >= 3) { const ev = s.last; out.push({ id: 'st' + ev.id, kind: 'streak', user_id: ev.user_id, platform: ev.platform, game: game(ev, data(ev)), days: s.days.size, at: ev.created_at }); }
+    for (const c of all(`SELECT c.* FROM clips c WHERE c.author_id IN (${ph}) AND c.created_at>? AND c.guild_id IN (SELECT guild_id FROM members WHERE user_id=?) ORDER BY c.created_at DESC LIMIT 20`, ...fr, since, viewer))
+      out.push({ id: 'cl' + c.id, kind: 'clip', user_id: c.author_id, clip: { id: c.id, title: c.title, guild_id: c.guild_id, channel_id: c.channel_id, streamer_id: c.streamer_id, secs: c.secs }, at: c.created_at });
+    return out.sort((a, b) => b.at - a.at).slice(0, limit);
+  }
+
   // ---- ganchos chamados pelas rotas ----
   const poke = () => { if (!stopped && !running && now() - lastTickAt > 10000) setTimeout(() => tick().catch(() => { }), 200).unref?.(); };
   return {
     start() { stopped = false; setTimeout(() => tick().catch(() => { }), 3000).unref?.(); schedule(); },
     stop() { stopped = true; clearTimeout(timer); },
-    tick, poke, readyFor, feedFor, canSee, audience,
+    tick, poke, readyFor, feedFor, highlightsFor, canSee, audience,
     onLinked() { poke(); },
     // desvinculou: encerra a publicação (avisando o público ANTES de apagar a conta) e limpa o cache da conta
     onUnlinking(uid, platform, externalId) {
@@ -168,7 +207,7 @@ export function createActivityService({ all, get, run, newId, dispatch, isOnline
       }
       if (prev) clear(uid, 'pc');
       const entry = { uid, platform: 'pc', game, since: now(), state: null, at: now() };
-      current.set(k, entry); record(uid, 'pc', 'game_start', game, null);
+      current.set(k, entry); record(uid, 'pc', 'game_start', game, artOf(game, 'pc'));
       publish(uid, 'pc', entry);
     },
     clearLocal(uid) { clear(uid, 'pc'); }, // fechou o app (última conexão caiu)

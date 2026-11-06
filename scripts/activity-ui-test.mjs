@@ -1,4 +1,4 @@
-// Teste de interface da Fase 1 (Edge headless, Steam simulada): aba Atividade, cartões, Entrar/Assistir/Convidar condicionais,
+// Teste de interface da Fase 1 (Edge headless, Steam simulada): painel "Ativo agora" (era a aba Atividade), cartões, Entrar/Assistir/Convidar condicionais,
 // Contas vinculadas e privacidade refletida na tela. Uso: node scripts/activity-ui-test.mjs
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -36,7 +36,9 @@ const txt = (p, sel) => p.evaluate((sel) => [...document.querySelectorAll(sel)].
 const clickBtn = (p, scope, rx) => p.evaluate((scope, rx) => { const el = [...document.querySelectorAll(scope + ' button')].find(b => new RegExp(rx).test(b.textContent)); if (el) el.click(); return !!el; }, scope, rx);
 const waitFor = async (fn, ms = 6000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await fn()) return true; await sleep(150); } return false; };
 const goTab = async (p, label) => { await p.evaluate(() => window.__lc.go('@me')); await sleep(300); await p.evaluate((label) => [...document.querySelectorAll('#topbar .tab')].find(t => t.textContent.trim() === label)?.click(), label); await sleep(500); };
-const cards = (p) => txt(p, '#actfeed .act-card');
+// a aba Atividade virou o painel "Ativo agora" (sempre à direita dos Amigos)
+const goPanel = (p) => goTab(p, 'Online');
+const cards = (p) => txt(p, '#actfeed .an-card.an-play');
 const befriend = async (a, b) => { await call(a.tok, 'POST', '/relationships', { username: b.uname }); await call(b.tok, 'PUT', '/relationships/' + (await call(b.tok, 'GET', '/me/settings') && b.id), {}); };
 
 try {
@@ -58,17 +60,17 @@ try {
   await pa.keyboard.press('Escape'); await sleep(300);
 
   // ---- aba Atividade (bob, amigo) ----
-  await goTab(pb, 'Atividade');
+  await goPanel(pb);
   ok(await waitFor(async () => (await cards(pb)).some(t => /Counter-Strike 2/.test(t))), 'bob vê o cartão da alice jogando Counter-Strike 2');
   const c0 = (await cards(pb))[0] || '';
   ok(/Steam/.test(c0) && /(há |começou agora)/.test(c0), 'cartão mostra a plataforma e há quanto tempo está jogando', c0);
-  ok(await pb.evaluate(() => !!document.querySelector('#actfeed .act-card a.act-link')), 'cartão tem link para o perfil da Steam (vínculo visível aos amigos)');
+  ok(await pb.evaluate(() => !!document.querySelector('#actfeed .an-play a.act-link')), 'cartão tem link para o perfil da Steam (vínculo visível aos amigos)');
   ok(!/Entrar|Assistir|Convidar/.test(c0), 'sem chamada: o cartão NÃO mostra Entrar/Assistir/Convidar', c0);
-  ok(/Perfil/.test(c0) && /Mensagem/.test(c0), 'cartão tem Perfil e Mensagem');
+  ok(await pb.evaluate(() => !!document.querySelector('#actfeed .an-play .an-dm[title="Mensagem"]')), 'cartão tem botão de Mensagem (e clicar no cartão abre o perfil)');
   // carol (não vê a aba cheia de coisa, mas vê a alice porque são amigas) — e uma terceira pessoa sem amizade não veria: checado no teste de API
   // painel lateral "Ativo agora" mostra o jogo
   await pb.evaluate(() => window.__lc.go('@me')); await goTab(pb, 'Online'); await sleep(500);
-  ok((await txt(pb, '#active-now .an-row')).some(t => /Jogando Counter-Strike 2/.test(t)), 'painel "Ativo agora" mostra "Jogando …" embaixo do amigo');
+  ok((await txt(pb, '#active-now .an-now .an-cap')).some(t => /^Jogando — 1$/.test(t)), 'painel "Ativo agora": a alice aparece em destaque em "Jogando"');
 
   // ---- ações reais: sala de voz ----
   const g = (await call(A.tok, 'POST', '/guilds', { name: 'Sala' })).data, inv = (await call(A.tok, 'POST', `/guilds/${g.id}/invites`)).data;
@@ -77,21 +79,21 @@ try {
   const vch = await pa.evaluate((gid) => window.__lc.S.guilds.get(gid).channels.find(c => c.type === 2), g.id);
   await pa.evaluate((gid, cid) => window.__lc.go(gid, cid), g.id, vch.id); await sleep(500);
   await clickBtn(pa, '#stage', 'Entrar'); await sleep(2500);
-  await goTab(pb, 'Atividade');
+  await goPanel(pb);
   ok(await waitFor(async () => /Entrar/.test((await cards(pb))[0] || '')), 'alice em chamada: o cartão passa a mostrar "Entrar"', (await cards(pb))[0]);
   ok(!/Assistir/.test((await cards(pb))[0] || ''), 'sem transmissão: "Assistir" não aparece');
   await pa.evaluate(() => window.__lc.voice.toggleScreen({ res: 360, fps: 30, audio: false, hint: 'motion' }).then(() => true)); await sleep(1500);
   ok(await waitFor(async () => /Assistir/.test((await cards(pb))[0] || '')), 'alice transmitindo: aparece "Assistir"', (await cards(pb))[0]);
   // convite: alice na sala e carol (membro, online, fora da sala) -> alice vê "Convidar" no cartão de quem joga? carol não joga; usa a lista Online
-  await goTab(pa, 'Atividade'); await sleep(800);
-  const onlineRows = await txt(pa, '#actfeed .act-online .an-row');
+  await goPanel(pa); await sleep(800);
+  const onlineRows = await txt(pa, '#actfeed .an-now .an-row');
   ok(onlineRows.some(t => /Convidar/.test(t)), 'alice em sala de servidor vê "Convidar" nos amigos membros que estão fora da sala', onlineRows);
 
   // ---- Assistir: bob entra e abre a transmissão direto ----
-  ok(await clickBtn(pb, '#actfeed .act-card', 'Assistir'), 'bob clica em Assistir');
+  ok(await clickBtn(pb, '#actfeed .an-play', 'Assistir'), 'bob clica em Assistir');
   ok(await waitFor(() => pb.evaluate(() => window.__lc.voice.active), 8000), 'bob entra na sala');
   ok(await waitFor(() => pb.evaluate((aid) => window.__lc.S.focus === 's:' + aid && !!window.__lc.voice.peers.get(aid)?.streams.screen && !window.__lc.voice.closedStreams.has(aid), A.id), 10000), 'e a transmissão abre em destaque (não fica fechada)');
-  await goTab(pb, 'Atividade');
+  await goPanel(pb);
   ok(!/Entrar|Assistir/.test((await cards(pb))[0] || ''), 'já na sala e assistindo: Entrar/Assistir somem (nada indisponível)', (await cards(pb))[0]);
 
   // ---- privacidade na interface ----
@@ -102,8 +104,8 @@ try {
   await pa.evaluate(() => { const sw = [...document.querySelectorAll('.perm')].find(p => /o que estou jogando/.test(p.textContent)).querySelector('.switch'); sw.click(); });
   ok(await waitFor(async () => (await cards(pb)).some(t => /Counter-Strike 2/.test(t))), 'religando, o cartão volta');
   // esconder jogo pelo cartão da própria alice
-  await pa.keyboard.press('Escape'); await goTab(pa, 'Atividade'); await sleep(500);
-  ok(await clickBtn(pa, '#actfeed .act-card', 'Esconder jogo'), 'alice usa "Esconder jogo" no próprio cartão');
+  await pa.keyboard.press('Escape'); await goPanel(pa); await sleep(500);
+  ok(await clickBtn(pa, '#actfeed .an-me', 'Esconder jogo'), 'alice usa "Esconder jogo" (linha "Você está jogando" do painel)');
   ok(await waitFor(async () => !(await cards(pb)).some(t => /Counter-Strike/.test(t))), 'o jogo escondido some para o bob');
   await pa.evaluate(() => window.__lc.openSettings('connections')); await sleep(900);
   ok((await txt(pa, '.card2')).some(t => /Counter-Strike 2/.test(t) && /Mostrar de novo/.test(t)), 'e aparece em "Jogos escondidos" com o nome do jogo');
