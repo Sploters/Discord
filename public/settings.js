@@ -568,7 +568,7 @@ function overviewPage(gid) {
   let icn = g.icon, ban = g.banner, accent = g.accent || '#5865f2';
   const name = h('input', { value: g.name, maxLength: 100, disabled: !canEdit }), desc = h('textarea', { value: g.description || '', rows: 3, maxLength: 300, disabled: !canEdit, placeholder: 'Do que se trata este servidor?' });
   const iconEl = h('div.rail-item', { style: { width: '88px', height: '88px', borderRadius: '50%', fontSize: '30px', cursor: canEdit ? 'pointer' : 'default' } }), bannerEl = h('div.srv-banner');
-  const draw = () => { iconEl.replaceChildren(icn ? h('img', { src: icn }) : g.name.split(/\s+/).map(w => w[0]).join('').slice(0, 3)); bannerEl.style.backgroundImage = ban ? `url("${ban}")` : ''; bannerEl.style.backgroundColor = accent; };
+  const draw = () => { iconEl.replaceChildren(icn ? h('img', { src: icn }) : g.name.split(/\s+/).map(w => w[0]).join('').slice(0, 3)); bannerEl.style.backgroundImage = ban ? `url("${String(ban).replace(/["\\\n]/g, encodeURIComponent)}")` : ''; bannerEl.style.backgroundColor = accent; };
   iconEl.onclick = async () => { if (!canEdit) return; const u = await uploadImage(); if (u) { icn = u.url; draw(); } };
   draw();
   const members = [...g.members.keys()].filter(id => id !== S.me.id);

@@ -91,13 +91,13 @@ export async function resolveQuery(q) {
   let u = null;
   if (/^https?:\/\//i.test(q)) { try { u = new URL(q); } catch { throw new Error('Link inválido'); } }
   if (!u) { // busca por texto
-    const j = await runJson(['-J', '--no-playlist', '--default-search', 'ytsearch1', `ytsearch1:${q}`]);
+    const j = await runJson(['-J', '--no-playlist', '--default-search', 'ytsearch1', '--', `ytsearch1:${q}`]);
     const e = j.entries?.[0]; if (!e) throw new Error('Nada encontrado');
     return [trackFrom(e)];
   }
   if (!hostOk(u)) throw new Error('Site não permitido (YouTube, SoundCloud, Spotify, Bandcamp, Twitch, Vimeo...)');
   if (/(^|\.)spotify\.com$/.test(u.hostname)) return spotifyTracks(u);
-  const j = await runJson(['-J', '--flat-playlist', '--playlist-end', String(MAX_PLAYLIST), u.href]);
+  const j = await runJson(['-J', '--flat-playlist', '--playlist-end', String(MAX_PLAYLIST), '--', u.href]);
   if (j.entries) {
     const list = j.entries.filter(Boolean).map(e => trackFrom(e)).filter(t => t.url);
     if (!list.length) throw new Error('Playlist vazia');
@@ -192,7 +192,7 @@ async function startTrack(s, offsetMs) {
     if (gen !== s.gen) return rtp.close();
     s.rtp = rtp;
     const src = t.url || t.search;
-    const dl = spawn(YTDLP, ytdlpArgs(['-f', 'bestaudio/best', '--no-playlist', '-o', '-', '--quiet', src]), { stdio: ['ignore', 'pipe', 'pipe'] });
+    const dl = spawn(YTDLP, ytdlpArgs(['-f', 'bestaudio/best', '--no-playlist', '-o', '-', '--quiet', '--', src]), { stdio: ['ignore', 'pipe', 'pipe'] });
     const ff = spawn(FFMPEG, ['-hide_banner', '-loglevel', 'error', ...(offsetMs ? ['-ss', (offsetMs / 1000).toFixed(1)] : []), '-re', '-i', 'pipe:0', '-vn', '-map', '0:a:0', '-ac', '2', '-ar', '48000', '-c:a', 'libopus', '-b:a', '128k', '-application', 'audio',
       '-f', 'rtp', '-payload_type', String(rtp.payloadType), '-ssrc', String(rtp.ssrc), `rtp://127.0.0.1:${rtp.port}?pkt_size=1200`], { stdio: ['pipe', 'ignore', 'pipe'] });
     s.proc = [dl, ff];

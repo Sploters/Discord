@@ -205,7 +205,20 @@ html, body, button, input, textarea, select { font-family: var(--font, "gg sans"
 .card2 .btn.red { margin-top: 14px; }
 
 /* telas pequenas: as abas do início (Online / Atividade / Todos / Adicionar) rolam em vez de sumir */
+/* botão ☰ da lista de canais: só em tela estreita (antes era decidido pela largura na hora de desenhar e não mudava ao girar/redimensionar) */
+#topbar .menu-btn { display: none; }
 @media (max-width: 640px) {
+  #topbar .menu-btn { display: flex; }
+  /* barra do canal no celular: o nome encolhe com reticências e a busca fica menor, em vez de empurrar os botões para fora da tela */
+  #topbar { padding: 0 8px; gap: 4px; min-width: 0; }
+  #topbar > span:not(.hash) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #topbar .topic { display: none; }
+  #topbar .search { width: 72px; max-width: 72px; margin-right: 0; flex: 0 1 auto; min-width: 0; }
+  #topbar .search:focus { width: 140px; max-width: 45vw; }
+  /* nome muito comprido no cabeçalho da mensagem: corta com reticências (antes saía da tela e a hora sumia) */
+  .msg .head { min-width: 0; }
+  .msg .head .author { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .msg .head .ts { flex: none; }
   #home #topbar > span, #home #topbar > div:not(.tabs) { display: none; }
   #home #topbar .tabs { overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
   #home #topbar .tabs::-webkit-scrollbar { display: none; }

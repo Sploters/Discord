@@ -212,12 +212,28 @@ const wrap = (fn) => (req, res) => { try { fn(req, res); } catch (e) { console.e
 const wrapA = (fn) => (req, res) => Promise.resolve().then(() => fn(req, res)).catch((e) => { console.error(e); if (!res.headersSent) res.status(500).json({ error: 'Erro interno' }); });
 const bad = (res, msg, code = 400) => res.status(code).json({ error: msg });
 const clean = (s, max) => String(s ?? '').trim().slice(0, max);
+// endereço de arquivo enviado (/files/..., sem aspas, barras invertidas nem espaços: esses valores
+// vão parar em url("...") no CSS e em atributos; com aspas dava para fechar o url() e injetar CSS)
+const isFileUrl = (v) => typeof v === 'string' && /^\/files\/[^\s"\\<>]{1,700}$/.test(v);
+const cssColor = (v) => { const x = clean(v, 9); return !x || /^#[0-9a-f]{3,8}$/i.test(x) ? x : null; }; // só #rgb/#rrggbb(aa)
 
+// tentativas por IP: o scrypt da senha trava o servidor ~50 ms por chamada; sem limite, alguém podia testar senhas sem parar
+// (força bruta) ou derrubar a voz/chat de todos só mandando logins. Login: 10 por minuto por IP + conta (a turma atrás do
+// mesmo IP, ex.: proxy do Docker, não se bloqueia entre si). Registro: 20 contas por hora por IP.
+const ipHits = new Map(); // `${tipo}:${ip}` -> [tempos]
+function ipLimited(req, kind, max, ms, extra = '') {
+  const k = kind + ':' + (req.socket.remoteAddress || '?') + extra, now = Date.now(), a = (ipHits.get(k) || []).filter(t => now - t < ms);
+  if (a.length >= max) { ipHits.set(k, a); return true; }
+  a.push(now); ipHits.set(k, a); return false;
+}
+setInterval(() => { const now = Date.now(); for (const [k, a] of ipHits) if (!a.length || now - a[a.length - 1] > 3600e3) ipHits.delete(k); }, 600e3).unref();
 app.post('/api/register', wrap((req, res) => {
   if (!OPEN_REGISTRATION) return bad(res, 'Registro desativado', 403);
+  if (ipLimited(req, 'reg', 20, 3600e3)) return bad(res, 'Muitas contas criadas daqui. Tente mais tarde.', 429);
   const username = clean(req.body.username, 32), pw = String(req.body.password || '');
   if (!/^[\p{L}\p{N}_.-]{2,32}$/u.test(username)) return bad(res, 'Nome de usuário inválido (2-32 caracteres: letras, números, _ . -)');
   if (pw.length < 4) return bad(res, 'Senha muito curta (mínimo 4)');
+  if (pw.length > 256) return bad(res, 'Senha muito longa (máximo 256)');
   if (get('SELECT 1 x FROM users WHERE username=?', username) || /^bot_music_/i.test(username)) return bad(res, 'Esse nome de usuário já existe', 409);
   const id = newId(), salt = crypto.randomBytes(16).toString('hex');
   run('INSERT INTO users(id,username,display_name,pass_hash,salt,color,avatar,created_at) VALUES(?,?,?,?,?,?,?,?)',
@@ -228,6 +244,8 @@ app.post('/api/register', wrap((req, res) => {
   res.json({ token });
 }));
 app.post('/api/login', wrap((req, res) => {
+  if (ipLimited(req, 'login', 10, 60e3, ':' + clean(req.body.username, 32).toLowerCase())) return bad(res, 'Muitas tentativas. Espere um minuto.', 429);
+  if (String(req.body.password || '').length > 256) return bad(res, 'Usuário ou senha inválidos', 401);
   const u = get('SELECT * FROM users WHERE username=?', clean(req.body.username, 32));
   const ok = u && crypto.timingSafeEqual(Buffer.from(hashPw(String(req.body.password || ''), u.salt)), Buffer.from(u.pass_hash));
   if (!ok) return bad(res, 'Usuário ou senha inválidos', 401);
@@ -244,12 +262,12 @@ app.patch('/api/me', auth, wrap((req, res) => {
     display_name: b.display_name !== undefined ? clean(b.display_name, 32) || u.username : u.display_name,
     bio: b.bio !== undefined ? clean(b.bio, 300) : u.bio,
     avatar: b.avatar !== undefined ? (b.avatar || null) : u.avatar,
-    color: b.color !== undefined ? clean(b.color, 9) : u.color,
-    banner_color: b.banner_color !== undefined ? clean(b.banner_color, 9) : u.banner_color,
+    color: b.color !== undefined ? cssColor(b.color) ?? u.color : u.color,
+    banner_color: b.banner_color !== undefined ? cssColor(b.banner_color) ?? u.banner_color : u.banner_color,
     custom_status: b.custom_status !== undefined ? clean(b.custom_status, 100) : u.custom_status,
     status: ['online', 'idle', 'dnd', 'invisible'].includes(b.status) ? b.status : u.status,
     pronouns: b.pronouns !== undefined ? clean(b.pronouns, 40) : u.pronouns,
-    banner: b.banner !== undefined ? (String(b.banner).startsWith('/files/') ? b.banner : null) : u.banner,
+    banner: b.banner !== undefined ? (isFileUrl(b.banner) ? b.banner : null) : u.banner,
     avatar_pos: b.avatar_pos !== undefined ? cleanPos(b.avatar_pos) : u.avatar_pos,
     banner_pos: b.banner_pos !== undefined ? cleanPos(b.banner_pos) : u.banner_pos,
     status_emoji: b.status_emoji !== undefined ? clean(b.status_emoji, 16) : u.status_emoji,
@@ -258,7 +276,7 @@ app.patch('/api/me', auth, wrap((req, res) => {
     name_style: b.name_style !== undefined ? JSON.stringify(cleanNameStyle(b.name_style)) : u.name_style,
   };
   if (!f.theme_primary || !f.theme_accent) f.theme_primary = f.theme_accent = null; // tema só com as duas cores
-  if (f.avatar && !String(f.avatar).startsWith('/files/') && !DEFAULT_AVATARS.includes(f.avatar)) f.avatar = u.avatar;
+  if (f.avatar && !isFileUrl(f.avatar) && !DEFAULT_AVATARS.includes(f.avatar)) f.avatar = u.avatar;
   run('UPDATE users SET display_name=?,bio=?,avatar=?,color=?,banner_color=?,custom_status=?,status=?,pronouns=?,banner=?,avatar_pos=?,banner_pos=?,status_emoji=?,theme_primary=?,theme_accent=?,name_style=? WHERE id=?',
     f.display_name, f.bio, f.avatar, f.color, f.banner_color, f.custom_status, f.status, f.pronouns, f.banner, f.avatar_pos, f.banner_pos, f.status_emoji, f.theme_primary, f.theme_accent, f.name_style, req.uid);
   broadcastPresence(req.uid);
@@ -344,9 +362,9 @@ app.patch('/api/guilds/:id', auth, wrap((req, res) => {
     if (!get('SELECT 1 x FROM members WHERE guild_id=? AND user_id=?', g.id, String(req.body.owner_id))) return bad(res, 'Membro inválido');
     run('UPDATE guilds SET owner_id=? WHERE id=?', String(req.body.owner_id), g.id);
   }
-  const b = req.body, file = (v, old) => v === undefined ? old : (typeof v === 'string' && v.startsWith('/files/') ? v : null);
+  const b = req.body, file = (v, old) => v === undefined ? old : (isFileUrl(v) ? v : null);
   run('UPDATE guilds SET name=?,icon=?,banner=?,description=?,accent=? WHERE id=?', clean(b.name, 100) || g.name, file(b.icon, g.icon), file(b.banner, g.banner),
-    b.description !== undefined ? clean(b.description, 300) : g.description, b.accent !== undefined ? clean(b.accent, 9) : g.accent, g.id);
+    b.description !== undefined ? clean(b.description, 300) : g.description, b.accent !== undefined ? cssColor(b.accent) ?? g.accent : g.accent, g.id);
   const n = get('SELECT * FROM guilds WHERE id=?', g.id);
   audit(g.id, req.uid, req.body.owner_id !== undefined ? 'guild_transfer' : 'guild_update', req.body.owner_id !== undefined ? String(req.body.owner_id) : null, n.name);
   dispatch(guildMemberIds(g.id), 'GUILD_UPDATE', { id: n.id, name: n.name, icon: n.icon, banner: n.banner, description: n.description, accent: n.accent, owner_id: n.owner_id });
@@ -576,7 +594,7 @@ app.post('/api/guilds/:id/emojis', auth, wrap((req, res) => {
   const gid = req.params.id;
   if (!can(gid, req.uid, P.MANAGE_GUILD)) return bad(res, 'Sem permissão', 403);
   const name = clean(req.body.name, 32).replace(/[^\w]/g, '_'), url = String(req.body.url || '');
-  if (name.length < 2 || !url.startsWith('/files/')) return bad(res, 'Nome (mín. 2 letras) e imagem obrigatórios');
+  if (name.length < 2 || !isFileUrl(url)) return bad(res, 'Nome (mín. 2 letras) e imagem obrigatórios');
   if (get('SELECT COUNT(*) n FROM emojis WHERE guild_id=?', gid).n >= 100) return bad(res, 'Limite de 100 emojis');
   const id = newId();
   run('INSERT INTO emojis VALUES(?,?,?,?,?,?)', id, gid, name, url, req.uid, Date.now());
@@ -597,7 +615,7 @@ app.post('/api/guilds/:id/sounds', auth, wrap((req, res) => {
   const gid = req.params.id;
   if (!can(gid, req.uid, P.MANAGE_GUILD)) return bad(res, 'Sem permissão', 403);
   const name = clean(req.body.name, 32), url = String(req.body.url || ''), vol = Math.max(1, Math.min(200, +req.body.volume || 100));
-  if (!name || !url.startsWith('/files/')) return bad(res, 'Nome e arquivo de áudio obrigatórios');
+  if (!name || !isFileUrl(url)) return bad(res, 'Nome e arquivo de áudio obrigatórios');
   if (get('SELECT COUNT(*) n FROM sounds WHERE guild_id=?', gid).n >= 48) return bad(res, 'Limite de 48 sons por servidor');
   const id = newId();
   run('INSERT INTO sounds VALUES(?,?,?,?,?,?,?,?)', id, gid, name, clean(req.body.emoji, 16), url, vol, req.uid, Date.now());
@@ -710,7 +728,7 @@ app.post('/api/channels/:id/messages', auth, wrap((req, res) => {
   if (!rateOk(req.uid)) return bad(res, 'Você está enviando mensagens rápido demais', 429);
   const content = String(req.body.content ?? '').slice(0, 4000);
   const atts = (Array.isArray(req.body.attachments) ? req.body.attachments : []).slice(0, 10)
-    .filter(a => a && typeof a.url === 'string' && a.url.startsWith('/files/'))
+    .filter(a => a && isFileUrl(a.url))
     .map(a => {
       const o = { url: a.url, name: clean(a.name, 200), size: +a.size || 0, type: clean(a.type, 100) };
       if (a.voice === true) { // mensagem de voz: forma de onda (base64, até 256 barras) e duração
@@ -1096,15 +1114,17 @@ app.post('/api/upload', auth, (req, res) => {
   const ext = path.extname(name).toLowerCase().replace(/[^.a-z0-9]/g, '').slice(0, 10);
   const fname = crypto.randomBytes(12).toString('hex') + ext;
   const fp = path.join(UPLOAD_DIR, fname);
+  if (+req.headers['content-length'] > MAX_UPLOAD) { res.set('Connection', 'close'); return bad(res, 'Arquivo muito grande', 413); } // nem começa a gravar
   const out = fs.createWriteStream(fp);
   let size = 0, aborted = false;
+  const abort = () => { if (aborted) return; aborted = true; req.unpipe(out); out.destroy(); fs.unlink(fp, () => { }); };
   req.on('data', c => {
     size += c.length;
-    if (size > MAX_UPLOAD && !aborted) {
-      aborted = true; req.unpipe(out); out.destroy(); fs.unlink(fp, () => { });
-      bad(res, 'Arquivo muito grande', 413);
-    }
+    if (size > MAX_UPLOAD && !aborted) { abort(); res.set('Connection', 'close'); bad(res, 'Arquivo muito grande', 413); req.resume(); }
   });
+  // a pessoa fechou o app / caiu a conexão no meio do envio: o pipe não fecha o arquivo sozinho (ficava o descritor aberto
+  // e um arquivo pela metade em uploads/ para sempre)
+  req.on('close', () => { if (!req.complete) abort(); });
   req.pipe(out);
   out.on('finish', () => { if (!aborted) res.json({ url: `/files/${fname}/${encodeURIComponent(name)}`, name, size, type: clean(req.headers['content-type'], 100) }); });
   out.on('error', () => { if (!res.headersSent) bad(res, 'Falha no upload', 500); });
@@ -1144,8 +1164,8 @@ app.get('/files/:f/:name?', (req, res) => {
   if (!fs.existsSync(p)) return res.sendStatus(404);
   const mime = MIME[path.extname(f).toLowerCase()] || 'application/octet-stream';
   res.set({ 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox", 'Cache-Control': 'public, max-age=31536000, immutable' });
-  res.type(mime);
   if (!SAFE_INLINE.test(mime) || req.query.download) res.attachment(req.params.name || f);
+  res.type(mime); // depois do attachment(): ele troca o tipo pela extensão do nome (um .html/.svg voltava a ser text/html / image/svg+xml)
   res.sendFile(f, { root: UPLOAD_DIR, dotfiles: 'allow' });
 });
 

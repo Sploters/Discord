@@ -4,6 +4,13 @@ import { S } from './state.js';
 // Lousa compartilhada e desenhos sobre as transmissões: traços em coordenadas de 0 a 1, enviados pela sala de voz
 const boards = new Map(); // id ('wb' ou 's:<uid>') -> [{ id, uid, color, w, pts }]
 const views = new Set(); // canvases abertos: { id, canvas, paint }
+// um canvas por quadro, reaproveitado entre as renderizações do palco (como os <video>): antes cada atualização da sala criava
+// outro, e o velho ficava preso em `views` e nos observadores com o quadro inteiro pendurado (vazamento), e o traço em andamento
+// era cortado no meio quando alguém entrava/saía ou mudava o microfone
+const cache = new Map(); // id -> { canvas, video, interactive, view, dispose }
+const dropCanvas = (id) => { const c = cache.get(id); if (!c) return; cache.delete(id); views.delete(c.view); c.dispose(); };
+// descarta os quadros que não estão mais no palco (transmissão acabou, lousa fechada, saiu da sala)
+export const pruneBoardCanvases = (keep) => { for (const id of [...cache.keys()]) if (!keep.has(id)) dropCanvas(id); };
 const zooms = new Map(); // id -> { z, x, y }: zoom e deslocamento da lousa (só na minha tela)
 let send = () => { };
 export const initBoard = (fn) => { send = fn; };
@@ -37,6 +44,9 @@ const segDist = (px, py, ax, ay, bx, by) => {
 
 // canvas de um quadro. video: se for sobre uma transmissão, acompanha a área real do vídeo e o zoom dele
 export function boardCanvas(id, { interactive = false, video = null } = {}) {
+  const old = cache.get(id);
+  if (old && old.video === video && old.interactive === interactive) { views.add(old.view); return old.canvas; }
+  dropCanvas(id);
   const canvas = h('canvas.board' + (video ? '.over' : '.wb') + (interactive ? '.live' : ''));
   const zoomable = !video; // a lousa tem zoom próprio; sobre uma transmissão vale o zoom do vídeo
   const area = () => { // retângulo (em px do canvas) onde o conteúdo aparece: o vídeo usa "contain"
@@ -63,13 +73,19 @@ export function boardCanvas(id, { interactive = false, video = null } = {}) {
     }
   };
   const view = { id, canvas, paint }; views.add(view);
-  new ResizeObserver(paint).observe(canvas); setTimeout(paint, 0);
+  const ro = new ResizeObserver(paint); ro.observe(canvas); setTimeout(paint, 0);
+  let mo = null;
   if (video) { // copia o zoom/posição do vídeo para o desenho ficar no mesmo lugar
     canvas.style.transformOrigin = '0 0';
     const sync = () => { canvas.style.transform = video.style.transform; paint(); };
-    new MutationObserver(sync).observe(video, { attributes: true, attributeFilter: ['style'] }); sync();
+    mo = new MutationObserver(sync); mo.observe(video, { attributes: true, attributeFilter: ['style'] }); sync();
     video.addEventListener('loadedmetadata', paint); video.addEventListener('resize', paint);
   }
+  const dispose = () => {
+    ro.disconnect(); mo?.disconnect(); canvas.remove();
+    if (video) { video.removeEventListener('loadedmetadata', paint); video.removeEventListener('resize', paint); }
+  };
+  cache.set(id, { canvas, video, interactive, view, dispose });
   if (interactive) {
     let cur = null, buf = [], timer = 0, pan = null, erasing = null;
     const local = (e) => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * canvas.clientWidth, (e.clientY - r.top) / r.height * canvas.clientHeight]; };

@@ -16,7 +16,7 @@ import { chName } from './chnames.js';
 import { streamHover, updatePip, popOut } from './livepip.js';
 import { zoomControls, pruneZoom } from './zoom.js';
 import { refreshFreeze } from './freeze.js';
-import { initBoard, boardState, onDraw, boardCanvas, boardTools, clearBoard } from './board.js';
+import { initBoard, boardState, onDraw, boardCanvas, boardTools, clearBoard, pruneBoardCanvases } from './board.js';
 import { initCode, codeSet, codeReset, codeTile, keepEditorFocus } from './code.js';
 import { startBuffer, stopAllBuffers, pruneBuffers, clipping, saveClip, saveClipTrim, clipLengths, clipKeys } from './clips.js';
 import { syncThrottle } from './lite.js';
@@ -332,13 +332,13 @@ function applyRoute(first) {
   } else {
     const g = guild(gid);
     if (!g) { location.hash = '#/@me'; return; }
-    if (cid === 'clips') { S.view = { kind: 'clips', gid, cid: 'clips' }; S.replyTo = null; S.editing = null; S.pending = []; closeFloating(); $('#app').classList.remove('nav-open'); syncWatching(null); renderRail(); renderSide(); renderMain(); return; }
+    if (cid === 'clips') { S.view = { kind: 'clips', gid, cid: 'clips' }; S.replyTo = null; S.editing = null; clearPending(); closeFloating(); $('#app').classList.remove('nav-open'); syncWatching(null); renderRail(); renderSide(); renderMain(); return; }
     const chans = g.channels.filter(c => c.type !== 4);
     let ch = chans.find(c => c.id === cid) || chans.find(c => c.id === S.lastChannel[gid]) || chans.find(c => c.type === 0) || chans[0];
     S.view = { kind: 'guild', gid, cid: ch?.id || null };
     if (ch) { S.lastChannel[gid] = ch.id; localStorage.setItem('lc_last', JSON.stringify(S.lastChannel)); }
   }
-  S.replyTo = null; S.editing = null; S.pending = []; closeFloating();
+  S.replyTo = null; S.editing = null; clearPending(); closeFloating();
   $('#app').classList.remove('nav-open');
   syncWatching(null); renderRail(); renderSide(); renderMain();
   for (const sel of ['#msgs', '#stage', '#members', '#side .list']) { const e = $(sel); if (e) { e.classList.remove('sw'); void e.offsetWidth; e.classList.add('sw'); } }
@@ -499,7 +499,7 @@ function renderSide() {
       })());
   } else {
     const g = guild(S.view.gid);
-    head = h('div#side-head' + (g.banner ? '.banner' : ''), { style: g.banner ? { backgroundImage: `linear-gradient(transparent 40%, rgba(0,0,0,.65)), url("${g.banner}")` } : (g.accent ? { borderBottom: `3px solid ${g.accent}` } : null), }, // nome + seta abrem o menu do servidor; o botão ao lado convida
+    head = h('div#side-head' + (g.banner ? '.banner' : ''), { style: g.banner ? { backgroundImage: `linear-gradient(transparent 40%, rgba(0,0,0,.65)), url("${String(g.banner).replace(/["\\\n]/g, encodeURIComponent)}")` } : (g.accent ? { borderBottom: `3px solid ${g.accent}` } : null), }, // nome + seta abrem o menu do servidor; o botão ao lado convida
       h('div.gd', { title: 'Ações do servidor', onclick: () => { const r = head.getBoundingClientRect(); guildMenu({ preventDefault() { }, clientX: r.left + 8, clientY: r.bottom + 4 }, g); } }, h('span', g.name), icon('chevdown', 16)),
       h('button.gd-inv', { title: 'Convidar para o servidor', onclick: () => inviteModal(g) }, icon('invite', 20)));
     const cats = g.channels.filter(c => c.type === 4), kids = (pid) => g.channels.filter(c => c.type !== 4 && (c.parent_id || null) === pid);
@@ -872,7 +872,7 @@ function renderMain() {
   const search = h('input.search', { placeholder: 'Buscar', title: 'Filtros: de:nome  tem:imagem|arquivo|link|video  em:canal', onkeydown: (e) => { if (e.key === 'Enter') doSearch(search.value); if (e.key === 'Escape') { search.value = ''; closeResults(); } } });
   const inCall = dm && callActive(ch.id), chatOpen = !vcChatHidden(ch);
   const top = h('div#topbar',
-      h('button.ibtn.menu-btn', { onclick: () => $('#app').classList.toggle('nav-open'), style: { display: innerWidth <= 640 ? 'flex' : 'none' } }, icon('more')),
+      h('button.ibtn.menu-btn', { onclick: () => $('#app').classList.toggle('nav-open') }, icon('more')),
       dm ? [h('span.hash', '@'), h('span', user(peer.id).display_name), h('div.status.s-' + user(peer.id).status, { style: { position: 'static', borderColor: 'transparent', width: '10px', height: '10px', minWidth: 0, minHeight: 0 } })]
         : [h('span.hash', icon(vc ? 'voice' : 'hash', 24)), h('span', { title: ch.name }, chName(ch)), ch.topic && h('span.topic', ch.topic)],
       h('div.spacer'),
@@ -1338,11 +1338,14 @@ function renderReplyBar() {
   if (!S.replyTo) return bar.classList.add('hidden');
   bar.classList.remove('hidden'); bar.replaceChildren(h('span', 'Respondendo a ', h('b', nameOf(S.replyTo.author_id, channelById(S.replyTo.channel_id)?.guild_id))), h('button.ibtn', { style: { width: '20px', height: '20px' }, onclick: () => { S.replyTo = null; renderReplyBar(); } }, icon('x', 14)));
 }
+// prévia das imagens anexadas é um blob: URL; precisa ser liberada quando o anexo sai da lista (senão o arquivo fica na memória)
+const freePending = (list) => { for (const p of list) if (p.preview) { URL.revokeObjectURL(p.preview); p.preview = null; } };
+function clearPending() { freePending(S.pending); S.pending = []; }
 async function addFile(file) {
   const item = { name: file.name, size: file.size, file, state: 'up' }; S.pending.push(item); renderPendingPrev();
   try {
     const r = await api('POST', `/upload?name=${encodeURIComponent(file.name)}`, file);
-    Object.assign(item, r, { state: 'ok', preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null });
+    Object.assign(item, r, { state: 'ok', preview: S.pending.includes(item) && file.type.startsWith('image/') ? URL.createObjectURL(file) : null }); // removido (ou trocou de canal) durante o envio: sem prévia
   } catch (e) { toast(`Falha ao enviar ${file.name}: ${e.message}`, true); S.pending = S.pending.filter(p => p !== item); }
   renderPendingPrev();
 }
@@ -1350,7 +1353,7 @@ function renderPendingPrev() {
   const box = $('#attach-prev'); if (!box) return;
   box.classList.toggle('hidden', !S.pending.length);
   box.replaceChildren(...S.pending.map(p => h('div.prev-item', p.preview ? h('img', { src: p.preview }) : icon('file', 40), h('div', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, p.name), p.state === 'up' && h('div', 'Enviando…'),
-    h('button.x', { onclick: () => { S.pending = S.pending.filter(x => x !== p); renderPendingPrev(); } }, icon('x', 14)))));
+    h('button.x', { onclick: () => { freePending([p]); S.pending = S.pending.filter(x => x !== p); renderPendingPrev(); } }, icon('x', 14)))));
 }
 const renderPending = () => { };
 // GIF escolhido no seletor: vai como o próprio link (respeita a resposta em andamento)
@@ -1369,8 +1372,12 @@ async function sendMsg(ta, ch) {
   }
   ta.value = ''; $('.ac')?.remove();
   const body = { content, reply_to: S.replyTo?.id, attachments: atts.map(({ url, name, size, type }) => ({ url, name, size, type })) };
-  S.replyTo = null; S.pending = []; renderReplyBar(); renderPendingPrev();
-  try { await api('POST', `/channels/${ch.id}/messages`, body); } catch (e) { toast(e.message, true); ta.value = typed; }
+  const sent = S.pending; S.replyTo = null; S.pending = []; renderReplyBar(); renderPendingPrev();
+  try { await api('POST', `/channels/${ch.id}/messages`, body); freePending(sent); }
+  catch (e) { // falhou: devolve o texto e os anexos (antes os anexos sumiam)
+    toast(e.message, true); ta.value = typed;
+    if (S.view.cid === ch.id) { S.pending = [...sent, ...S.pending]; renderPendingPrev(); } else freePending(sent);
+  }
 }
 function autocomplete(ta) {
   $('.ac')?.remove();
@@ -1477,7 +1484,7 @@ function renderHome(main) {
     }
   };
   main.replaceChildren(h('div#home',
-    h('div#topbar', h('button.ibtn.menu-btn', { onclick: () => $('#app').classList.toggle('nav-open'), style: { display: innerWidth <= 640 ? 'flex' : 'none' } }, icon('more')), icon('users', 24), h('span', 'Amigos'), h('div', { style: { width: '1px', height: '24px', background: 'var(--divider)', margin: '0 8px' } }),
+    h('div#topbar', h('button.ibtn.menu-btn', { onclick: () => $('#app').classList.toggle('nav-open') }, icon('more')), icon('users', 24), h('span', 'Amigos'), h('div', { style: { width: '1px', height: '24px', background: 'var(--divider)', margin: '0 8px' } }),
       h('div.tabs', tabs.map(([k, l]) => h('div.tab' + (tab === k ? '.active' : ''), { onclick: () => { S.view.tab = k; renderHome(main); } }, l)),
         h('div.tab.green' + (tab === 'add' ? '.active' : ''), { onclick: () => { S.view.tab = 'add'; renderHome(main); } }, icon('plus', 18), 'Adicionar amigo'))),
     h('div#homebody', pane, h('aside#active-now'))));
@@ -1500,7 +1507,7 @@ function fullscreenStream(stream) {
 const vidCache = new Map(); // reaproveita <video> para não piscar a cada atualização
 function videoFor(key, stream, muted = true) {
   let v = vidCache.get(key);
-  if (!v || v.srcObject !== stream) { v = h('video', { autoplay: true, playsInline: true, muted }); v.srcObject = stream; vidCache.set(key, v); v.play?.().catch(() => { }); }
+  if (!v || v.srcObject !== stream) { if (v) v.srcObject = null; v = h('video', { autoplay: true, playsInline: true, muted }); v.srcObject = stream; vidCache.set(key, v); v.play?.().catch(() => { }); }
   else if (v.paused) v.play?.().catch(() => { }); // o navegador pausa <video> removido da tela; ao voltar à sala ele ficava congelado
   return v;
 }
@@ -1667,7 +1674,7 @@ function renderVoiceUI(speakOnly) {
   renderSide(); refreshFeedView();
   autoClosed(); // transmissão nova de outra pessoa começa fechada
   updatePip(pipCtx);
-  if (!voice.active) stopAllBuffers();
+  if (!voice.active) { stopAllBuffers(); for (const v of vidCache.values()) v.srcObject = null; vidCache.clear(); pruneBoardCanvases(new Set()); } // saiu da sala: nada do palco fica preso
   syncThrottle(voice.active);
   const stage = $('#stage'); if (!stage) return syncWatching(null);
   const ch = channelById(S.view.cid); if (!ch || ![1, 2].includes(ch.type)) return syncWatching(null);
@@ -1705,8 +1712,8 @@ function renderVoiceUI(speakOnly) {
   if (inRoom && room?.code) tiles.push(codeTile({ onFocus: () => { S.focus = S.focus === 'code' ? null : 'code'; renderVoiceUI(); }, onClose: () => voice.send('ROOM_ACT', { act: 'code', on: false }) }));
   const hasScreen = tiles.some(t => t.classList.contains('screen') || t.classList.contains('cstream'));
   if (S.hideMembers && hasScreen) tiles.splice(0, tiles.length, ...tiles.filter(t => !t.classList.contains('utile'))); // oculta os participantes: só as transmissões
-  for (const k of [...vidCache.keys()]) if (!live.has(k)) vidCache.delete(k);
-  pruneZoom(live);
+  for (const [k, v] of [...vidCache]) if (!live.has(k)) { v.srcObject = null; vidCache.delete(k); } // solta o fluxo na hora (sem esperar o GC)
+  pruneZoom(live); pruneBoardCanvases(new Set([...live, ...(inRoom && room?.wb ? ['wb'] : [])]));
   if (inRoom) pruneBuffers(live);
   syncWatching(inRoom ? members.filter(v => v.screen && v.user_id !== S.me.id && !voice.closedStreams.has(v.user_id) && voice.peers.get(v.user_id)?.streams.screen).map(v => v.user_id) : null);
   const hasFocus = tiles.some(t => t.dataset.key === S.focus);

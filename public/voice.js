@@ -686,6 +686,7 @@ export class Voice {
   setStreamVolume(uid, v) { if (v === 100) delete this.streamVolumes[uid]; else this.streamVolumes[uid] = v; this.applyVolume(uid); }
   watch(uid, stream) {
     try {
+      this.analysers.get(uid)?.src.disconnect(); // áudio da pessoa religado (reconexão/troca de trilha): o medidor antigo não fica pendurado no grafo
       const ctx = this.getCtx(), src = ctx.createMediaStreamSource(stream), an = ctx.createAnalyser();
       an.fftSize = 512; src.connect(an); this.analysers.set(uid, { src, an, buf: new Uint8Array(an.fftSize), level: 0 });
     } catch { }

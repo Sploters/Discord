@@ -1,5 +1,5 @@
 // Mensagens de voz: grava com MediaRecorder (webm/opus), guarda a forma de onda ao gravar e mostra um player com barras.
-import { h, icon } from './util.js';
+import { h, icon, whenGone } from './util.js';
 import { S, api, toast } from './state.js';
 
 const MAX_SEC = 300, BARS = 64;
@@ -44,7 +44,7 @@ function player(src, dur, wave, name) {
     audio.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * t; paint();
   };
   spd.onclick = () => { audio.playbackRate = speeds[(speeds.indexOf(audio.playbackRate) + 1) % speeds.length]; spd.textContent = audio.playbackRate + 'x'; };
-  return h('div.vmsg', play, waveEl, time, spd, h('a.vdl', { href: src + '?download=1', download: name || 'mensagem-de-voz.webm', title: 'Baixar' }, icon('dl', 16)));
+  return h('div.vmsg', play, waveEl, time, spd, h('a.vdl', { href: src.startsWith('blob:') ? src : src + '?download=1', download: name || 'mensagem-de-voz.webm', title: 'Baixar' }, icon('dl', 16)));
 }
 
 // Barra de gravação no lugar do compositor. host = #composer; onSent chamado após enviar.
@@ -63,11 +63,16 @@ export async function recordVoiceMessage(ch, host, { onSent } = {}) {
   const buf = new Uint8Array(an.fftSize);
   const level = () => { an.getByteTimeDomainData(buf); let m = 0; for (const v of buf) m = Math.max(m, Math.abs(v - 128)); return m / 128; };
   const cv = h('canvas.vlive', { width: 360, height: 40 }), g = cv.getContext('2d');
-  const t0 = Date.now(); let blob = null, dur = 0, timer, tick, sending = false;
+  const t0 = Date.now(); let blob = null, url = null, dur = 0, timer, tick, sending = false, closed = false;
   const clock = h('span.vtime', '0:00');
 
   const cleanup = () => { clearInterval(timer); cancelAnimationFrame(tick); stream.getTracks().forEach(t => t.stop()); ctx.close().catch(() => { }); };
-  const close = () => { cleanup(); if (rec.state !== 'inactive') { rec.onstop = null; rec.stop(); } bar.remove(); host.classList.remove('recording'); };
+  const close = () => {
+    if (closed) return; closed = true;
+    cleanup(); if (rec.state !== 'inactive') { rec.onstop = null; rec.stop(); } bar.remove(); host.classList.remove('recording');
+    if (current?.src === url) { current.pause(); current = null; } // a pré-escuta não continua tocando depois de fechar
+    if (url) URL.revokeObjectURL(url);
+  };
   const draw = () => {
     g.clearRect(0, 0, cv.width, cv.height);
     g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--brand').trim() || '#5865f2';
@@ -97,8 +102,11 @@ export async function recordVoiceMessage(ch, host, { onSent } = {}) {
     cleanup(); dur = Math.min((Date.now() - t0) / 1000, MAX_SEC);
     blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
     if (dur < 0.6) { toast('Gravação muito curta'); return close(); }
-    bar.replaceChildren(trash, player(URL.createObjectURL(blob), dur, shrink(peaks)), sendBtn);
+    bar.replaceChildren(trash, player(url = URL.createObjectURL(blob), dur, shrink(peaks)), sendBtn);
   };
+  // o compositor foi redesenhado (trocou de canal, abriu a sala de voz...) no meio da gravação: antes o microfone
+  // continuava gravando escondido por até 5 min, com a animação rodando; agora a gravação é descartada
+  queueMicrotask(() => whenGone(bar, close));
   rec.start(250);
   timer = setInterval(() => {
     const s = (Date.now() - t0) / 1000; clock.textContent = fmt(s);

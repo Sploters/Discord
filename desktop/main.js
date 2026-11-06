@@ -152,7 +152,8 @@ function createWindow(forceShow) {
     if (!quitting && cfg.closeToTray) { e.preventDefault(); win.hide(); }
   });
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/i.test(url)) shell.openExternal(url); return { action: 'deny' }; });
-  win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith(cfg.server) && !url.startsWith('file:')) { e.preventDefault(); if (/^https?:/i.test(url)) shell.openExternal(url); } });
+  const sameServer = (url) => { try { return new URL(url).origin === new URL(cfg.server).origin; } catch { return false; } };
+  win.webContents.on('will-navigate', (e, url) => { if (!sameServer(url) && !url.startsWith('file:')) { e.preventDefault(); if (/^https?:/i.test(url)) shell.openExternal(url); } });
   win.webContents.on('did-fail-load', (_e, code, desc, url, isMain) => {
     if (!isMain || code === -3 || url.startsWith('file:')) return;
     if (pinnedIp) { log('endereço guardado falhou', pinnedIp, desc, '- reabrindo sem ele'); delete cfg.serverIp; saveCfg(); app.relaunch(); app.exit(0); return; }
