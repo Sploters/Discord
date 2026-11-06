@@ -289,6 +289,8 @@ body:has(#lightbox) #layer { z-index: 130; } /* menus de clique direito por cima
 #app.hide-side { --side-w: 0px; }
 @media (min-width: 641px) {
   #app:has(#chtabs) #side { margin-top: 34px; }
+  /* o primeiro ícone do menu lateral (Mensagens diretas) começa na altura do cabeçalho da lista (#side-head), logo abaixo das abas */
+  #app:has(#chtabs) #rail { padding-top: 34px; }
   #main > #chtabs { margin-left: calc(-1 * var(--side-w)); position: relative; z-index: 21; }
 }
 
