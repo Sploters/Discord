@@ -273,6 +273,8 @@ ipcMain.handle('app-audio-capable', () => appAudio.capable());
 ipcMain.handle('app-audio-start', (e, o) => appAudio.start({ pid: +o?.pid || 0, mode: o?.mode === 'exclude' ? 'exclude' : 'include' },
   (buf) => { if (!e.sender.isDestroyed()) e.sender.send('app-audio-data', buf); }));
 ipcMain.on('app-audio-stop', () => appAudio.stop());
+// jogo aberto agora (mesma detecção da transmissão): vira a atividade "Jogando X" para os amigos
+ipcMain.handle('detect-game', () => appAudio.detectGame().catch(() => null));
 ipcMain.on('set-badge', (_e, n) => setBadge(n));
 // aviso de clipe capturado por cima do jogo (desktop/clipflash.js)
 ipcMain.on('clip-flash', (_e, o) => { if (o && typeof o === 'object') clipFlash.show({ ok: o.ok !== false, title: String(o.title || '').slice(0, 80), sub: String(o.sub || '').slice(0, 120) }); });

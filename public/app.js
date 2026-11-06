@@ -152,7 +152,7 @@ function onEvent(t, d) {
       voice.ice = S.ice;
       if (!ready) buildShell(); ready = true;
       $('#auth').classList.add('hidden'); $('#app').classList.remove('hidden');
-      applyTheme(); setupDesktop(); syncThrottle(!!voice?.active);
+      applyTheme(); setupDesktop(); startGameDetect(); syncThrottle(!!voice?.active);
       if (!S.synced) api('GET', '/me/settings').then(r => { // sincroniza preferências entre dispositivos
         const keep = { inputId: S.prefs.inputId, outputId: S.prefs.outputId, videoId: S.prefs.videoId };
         const local = { ...S.prefs }; Object.assign(S.prefs, r.settings || {}, keep); relite(r.settings || {}, local); S.friendPolicy = r.friend_policy; S.synced = true;
@@ -1423,7 +1423,7 @@ function renderMembers() {
   const order = [...g.roles.filter(r => groups.has(r.id)).map(r => [r.id, r.name]), ['online', 'Online']];
   const row = ({ m, u }, offline) => h('div.mem' + (offline ? '.off' : ''), { onclick: (e) => profile(e.currentTarget, u.id, g.id), oncontextmenu: (e) => userMenu(e, u.id, g.id) },
     avatar(u, 32, { ring: 'var(--bg-sec)' }),
-    h('div', { style: { minWidth: 0 } }, h('div.mn', { style: { color: roleColor(g.id, u.id) || (offline ? '' : 'var(--header)') } }, styleName(h('span.mnn', m.nickname || u.display_name), u.name_style), g.owner_id === u.id && h('span.crown', { title: 'Dono do servidor', style: { marginLeft: '4px' } }, icon('crown', 12))), u.custom_status && h('div.cs', u.custom_status)));
+    h('div', { style: { minWidth: 0 } }, h('div.mn', { style: { color: roleColor(g.id, u.id) || (offline ? '' : 'var(--header)') } }, styleName(h('span.mnn', m.nickname || u.display_name), u.name_style), g.owner_id === u.id && h('span.crown', { title: 'Dono do servidor', style: { marginLeft: '4px' } }, icon('crown', 12))), activityOf(u.id) && !offline ? h('div.cs.playing', { title: playingLine(activityOf(u.id)) }, 'Jogando ', h('b', activityOf(u.id).game.title)) : u.custom_status && h('div.cs', u.custom_status)));
   const by = (a, b) => (a.m.nickname || a.u.display_name).localeCompare(b.m.nickname || b.u.display_name);
   box.replaceChildren(
     ...order.flatMap(([k, name]) => groups.has(k) ? [h('div.mgroup', `${name} — ${groups.get(k).length}`), ...groups.get(k).sort(by).map(x => row(x))] : []),
@@ -2021,6 +2021,23 @@ function incomingCall(dm, uid) {
   setTimeout(() => el.remove(), 30000);
 }
 
+// ---------- jogo aberto no PC -> atividade "Jogando X" (app desktop) ----------
+// usa a mesma detecção da transmissão (pasta de loja/jogos, executável conhecido, janela em tela cheia). Repete a cada 20 s
+// enquanto há jogo (o servidor esquece em 90 s sem notícia: app fechado/travado não deixa "Jogando" preso).
+let gameTimer = null, sentGame; // undefined = nada enviado nesta conexão
+function startGameDetect() {
+  sentGame = undefined; // (re)conectou: manda o estado de novo
+  if (!desktop?.detectGame || gameTimer) return;
+  api('GET', '/activity/pc').then(r => { S.pcActivity = r.visibility; }).catch(() => { });
+  const tick = async () => {
+    if (S.pcActivity === 'off' || ws?.readyState !== 1) return;
+    const g = await desktop.detectGame().catch(() => null), id = g?.id || null;
+    if (g || sentGame !== null) gwSend('ACTIVITY_LOCAL', { game: g ? { id: g.id, title: g.title } : null });
+    sentGame = id;
+  };
+  setTimeout(tick, 3000); gameTimer = setInterval(tick, 20000);
+}
+
 // ---------- atalhos / desktop ----------
 // clipe: o atalho padrão passou de Ctrl+Alt+C para F8 (tecla única, dá para apertar no meio do jogo). Quem estava no
 // padrão antigo muda junto; quem escolheu outro atalho fica com o seu.
@@ -2054,7 +2071,7 @@ initLfg({ go, profile: (a, uid) => profile(a, uid), inVoice: () => !!voice?.chan
 initClipsGallery({ go, jumpTo: (mid) => jumpTo(mid) });
 initDiag(() => voice); initPwa(); setTimeout(initAppUpdate, 1500); // aviso de versão nova do app desktop (depois da abertura, sem atrasá-la)
 initCallInvite({ go, joinVoice, voice: () => voice, channelById, guild });
-initActivity({ openDM, profile: (a, uid) => profile(a, uid), userMenu: (e, uid) => userMenu(e, uid), go, joinVoice, watchFriend, voice: () => voice, openSettings: (k) => openSettings(k, ctxSettings()), renderActiveNow });
+initActivity({ openDM, profile: (a, uid) => profile(a, uid), userMenu: (e, uid) => userMenu(e, uid), go, joinVoice, watchFriend, voice: () => voice, openSettings: (k) => openSettings(k, ctxSettings()), renderActiveNow, renderMembers: () => { if ($('#members')) renderMembers(); } });
 // testes: importa um módulo do app pelo mesmo endereço (com a versão) que o app usa, para pegar a mesma instância
 const VQ = new URL(import.meta.url).search;
 window.__lc = { S, import: (f) => import('./' + f + VQ), get voice() { return voice; }, go, openSettings: (k) => openSettings(k, { voice, logout, go, gid: S.view.gid }) };

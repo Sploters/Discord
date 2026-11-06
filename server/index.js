@@ -1268,13 +1268,23 @@ app.get('/api/activity/feed', auth, wrap((req, res) => { // amigos (e você), o 
 }));
 app.put('/api/activity/games/:platform/:gameId', auth, wrap((req, res) => { // esconder/mostrar um jogo (nunca vira atividade)
   const platform = req.params.platform, gid = clean(req.params.gameId, 40);
-  if (!getAdapter(platform) || !accountOf(req.uid, platform)) return bad(res, 'Conta não vinculada', 404);
+  if (platform !== 'pc' && (!getAdapter(platform) || !accountOf(req.uid, platform))) return bad(res, 'Conta não vinculada', 404);
   const hidden = req.body?.hidden ? 1 : 0;
   run('INSERT INTO game_prefs(user_id,platform,game_id,hidden) VALUES(?,?,?,?) ON CONFLICT(user_id,platform,game_id) DO UPDATE SET hidden=excluded.hidden', req.uid, platform, gid, hidden);
   if (hidden) activity.onGameHidden(req.uid, platform, gid);
   res.json({ hidden: !!hidden });
 }));
 app.get('/api/activity/hidden', auth, wrap((req, res) => res.json(all('SELECT gp.platform, gp.game_id, (SELECT a.title FROM activities a WHERE a.user_id=gp.user_id AND a.platform=gp.platform AND a.game_id=gp.game_id ORDER BY a.created_at DESC LIMIT 1) title FROM game_prefs gp WHERE gp.user_id=? AND gp.hidden=1', req.uid))));
+// jogo aberto no PC (app desktop): quem pode ver — 'servers' (amigos + quem está nos seus servidores), 'friends' ou 'off'
+const PC_VIS = new Set(['servers', 'friends', 'off']);
+app.get('/api/activity/pc', auth, wrap((req, res) => res.json({ visibility: getUser(req.uid).pc_activity || 'servers' })));
+app.patch('/api/activity/pc', auth, wrap((req, res) => {
+  const v = String(req.body?.visibility || ''); if (!PC_VIS.has(v)) return bad(res, 'Visibilidade inválida');
+  const before = getUser(req.uid).pc_activity || 'servers';
+  run('UPDATE users SET pc_activity=? WHERE id=?', v, req.uid);
+  if (before !== v) activity.onPcVisibility(req.uid, before, v);
+  res.json({ visibility: v });
+}));
 app.get('/api/server-info', (req, res) => res.json({ name: 'Resenha', registration: OPEN_REGISTRATION, default_avatars: DEFAULT_AVATARS }));
 mountDesktopUpdate(app, DATA_DIR); // atualizações do app desktop pelo servidor (repositório pode ser privado)
 if (process.env.STATIC_OFF !== '1') mountStatic(app, path.join(__dirname, '..', 'public')); // comprimido, versionado e com modulepreload (server/static.js)
@@ -1484,6 +1494,13 @@ wss.on('connection', (ws) => {
           roomSend(c, 'ROOM_CODE', { channel_id: c, ...a.code, user_id: uid }, uid);
           break;
         }
+        case 'ACTIVITY_LOCAL': { // jogo aberto no PC, detectado pelo app desktop: { game: { id, title } | null }
+          if (Date.now() - (ws.lastAct || 0) < 3000) return; ws.lastAct = Date.now();
+          const gid = String(d.game?.id || '').toLowerCase().replace(/[^a-z0-9._ -]/g, '').trim().slice(0, 60), title = clean(d.game?.title, 80);
+          ws.localGame = gid && title ? gid : null;
+          activity.reportLocal(uid, gid && title ? { id: gid, title } : null);
+          break;
+        }
         case 'VOICE_LEAVE': { const c = currentVoice(uid); if (c) leaveVoice(uid, c); break; }
         case 'VOICE_STATE': {
           const c = currentVoice(uid); if (!c) return;
@@ -1523,6 +1540,7 @@ wss.on('connection', (ws) => {
     const c = currentVoice(uid);
     if (c && voice.get(c).get(uid).ws === ws) leaveVoice(uid, c);
     if (set && !set.size) { conns.delete(uid); broadcastPresence(uid); }
+    if (ws.localGame && ![...(set || [])].some(o => o.localGame)) activity.clearLocal(uid); // o app desktop que informava o jogo fechou
   });
 });
 setInterval(() => { for (const ws of wss.clients) { if (!ws.alive) { ws.terminate(); continue; } ws.alive = false; ws.ping(); } }, 30000);

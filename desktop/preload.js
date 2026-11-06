@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('lcDesktop', {
   appAudioCapable: () => ipcRenderer.invoke('app-audio-capable'),
   appAudioStart: (o) => ipcRenderer.invoke('app-audio-start', o),
   appAudioStop: () => ipcRenderer.send('app-audio-stop'),
+  detectGame: () => ipcRenderer.invoke('detect-game'), // { id, title } | null (desde a 1.0.24)
   onAppAudio: (() => { let cb = null; ipcRenderer.on('app-audio-data', (_e, b) => cb?.(b)); return (f) => { cb = f; }; })(),
   setBadge: (n) => ipcRenderer.send('set-badge', n),
   clipFlash: (o) => ipcRenderer.send('clip-flash', o), // aviso de clipe por cima do jogo (desde a 1.0.24)

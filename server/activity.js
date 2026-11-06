@@ -4,8 +4,13 @@
 //   canSee(viewer, owner) = viewer === owner  OU  (linked_accounts.visibility === 'friends' E os dois são amigos aceitos).
 // 'visibility' é a visibilidade da ATIVIDADE; 'link_visibility' é a visibilidade do fato de ter a conta vinculada (são independentes).
 // Com visibility = 'off' nada é consultado nem guardado para aquela conta.
+//
+// Plataforma 'pc' (sem conta vinculada): o app desktop detecta o jogo aberto no PC (a mesma detecção da transmissão: pasta de
+// loja/jogos, executável conhecido ou janela em tela cheia) e informa. Regra própria, em users.pc_activity:
+//   'servers' (padrão, como o Discord) = amigos aceitos + quem divide um servidor com a pessoa; 'friends' = só amigos; 'off' = nada.
 import { PollError } from './integrations/errors.js';
 
+const LOCAL_STALE_MS = 90000; // o app desktop informa o jogo a cada ~20 s
 const MIN_SECS = 30, MAX_BACKOFF_MS = 15 * 60 * 1000, KEEP_DAYS = 30, KEEP_PER_USER = 200, STALE_X = 3;
 
 export function createActivityService({ all, get, run, newId, dispatch, isOnline, getAdapter, listAdapters, notifyAccount = () => { }, now = () => Date.now(), log = () => { } }) {
@@ -20,13 +25,18 @@ export function createActivityService({ all, get, run, newId, dispatch, isOnline
     WHERE r1.user_id=? AND r1.type=1 AND r2.type=1`, uid).map(r => r.id);
   const areFriends = (a, b) => !!get('SELECT 1 x FROM relationships r1 JOIN relationships r2 ON r2.user_id=r1.other_id AND r2.other_id=r1.user_id WHERE r1.user_id=? AND r1.other_id=? AND r1.type=1 AND r2.type=1', a, b);
   const acct = (uid, platform) => get('SELECT * FROM linked_accounts WHERE user_id=? AND platform=?', uid, platform);
+  const pcVis = (uid) => get('SELECT pc_activity v FROM users WHERE id=?', uid)?.v || 'servers';
+  const shareGuild = (a, b) => !!get('SELECT 1 x FROM members m1 JOIN members m2 ON m2.guild_id=m1.guild_id WHERE m1.user_id=? AND m2.user_id=?', a, b);
+  const guildPeers = (uid) => all('SELECT DISTINCT m2.user_id id FROM members m1 JOIN members m2 ON m2.guild_id=m1.guild_id WHERE m1.user_id=? AND m2.user_id<>?', uid, uid).map(r => r.id);
   const canSee = (viewer, owner, platform) => {
     if (viewer === owner) return true;
+    if (platform === 'pc') { const v = pcVis(owner); return v !== 'off' && (areFriends(viewer, owner) || (v === 'servers' && shareGuild(viewer, owner))); }
     const a = acct(owner, platform);
     return !!a && a.visibility === 'friends' && areFriends(viewer, owner);
   };
   // quem recebe os eventos de `owner`: ele mesmo + amigos aceitos, se a atividade está compartilhada
   const audience = (owner, platform) => {
+    if (platform === 'pc') { const v = pcVis(owner); return v === 'off' ? [owner] : [...new Set([owner, ...friendsOf(owner), ...(v === 'servers' ? guildPeers(owner) : [])])]; }
     const a = acct(owner, platform);
     return a && a.visibility === 'friends' ? [owner, ...friendsOf(owner)] : [owner];
   };
@@ -100,6 +110,7 @@ export function createActivityService({ all, get, run, newId, dispatch, isOnline
       for (const ad of listAdapters()) { if (!ad.configured()) continue; await pollPlatform(ad).catch(e => log('[atividade] erro: ' + e.message)); }
       const stale = now() - STALE_X * intervalMs();
       for (const [k, e] of current) if (e.at < stale && !isOnline(e.uid) && !friendsOf(e.uid).some(isOnline)) current.delete(k); // ninguém vendo e dado velho
+      for (const e of [...current.values()]) if (e.platform === 'pc' && now() - e.at > LOCAL_STALE_MS) clear(e.uid, 'pc'); // o app parou de informar (fechou, travou)
     } finally { running = false; }
   }
   const schedule = () => { if (stopped) return; timer = setTimeout(async () => { await tick(); schedule(); }, intervalMs()); timer.unref?.(); };
@@ -121,8 +132,8 @@ export function createActivityService({ all, get, run, newId, dispatch, isOnline
       const links = uid === viewer ? accounts : accounts.filter(a => a.link_visibility !== 'off');   // o fato de ter a conta vinculada tem regra própria
       return { user_id: uid, playing, linked: links.map(a => ({ platform: a.platform, name: a.display_name, profile_url: a.profile_url })) };
     });
-    const events = all(`SELECT a.* FROM activities a JOIN linked_accounts la ON la.user_id=a.user_id AND la.platform=a.platform
-      WHERE a.user_id IN (${ids.map(() => '?').join(',')}) AND (la.visibility='friends' OR a.user_id=?) AND a.created_at>? ORDER BY a.created_at DESC LIMIT ?`, ...ids, viewer, now0 - 7 * 864e5, limit * 3)
+    const events = all(`SELECT a.* FROM activities a LEFT JOIN linked_accounts la ON la.user_id=a.user_id AND la.platform=a.platform
+      WHERE a.user_id IN (${ids.map(() => '?').join(',')}) AND (la.visibility='friends' OR a.user_id=? OR a.platform='pc') AND a.created_at>? ORDER BY a.created_at DESC LIMIT ?`, ...ids, viewer, now0 - 7 * 864e5, limit * 3)
       .filter(ev => canSee(viewer, ev.user_id, ev.platform) && !hiddenGame(ev.user_id, ev.platform, ev.game_id)).slice(0, limit)
       .map(ev => ({ id: ev.id, user_id: ev.user_id, platform: ev.platform, kind: ev.kind, game: { id: ev.game_id, title: ev.title }, seconds: ev.data ? JSON.parse(ev.data).seconds : null, at: ev.created_at }));
     return { friends, events };
@@ -144,6 +155,25 @@ export function createActivityService({ all, get, run, newId, dispatch, isOnline
     onVisibility(uid, platform, visibility) {
       if (visibility === 'off') clear(uid, platform, { why: 'off' });
       else setTimeout(poke, 50).unref?.();
+    },
+    // jogo aberto no PC, informado pelo app desktop (game = { id, title } | null). Mesmo fluxo da Steam: publica, troca, encerra.
+    reportLocal(uid, game) {
+      const k = uid + ':pc', prev = current.get(k);
+      if (!game || pcVis(uid) === 'off' || hiddenGame(uid, 'pc', game.id)) return clear(uid, 'pc');
+      if (prev && prev.game.id === game.id) { prev.at = now(); return; }
+      if (prev) clear(uid, 'pc');
+      const entry = { uid, platform: 'pc', game, since: now(), state: null, at: now() };
+      current.set(k, entry); record(uid, 'pc', 'game_start', game, null);
+      publish(uid, 'pc', entry);
+    },
+    clearLocal(uid) { clear(uid, 'pc'); }, // fechou o app (última conexão caiu)
+    // mudou quem pode ver o jogo do PC: quem deixou de poder ver recebe "parou"; quem passou a poder, recebe o jogo atual
+    onPcVisibility(uid, before, after) {
+      const e = current.get(uid + ':pc'); if (!e) return;
+      if (after === 'off') return clear(uid, 'pc', { why: 'off', audienceOverride: [...new Set([uid, ...friendsOf(uid), ...guildPeers(uid)])] });
+      const all0 = new Set([...friendsOf(uid), ...guildPeers(uid)]);
+      for (const v of all0) dispatch([v], 'ACTIVITY_UPDATE', { user_id: uid, platform: 'pc', activity: canSee(v, uid, 'pc') ? pub(e) : null });
+      void before;
     },
     onGameHidden(uid, platform, gameId) { const cur = current.get(uid + ':' + platform); if (cur?.game.id === gameId) clear(uid, platform, { why: 'hidden' }); },
     // amizade criada/desfeita: cada lado passa a ver (ou deixa de ver) o que o outro está jogando, na hora

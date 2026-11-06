@@ -248,3 +248,9 @@ html:not(.anim) .clipflash .cf-badge { animation: cfFade 2.4s step-end forwards;
 @keyframes cfOut { to { transform: translate(-50%, -140%); opacity: 0 } }
 @keyframes cfRing { 0% { opacity: .9; transform: scale(.8) } 100% { opacity: 0; transform: scale(1.6) } }
 @keyframes cfFade { to { opacity: 0 } }
+
+/* "Jogando X" na lista de membros e no cartão de perfil (Steam ou jogo detectado no PC) */
+#members .cs.playing { color: var(--text-normal, #dbdee1); } #members .cs.playing b { font-weight: 600; }
+.pcard .pplay { display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,.18); border-radius: 8px; padding: 8px 10px; margin: 2px 0 6px; }
+.pcard .pplay svg { color: #23a55a; flex: none; } .pcard .pplay b { display: block; } .pcard .pplay small { color: var(--text-muted); font-size: 12px; }
+.pcard h4.pplay-h { margin-top: 12px; }

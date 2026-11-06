@@ -1,6 +1,14 @@
 import { h, icon, avatar, framePos } from './util.js';
-import { lightbox } from './state.js';
+import { lightbox, S } from './state.js';
 import { isLightPair, styleName } from './themes.js';
+
+// "Jogando agora" no cartão: Steam vinculada ou jogo detectado no PC pelo app desktop (o servidor já filtrou quem pode ver)
+function playing(uid) {
+  let a = null; for (const x of S.activities?.values() || []) if (x.user_id === uid && (!a || a.platform === 'pc')) a = x;
+  if (!a) return null;
+  const m = Math.max(0, Math.round((Date.now() - a.since) / 60000)), t = m < 1 ? 'agora' : m < 60 ? `há ${m} min` : `há ${Math.floor(m / 60)}h${m % 60 ? ' ' + (m % 60) + 'min' : ''}`;
+  return [h('h4.pplay-h', 'Jogando agora'), h('div.pplay', icon('play', 16), h('div', h('b', a.game.title), h('small', `${a.platform === 'pc' ? 'No PC' : 'Steam'} · ${t}`)))];
+}
 
 export const STATUS_TXT = { online: 'Online', idle: 'Ausente', dnd: 'Não perturbe', invisible: 'Invisível', offline: 'Offline' };
 
@@ -23,6 +31,7 @@ export function profileCard(u, { nickname, roles = [], since, extra, accent, onI
       h('h3', styleName(h('span', nickname || u.display_name), u.name_style)),
       h('div.un', u.username + (u.status && u.status !== 'offline' ? ' • ' + STATUS_TXT[u.status] : '')),
       (u.custom_status || emoji) && h('p.cstat', emoji && h('span', emoji + ' '), u.custom_status),
+      playing(u.id),
       h('hr'),
       u.bio && [h('h4', 'Sobre mim'), h('p', { style: { whiteSpace: 'pre-wrap' } }, u.bio)],
       h('h4', 'Na Resenha desde'), h('p', new Date(+u.created_at || Date.now()).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' })),

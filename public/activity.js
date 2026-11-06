@@ -3,7 +3,7 @@
 import { canCallInvite, sendCallInvite } from './callinvite.js';
 import { h, icon, avatar } from './util.js';
 import { S, api, tryApi, toast, confirmBox, guild, channelById } from './state.js';
-import { toggle, row, section } from './ui.js';
+import { toggle, row, section, seg } from './ui.js';
 
 const ctx = {}; // injetado por app.js: openDM, profile, userMenu, go, joinVoice, watchFriend, voice(), openSettings, renderActiveNow
 export const initActivity = (c) => Object.assign(ctx, c);
@@ -11,14 +11,14 @@ S.activities = new Map();      // 'uid:platform' -> { user_id, platform, game:{i
 S.integrations = null;         // [{ id, name, configured, capabilities, account }]
 let feed = null, feedTimer = null;
 
-const PLATFORM = { steam: 'Steam' };
+const PLATFORM = { steam: 'Steam', pc: 'No PC' };
 export const platformName = (p) => PLATFORM[p] || p;
 export function setActivities(list) { S.activities.clear(); for (const a of list || []) S.activities.set(a.user_id + ':' + a.platform, a); }
-export const activityOf = (uid) => { for (const a of S.activities.values()) if (a.user_id === uid) return a; return null; };
+export const activityOf = (uid) => { let pc = null; for (const a of S.activities.values()) if (a.user_id === uid) { if (a.platform !== 'pc') return a; pc = a; } return pc; };
 export function onActivityUpdate(d) {
   const k = d.user_id + ':' + d.platform;
   if (d.activity) S.activities.set(k, d.activity); else S.activities.delete(k);
-  ctx.renderActiveNow?.(); scheduleFeed();
+  ctx.renderActiveNow?.(); ctx.renderMembers?.(); scheduleFeed();
 }
 export function onIntegrationUpdate(d) {
   if (S.integrations) { const i = S.integrations.find(x => x.id === d.platform); if (i) i.account = d.account; }
@@ -69,7 +69,7 @@ export function activityTab(pane) {
   const body = h('div.act-body'); pane.replaceChildren(body);
   const draw = () => {
     if (!feed) return body.replaceChildren(h('div.an-empty', 'Carregando…'));
-    const playing = feed.friends.flatMap(f => f.playing.map(a => ({ uid: f.user_id, a }))).sort((x, y) => (x.uid === S.me.id ? -1 : y.uid === S.me.id ? 1 : x.a.since - y.a.since));
+    const playing = feed.friends.flatMap(f => (f.playing.some(a => a.platform !== 'pc') ? f.playing.filter(a => a.platform !== 'pc') : f.playing).map(a => ({ uid: f.user_id, a }))).sort((x, y) => (x.uid === S.me.id ? -1 : y.uid === S.me.id ? 1 : x.a.since - y.a.since));
     const linked = S.integrations?.some(i => i.account);
     const online = feed.friends.filter(f => f.user_id !== S.me.id && !f.playing.length).map(f => S.users.get(f.user_id)).filter(u => u && u.status && u.status !== 'offline');
     const uname = (id) => (id === S.me.id ? 'Você' : (S.users.get(id)?.display_name || '?'));
@@ -125,5 +125,16 @@ export function connectionsPage(reg) {
   };
   S.refreshConnections = draw; reg?.(() => { S.refreshConnections = null; });
   draw();
-  return h('div', h('h2', 'Contas vinculadas'), box);
+  return h('div', h('h2', 'Contas vinculadas'), pcActivityBlock(), box);
+}
+// jogo aberto no PC (app desktop detecta, como na transmissão): quem pode ver
+export const PC_VIS = { servers: 'Amigos e quem está nos meus servidores', friends: 'Só amigos', off: 'Ninguém' };
+function pcActivityBlock() {
+  const box = h('div.card2', h('div', 'Carregando…'));
+  const draw = (v) => box.replaceChildren(
+    h('p.hintline', 'O app desktop (Windows) reconhece o jogo aberto no seu PC — o mesmo jeito que a transmissão acha o jogo — e mostra "Jogando …" para os outros, sem precisar vincular conta. Só o nome do jogo é enviado.'),
+    row('Quem pode ver meu jogo do PC', null, seg(PC_VIS, v, async (nv) => { const r = await tryApi('PATCH', '/activity/pc', { visibility: nv }); if (r) { S.pcActivity = r.visibility; toast(nv === 'off' ? 'Seu jogo não aparece mais para ninguém.' : 'Pronto.'); } })),
+    !window.lcDesktop?.detectGame && h('p.hintline', { style: { color: 'var(--text-muted)' } }, 'Neste aparelho a detecção não funciona (só no app desktop para Windows, versão 1.0.24 ou mais nova).'));
+  tryApi('GET', '/activity/pc').then(r => { if (r) { S.pcActivity = r.visibility; draw(r.visibility); } });
+  return [section('Jogo aberto no PC'), box];
 }

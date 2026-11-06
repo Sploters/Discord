@@ -51,6 +51,28 @@ function listWindows() {
   }));
 }
 
+// ---------- jogo aberto agora (atividade "Jogando X") ----------
+// nome que aparece para os amigos: conhecido pelo executável; senão o título da janela, sem versão/subtítulo
+const FRIENDLY = { 'valorant-win64-shipping': 'VALORANT', 'league of legends': 'League of Legends', cs2: 'Counter-Strike 2', csgo: 'Counter-Strike: Global Offensive',
+  'fortniteclient-win64-shipping': 'Fortnite', gta5: 'Grand Theft Auto V', gta5_enhanced: 'Grand Theft Auto V', rocketleague: 'Rocket League', r5apex: 'Apex Legends', r5apex_dx12: 'Apex Legends',
+  dota2: 'Dota 2', eldenring: 'ELDEN RING', tslgame: 'PUBG: BATTLEGROUNDS', robloxplayerbeta: 'Roblox', 'deadbydaylight-win64-shipping': 'Dead by Daylight', rainbowsix: 'Rainbow Six Siege',
+  rainbowsix_be: 'Rainbow Six Siege', peak: 'PEAK', repo: 'R.E.P.O.', 'minecraft.windows': 'Minecraft', 'lethal company': 'Lethal Company', phasmophobia: 'Phasmophobia', overwatch: 'Overwatch 2' };
+const cleanTitle = (t) => {
+  t = String(t || '').replace(/\s+/g, ' ').trim();
+  if (/^minecraft\b/i.test(t)) return 'Minecraft';
+  const cut = t.split(/ [-–|•] /)[0].replace(/\s*\(?v?\d+(\.\d+){1,3}\)?\s*$/i, '').trim(); // "Jogo - Capítulo 2" / "Jogo 1.2.3"
+  return (cut.length >= 2 ? cut : t).slice(0, 60);
+};
+async function detectGame() {
+  const list = (await listWindows()).filter(w => w.game);
+  if (!list.length) return null;
+  const score = (w) => (KNOWN_GAME.test(w.exe) ? 4 : 0) + (GAME_DIR.test(w.exe) ? 2 : 0) + (w.fullscreen ? 1 : 0) + (w.minimized ? 0 : 0.5);
+  const w = list.sort((a, b) => score(b) - score(a))[0];
+  const base = path.win32.basename(w.exe).replace(/\.exe$/i, '').toLowerCase();
+  if (base === 'javaw' && !/minecraft/i.test(w.title)) return null; // Java qualquer não é jogo
+  return { id: base, title: FRIENDLY[base] || cleanTitle(w.title) || base };
+}
+
 // ---------- captura ----------
 let proc = null;
 // o: { pid, mode: 'include' | 'exclude' }; onData(Buffer) recebe PCM float32 48 kHz estéreo. Resolve com {ok} ou {ok:false,error}.
@@ -87,4 +109,4 @@ function stop() {
   setTimeout(() => { try { p.kill(); } catch { } }, 1500);
 }
 
-module.exports = { capable, listWindows, start, stop, shutdown: stop, isGame };
+module.exports = { capable, listWindows, detectGame, start, stop, shutdown: stop, isGame, cleanTitle };

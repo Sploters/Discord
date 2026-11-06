@@ -54,6 +54,7 @@ addCol('users', 'banner', 'TEXT');
 addCol('users', 'status_emoji', "TEXT DEFAULT ''");
 addCol('users', 'theme_primary', 'TEXT'); // tema do perfil: gradiente principal → destaque
 addCol('users', 'theme_accent', 'TEXT');
+addCol('users', 'pc_activity', "TEXT DEFAULT 'servers'"); // jogo aberto no PC (app desktop): 'servers' (amigos + quem está nos seus servidores) | 'friends' | 'off'
 addCol('users', 'avatar_pos', 'TEXT'); // enquadramento da imagem: "x,y,zoom" (x/y em %, zoom 1–3)
 addCol('users', 'banner_pos', 'TEXT');
 addCol('users', 'name_style', 'TEXT'); // estilo do nome: JSON { font, effect, c1, c2 }
