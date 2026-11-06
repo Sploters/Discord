@@ -252,6 +252,7 @@ function onEvent(t, d) {
     case 'SFU_RES': voice.onSfuRes(d); break;
     case 'PONG': wsPings.get(d.n)?.(); break;
     case 'SFU_NEW_PRODUCER': voice.onSfuProducer(d); break;
+    case 'SFU_CODEC_FALLBACK': voice.onCodecFallback(d); break;
     case 'SFU_CONSUMER_CLOSED': voice.onSfuConsumerClosed(d); break;
     case 'NATIVE_SCREEN_END': nativeEnded(d); voice?.onNativeEnded(d); break;
     case 'TYPING': {

@@ -175,7 +175,15 @@ export async function sfuRequest(cid, uid, op, d) {
     case 'consume': {
       const t = transport(), pid = String(d.producer_id);
       if (t.appData.dir !== 'recv') throw new Error('transporte inválido');
-      if (!r.router.canConsume({ producerId: pid, rtpCapabilities: d.rtpCapabilities })) throw new Error('não é possível consumir');
+      if (!r.router.canConsume({ producerId: pid, rtpCapabilities: d.rtpCapabilities })) {
+        // quem pediu não decodifica o codec da transmissão (ex.: H.264 High num PC sem decodificação de vídeo pela placa):
+        // pede a quem transmite para trocar pelo VP8, que todo navegador recebe; a nova transmissão chega a todos sozinha
+        for (const o of r.peers.values()) for (const p of o.producers.values()) {
+          if (p.id !== pid || p.kind !== 'video' || p.appData.native || p.appData.fallbackAsked || !/h264/i.test(p.rtpParameters.codecs[0]?.mimeType || '')) continue;
+          p.appData.fallbackAsked = true; o.notify('SFU_CODEC_FALLBACK', { source: p.appData.source });
+        }
+        throw new Error('não é possível consumir');
+      }
       const c = await t.consume({ producerId: pid, rtpCapabilities: d.rtpCapabilities, paused: true });
       peer.consumers.set(c.id, c);
       // conexão fraca de quem recebe: a nota (0-10) do que chega até ela cai com perda. Aí o piso de banda deixa de valer
