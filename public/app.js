@@ -1751,27 +1751,26 @@ function renderVoiceUI(speakOnly) {
 // atalho de clipe: salva os últimos segundos da transmissão em destaque (ou da primeira que está sendo gravada)
 const hasScreenOf = (key) => !!S.voice.get(key.slice(2))?.screen;
 function clipHotkey() {
-  if (!voice?.active) return clipFlash(false, 'Nada para capturar', 'Entre numa sala de voz com uma transmissão');
+  if (!voice?.active) return clipFlash(false, 'Nenhuma transmissão');
   const keys = clipKeys(), key = [S.focus, S.ctlKey].find(k => k && keys.includes(k)) || keys[0];
   if (!key) {
     const why = S.prefs.clipsOn === false ? 'Os clipes estão desativados (botão de clipe na transmissão).'
       : voice.screen && keys.length === 0 ? 'Ative os clipes na sua transmissão (botão de clipe no quadro dela).' : 'Nenhuma transmissão sendo gravada ainda.';
-    clipFlash(false, 'Clipe não capturado', why);
+    clipFlash(false, 'Clipe não salvo');
     return toast(why, true);
   }
   const uid = key.slice(2), ch = channelById(voice.channelId), secs = S.prefs.clipSecs || 30, who = ch?.type === 1 ? user(uid).display_name : nameOf(uid, ch?.guild_id);
   saveClip(key, secs, { channelId: voice.channelId, who,
-    onCaptured: (ok, why) => (ok ? clipFlash(true, 'Clipe capturado', `Últimos ${secs}s${uid === S.me.id ? '' : ' de ' + who} · enviando para o chat`) : clipFlash(false, 'Clipe não capturado', why)) });
+    onCaptured: (ok, why) => (ok ? clipFlash(true, 'Clipe salvo', `${secs}s`) : clipFlash(false, 'Clipe não salvo')) });
 }
 // aviso de clipe capturado, só para quem apertou: com o app em segundo plano (jogando), o app desktop mostra por cima do
 // jogo (fora da captura, não aparece na transmissão); com o app à vista, a animação é dentro da própria página
 function clipFlash(ok, title, sub) {
   if (desktop?.clipFlash && !document.hasFocus()) return desktop.clipFlash({ ok, title, sub });
   document.querySelector('.clipflash')?.remove();
-  const el = h('div.clipflash' + (ok ? '' : '.bad'), { 'aria-live': 'polite' }, h('div.cf-edge'),
-    h('div.cf-badge', h('div.cf-ic', icon(ok ? 'clip' : 'x', 22)), h('div', h('b', title), sub && h('small', sub))));
+  const el = h('div.clipflash' + (ok ? '' : '.bad'), { role: 'status', 'aria-live': 'polite' }, h('div.cf-ic', icon(ok ? 'clip' : 'x', 14)), h('b', title), sub && h('small', sub));
   document.body.append(el);
-  setTimeout(() => el.remove(), 2600);
+  setTimeout(() => el.remove(), 2200);
 }
 // clipes: ligados por padrão para as transmissões dos outros; na sua própria só se você ativar (codificar o próprio jogo duas vezes pesa)
 const clipsAuto = (mine) => (mine ? S.prefs.clipsOn === true : S.prefs.clipsOn !== false);
