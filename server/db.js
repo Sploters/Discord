@@ -6,7 +6,10 @@ export const DATA_DIR = process.env.DATA_DIR || path.resolve('data');
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-export const db = new DatabaseSync(path.join(DATA_DIR, 'localcord.db'));
+// o banco se chamava localcord.db (nome antigo do programa): na primeira abertura vira resenha.db, com os arquivos do WAL
+const DB_FILE = path.join(DATA_DIR, 'resenha.db'), OLD_DB = path.join(DATA_DIR, 'localcord.db');
+if (!fs.existsSync(DB_FILE) && fs.existsSync(OLD_DB)) for (const ext of ['', '-wal', '-shm']) if (fs.existsSync(OLD_DB + ext)) fs.renameSync(OLD_DB + ext, DB_FILE + ext);
+export const db = new DatabaseSync(DB_FILE);
 db.exec(`
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
@@ -30,6 +33,8 @@ CREATE TABLE IF NOT EXISTS invites(code TEXT PRIMARY KEY, guild_id TEXT REFERENC
 CREATE TABLE IF NOT EXISTS relationships(user_id TEXT, other_id TEXT, type INTEGER, PRIMARY KEY(user_id,other_id));
 CREATE TABLE IF NOT EXISTS read_states(user_id TEXT, channel_id TEXT, last_id TEXT, PRIMARY KEY(user_id,channel_id));
 `);
+// temas compartilhados no chat antes da troca de nome: o código passa a usar o prefixo novo
+db.exec("UPDATE messages SET content = replace(content, 'localcord-theme:', 'resenha-theme:') WHERE content LIKE '%localcord-theme:%'");
 
 let seq = 0, lastMs = 0;
 // IDs ordenáveis por tempo (estilo snowflake), como string

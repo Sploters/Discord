@@ -279,6 +279,13 @@ export class Voice {
     p.close(); delete s.producers[source];
     this.sfuReq('close_producer', { source }).catch(() => { });
   }
+  // alguém na sala não consegue receber o H.264 desta transmissão (o servidor avisa): volta ao VP8, que todos decodificam
+  async onCodecFallback({ source }) {
+    const p = this.sfu?.producers[source], vt = this.screen?.getVideoTracks()[0];
+    if (source !== 'screen' || !p || p.closed || !vt || this.native || !/h264/i.test(p.rtpParameters?.codecs?.[0]?.mimeType || '')) return;
+    this._hw = false; console.warn('alguém na sala não recebe H.264, voltando ao VP8');
+    this.sfuStop('screen'); await this.sfuProduce('screen', vt);
+  }
   // o navegador disse que há hardware, mas se o codificador real for o OpenH264 (CPU), volta para o VP8 com camadas temporais
   async checkHwEncoder() {
     const st = await this.screenStats(), enc = st?.find(l => l.enc)?.enc || '';

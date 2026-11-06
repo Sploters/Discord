@@ -1,4 +1,4 @@
-# Fase 2 — Localcord Watch (registro técnico)
+# Fase 2 — Resenha Watch (registro técnico)
 
 Tudo reaproveita o que já existia (grade, destaque + faixa, `setStreamLayer`, `flow`, `STREAM_WATCH`, `ROOM_STATE`).
 Nada disto altera o mecanismo de captura.
@@ -35,7 +35,7 @@ Reexecutado com **verificação de conteúdo** (animação visível, id de quadr
 - Os ~48 FPS capturados nestes testes são o limite conhecido do capturador do Chromium (ver `PASSO0-DIAGNOSTICO-FPS.md`), não do SFU.
 
 ## Validação no Umbrel (2026-11-03, commits a10b213 + correção da unidade de CPU)
-Procedimento: backup do banco, da configuração do container e do código em `~/localcord-backups/*-pre-fase2-20261103-002904.*`; imagem anterior marcada `localcord:rollback-pre-fase2` (id 15433da01d12). **Rollback**: `docker rm -f localcord && docker run … localcord:rollback-pre-fase2` com os mesmos parâmetros do `deploy/umbrel.sh` (ou restaurar o `codigo-pre-fase2-*.tgz` e rodar o deploy). Não foi necessário.
+Procedimento: backup do banco, da configuração do container e do código em `~/resenha-backups/*-pre-fase2-20261103-002904.*`; imagem anterior marcada `localcord:rollback-pre-fase2` (id 15433da01d12). **Rollback**: `docker rm -f localcord && docker run … localcord:rollback-pre-fase2` com os mesmos parâmetros do `deploy/umbrel.sh` (ou restaurar o `codigo-pre-fase2-*.tgz` e rodar o deploy). Não foi necessário.
 
 Testes (`scripts/fase2-test.mjs`: 2 usuários reais em Edge headless, sala de voz no Umbrel, transmissão simulada por canvas 1280×720@30 em VP8 3 camadas) — 37 verificações, todas ok:
 - Layouts: Grade, Destaque + faixa, Principal + miniaturas, Lado a lado, Cinema e volta ao Automático; escolha gravada e sincronizada no servidor.

@@ -6,10 +6,20 @@ const fs = require('node:fs');
 const https = require('node:https');
 const http = require('node:http');
 
-// O app se chamava LocalCord: a pasta de dados (servidor salvo, login, configurações) e o id do Windows continuam com o
-// nome antigo, para quem já usa não perder nada ao atualizar e os atalhos/notificações seguirem ligados ao mesmo app.
-app.setPath('userData', path.join(app.getPath('appData'), 'LocalCord'));
-app.setAppUserModelId('br.local.localcord');
+// O app se chamava LocalCord: na primeira abertura depois da troca de nome, a pasta de dados antiga (servidor salvo,
+// login, configurações) passa a se chamar Resenha. Se não der para renomear agora (arquivo em uso), usa a antiga e tenta
+// de novo na próxima abertura.
+const OLD_ID = 'br.local.localcord';
+{
+  const base = app.getPath('appData'), dir = path.join(base, 'Resenha'), old = path.join(base, 'LocalCord');
+  let use = dir;
+  // uma pasta Resenha sem config.json nunca foi usada de verdade (o app guarda o servidor ali ao conectar): dá lugar à antiga
+  if (fs.existsSync(old) && !fs.existsSync(path.join(dir, 'config.json'))) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); fs.renameSync(old, dir); } catch { use = old; }
+  }
+  app.setPath('userData', use);
+}
+app.setAppUserModelId('br.resenha.app');
 if (!app.requestSingleInstanceLock()) { app.quit(); return; }
 
 const cfgPath = () => path.join(app.getPath('userData'), 'config.json');
@@ -227,7 +237,7 @@ ipcMain.handle('get-sources', async () => {
   const list = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: true });
   const now = Date.now(), out = [];
   for (const s of list) {
-    if (/^(Resenha|LocalCord)$/.test(s.name) || /NVIDIA GeForce Overlay/i.test(s.name)) continue; // o overlay da NVIDIA só aparece preto
+    if (s.name === 'Resenha' || /NVIDIA GeForce Overlay/i.test(s.name)) continue; // o overlay da NVIDIA só aparece preto
     const type = s.id.startsWith('screen') ? 'screen' : 'window';
     const item = { id: s.id, name: s.name, type, thumbnail: s.thumbnail.toDataURL(), appIcon: s.appIcon && !s.appIcon.isEmpty() ? s.appIcon.toDataURL() : null };
     out.push(item);
@@ -268,7 +278,11 @@ ipcMain.handle('set-settings', (_e, patch) => {
   saveCfg(); return true;
 });
 ipcMain.handle('clear-cache', async () => { await session.defaultSession.clearCache(); return true; });
-ipcMain.handle('relaunch', () => { app.relaunch(); quitting = true; app.exit(0); return true; });
+ipcMain.handle('relaunch', () => {
+  quitting = true;
+  if (update?.file && !updating && !portable) { updating = true; runInstaller(update.file, true); app.exit(0); return true; } // reabre já atualizado
+  app.relaunch(); app.exit(0); return true;
+});
 ipcMain.handle('change-server', () => { showConnect(); return true; });
 ipcMain.handle('test-server', async (_e, input) => { const r = await resolveServer(input); return r; });
 ipcMain.handle('save-server', async (_e, url) => { cfg.server = url; saveCfg(); trustedHosts.add(serverHost()); loadServer(); return true; });
@@ -296,24 +310,52 @@ async function checkUpdate() {
   }
   if (!found) {
     const rel = await getJson(`https://api.github.com/repos/${REPO}/releases/latest`);
-    const asset = rel?.assets?.find(a => /^(Resenha|LocalCord)-Setup-.*\.exe$/i.test(a.name));
+    const asset = rel?.assets?.find(a => /^Resenha-Setup-.*\.exe$/i.test(a.name));
     if (rel?.tag_name && asset) found = { version: String(rel.tag_name).replace(/^v/i, ''), url: asset.browser_download_url, name: asset.name };
   }
   if (!found || !newer(found.version, app.getVersion())) return;
+  if (update?.version === found.version) return; // já encontrada (e baixada ou baixando)
   update = found;
   log('atualização disponível', found.version, found.url);
-  win?.webContents.send('update-available', { version: found.version });
+  // baixa em segundo plano e só então avisa: "Reiniciar agora" instala em segundos, sem abrir instalador
+  await prepareUpdate().catch((e) => log('download da atualização falhou', e.message));
+  if (update === found) win?.webContents.send('update-available', { version: found.version, ready: !!found.file });
+}
+// instalador da versão nova, baixado uma vez para a pasta temporária
+function prepareUpdate() {
+  const u = update; if (!u) return Promise.reject(new Error('sem atualização'));
+  return (u.downloading ||= (async () => {
+    const file = path.join(app.getPath('temp'), u.name), part = file + '.part';
+    await download(u.url, part);
+    fs.renameSync(part, file); u.file = file; log('atualização baixada', u.version, file);
+    return file;
+  })().catch((e) => { u.downloading = null; throw e; }));
+}
+// versão portátil (um .exe solto, sem instalação): o instalador silencioso criaria uma instalação, então abre o
+// instalador normal como antes
+const portable = !!process.env.PORTABLE_EXECUTABLE_DIR;
+// instalação silenciosa (sem janelas): /S = silencioso, --updated = atualização da instalação que já existe (mesmo
+// lugar, atalhos e dados), --force-run = abre o app de novo quando termina
+function runInstaller(file, reopen) {
+  const args = portable ? [] : ['/S', '--updated', ...(reopen ? ['--force-run'] : [])];
+  log('instalando atualização', update?.version, args.join(' '));
+  require('node:child_process').spawn(file, args, { detached: true, stdio: 'ignore' }).unref();
 }
 function download(url, dest, redirects = 5) {
   return new Promise((resolve, reject) => {
     libOf(url).get(url, { ...reqOpts(url, 'application/octet-stream'), timeout: 60000 }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) { res.resume(); return resolve(download(new URL(res.headers.location, url).href, dest, redirects - 1)); }
       if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
-      const f = fs.createWriteStream(dest); res.pipe(f); f.on('finish', () => f.close(resolve)); f.on('error', reject);
-    }).on('error', reject);
+      // download interrompido não pode virar "instalador pronto": confere o tamanho anunciado
+      const size = +res.headers['content-length'] || 0;
+      const f = fs.createWriteStream(dest); res.pipe(f); f.on('error', reject);
+      // conexão caiu no meio: sem isso o download nunca terminava nem falhava
+      res.on('aborted', () => reject(new Error('download interrompido'))); res.on('error', reject);
+      f.on('finish', () => f.close(() => { const got = fs.statSync(dest).size; if (size && got !== size) reject(new Error(`download incompleto (${got} de ${size} bytes)`)); else resolve(); }));
+    }).on('error', reject).on('timeout', function () { this.destroy(new Error('tempo esgotado')); });
   });
 }
-ipcMain.handle('get-update', () => update && { version: update.version });
+ipcMain.handle('get-update', () => update && { version: update.version, ready: !!update.file });
 // diagnóstico para o relatório de problema: fim do main.log, placas de vídeo, aceleração e versões (sem senhas/chaves)
 ipcMain.handle('get-diagnostics', async () => {
   let logTail = ''; try { logTail = fs.readFileSync(path.join(app.getPath('userData'), 'main.log'), 'utf8').split('\n').slice(-150).join('\n'); } catch { }
@@ -327,20 +369,23 @@ ipcMain.handle('get-diagnostics', async () => {
     servidor: cfg.server, enderecoGuardado: pinnedIp || null, abertoHaMin: Math.round(process.uptime() / 60), log: logTail,
   };
 });
+// "Reiniciar agora": instala sem janelas e o app reabre sozinho já na versão nova
 ipcMain.handle('install-update', async () => {
   if (!update || updating) return false;
   updating = true;
   try {
-    const file = path.join(app.getPath('temp'), update.name);
-    await download(update.url, file);
-    require('node:child_process').spawn(file, [], { detached: true, stdio: 'ignore' }).unref();
+    const file = update.file || await prepareUpdate();
+    runInstaller(file, true);
     quitting = true; app.quit(); return true;
   } catch (e) { log('update err', e.message); updating = false; return false; }
 });
 
 app.on('second-instance', () => showWin());
 app.on('before-quit', () => { quitting = true; });
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  if (update?.file && !updating && !portable) { updating = true; runInstaller(update.file, false); }
+});
 app.on('window-all-closed', () => { if (quitting) app.quit(); });
 
 // placa de vídeo: guarda o nome (mostrado nas configurações) e se é uma Intel antiga (até a 4ª geração, ex.: HD 4000),
@@ -360,6 +405,8 @@ async function detectGpu() {
   } catch (e) { log('gpu info falhou', e.message); }
 }
 app.whenReady().then(() => {
+  // iniciar com o Windows: a entrada antiga no registro tinha o id antigo; apaga e recria com o novo
+  try { app.setLoginItemSettings({ openAtLogin: false, name: OLD_ID }); if (cfg.autoStart) app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] }); } catch { }
   log('abertura', ms(), 'ms: Electron pronto');
   // a janela principal abre na hora (fundo escuro + barra) e a página começa a carregar já; sem a janelinha
   // "Iniciando…" no meio (era uma janela a mais para criar antes da principal). O resto vem depois.

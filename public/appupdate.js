@@ -23,7 +23,7 @@ export async function checkAppUpdate() {
   if (!found.length) {
     try {
       const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' });
-      if (r.ok) { const j = await r.json(); if (j.assets?.some(a => /^(Resenha|LocalCord)-Setup-.*\.exe$/i.test(a.name))) found.push(String(j.tag_name || '').replace(/^v/i, '')); }
+      if (r.ok) { const j = await r.json(); if (j.assets?.some(a => /^Resenha-Setup-.*\.exe$/i.test(a.name))) found.push(String(j.tag_name || '').replace(/^v/i, '')); }
     } catch { }
   }
   const fromApp = (await d.getUpdate?.().catch(() => null))?.version; if (fromApp) found.push(fromApp);
@@ -31,7 +31,10 @@ export async function checkAppUpdate() {
   return { current, latest, available: !!latest && (!current || newer(latest, current)) };
 }
 
-// instala: o app baixa e abre o instalador; se não der, baixa pelo servidor (ou abre a página da release)
+// app que atualiza sozinho (sem abrir o instalador): só pede para reiniciar
+export const silentUpdate = () => !!window.lcDesktop?.silentUpdate;
+// instala: o app novo instala em silêncio e reabre; o antigo baixa e abre o instalador; se não der, baixa pelo servidor
+// (ou abre a página da release)
 export async function installAppUpdate() {
   const ok = await window.lcDesktop?.installUpdate?.().catch(() => false);
   if (!ok) { if (dlUrl) location.assign(dlUrl); else window.open(RELEASES, '_blank'); }
@@ -43,12 +46,13 @@ function showCard(version) {
   if (!version || shown?.dataset.v === version) return;
   try { if (sessionStorage.getItem('lc_upd_later') === version) return; } catch { }
   shown?.remove();
-  const msg = h('p', 'Uma versão nova do app desktop está pronta. Leva menos de um minuto.');
+  const quiet = silentUpdate(), label = quiet ? 'Reiniciar agora' : 'Atualizar agora';
+  const msg = h('p', quiet ? 'Reinicie o app para usar a versão nova. Leva alguns segundos e não abre instalador.' : 'Uma versão nova do app desktop está pronta. Leva menos de um minuto.');
   const btn = h('button.btn.green', { onclick: async () => {
-    btn.disabled = true; later.disabled = true; btn.textContent = 'Baixando…';
-    msg.textContent = 'O app fecha sozinho e abre o instalador quando o download terminar.';
-    if (!await installAppUpdate()) { btn.disabled = false; later.disabled = false; btn.textContent = 'Atualizar agora'; msg.textContent = 'Baixando o instalador: quando terminar, abra o Resenha-Setup.'; }
-  } }, 'Atualizar agora');
+    btn.disabled = true; later.disabled = true; btn.textContent = quiet ? 'Reiniciando…' : 'Baixando…';
+    msg.textContent = quiet ? 'O app fecha, atualiza e abre de novo sozinho.' : 'O app fecha sozinho e abre o instalador quando o download terminar.';
+    if (!await installAppUpdate()) { btn.disabled = false; later.disabled = false; btn.textContent = label; msg.textContent = quiet ? 'Não deu para atualizar agora. Tente de novo em instantes.' : 'Baixando o instalador: quando terminar, abra o Resenha-Setup.'; }
+  } }, label);
   const later = h('button.btn.link', { onclick: () => { try { sessionStorage.setItem('lc_upd_later', version); } catch { } shown?.remove(); shown = null; } }, 'Depois');
   shown = h('div.appupd', { 'data-v': version, role: 'status' },
     h('div.au-ico', icon('dl', 20)),

@@ -3,7 +3,7 @@
 // o link para ler no site original.
 // Fontes: as padrão abaixo, ou o arquivo <dados>/discover.json ({ "news": [{ "name", "url", "lang" }], "steam": true,
 // "epic": true, "country": "BR" }). DISCOVER_OFF=1 desliga tudo. ("steamBase"/"epicUrl" trocam os endereços: testes)
-//   GET /api/discover/news      -> { items: [{ id, title, summary, url, image, source, lang, date }], failed: [nomes] }
+//   GET /api/discover/news      -> { items: [{ id, title, summary, url, image, source, lang, date }], failed: [nomes] } (só a última semana)
 //   GET /api/discover/deals     -> { items: [{ id, title, url, image, store, price, old, currency, discount, free, starts, ends }] }
 //   GET /api/discover/upcoming  -> { items: [{ id, title, url, image, store, date, tags }] }
 //   GET /api/discover/tournaments -> { items: [{ id, title, url, image, source, game, mode, slots, prize, free, format, starts, host, tags }], links: [...] }
@@ -26,6 +26,7 @@ const DEFAULT_NEWS = [
   { name: 'GameSpot', url: 'https://www.gamespot.com/feeds/mashup/', lang: 'en' },
   { name: 'Polygon', url: 'https://www.polygon.com/rss/index.xml', lang: 'en' },
 ];
+const NEWS_MAX_AGE = 7 * 864e5; // notícias de no máximo 1 semana
 const UA = 'Mozilla/5.0 (compatible; Resenha-Discover/1.0; +https://github.com/Sploters)';
 
 // ---------- texto ----------
@@ -37,6 +38,10 @@ const cut = (s, n) => (s.length <= n ? s : s.slice(0, s.lastIndexOf(' ', n) > n 
 const httpUrl = (u) => { try { const x = new URL(decode(cdata(u)).trim()); return /^https?:$/.test(x.protocol) ? x.href : null; } catch { return null; } };
 
 // ---------- RSS / Atom (só o necessário: título, link, data, resumo, imagem) ----------
+// Blogger (ex.: GameBlast): o feed traz miniaturas de 72 px (".../s72-w640-h360-c/foto.png" ou "...=s72-c"); o mesmo
+// endereço com outro tamanho entrega a imagem grande
+const bigImage = (u) => (!u || !/(^|\.)(blogger\.googleusercontent\.com|bp\.blogspot\.com)$/i.test(new URL(u).hostname) ? u
+  : u.replace(/\/s\d+(-[a-z0-9-]*)?\/(?=[^/]+$)/i, '/w640-rw/').replace(/=s\d+(-[a-z0-9-]*)?$/i, '=w640-rw'));
 const tag = (xml, names) => { for (const n of names) { const m = xml.match(new RegExp(`<${n}(?:\\s[^>]*)?>([\\s\\S]*?)</${n}>`, 'i')); if (m) return m[1]; } return ''; };
 const attr = (xml, el, a, cond) => { const re = new RegExp(`<${el}\\b([^>]*)>`, 'gi'); let m; while ((m = re.exec(xml))) { const at = m[1]; if (cond && !cond.test(at)) continue; const v = at.match(new RegExp(`\\b${a}\\s*=\\s*["']([^"']+)["']`, 'i')); if (v) return v[1]; } return ''; };
 export function parseFeed(xml, source) {
@@ -49,7 +54,7 @@ export function parseFeed(xml, source) {
     const image = httpUrl(attr(it, 'media:content', 'url', /medium\s*=\s*["']image|type\s*=\s*["']image|^(?![\s\S]*(medium|type)=)/i)) || httpUrl(attr(it, 'media:thumbnail', 'url'))
       || httpUrl(attr(it, 'enclosure', 'url', /type\s*=\s*["']image/i)) || httpUrl((cdata(decode(body)).match(/<img[^>]+src=["']([^"']+)["']/i) || [])[1] || '');
     const d = Date.parse(strip(tag(it, ['pubDate', 'published', 'updated', 'dc:date'])));
-    out.push({ id: `${source.name}:${url}`, title: cut(title, 160), summary: cut(((t) => (/<[a-z!/]/i.test(t) ? strip(t) : t))(strip(body)), 220), url, image, source: source.name, lang: source.lang || '', date: isFinite(d) ? d : null });
+    out.push({ id: `${source.name}:${url}`, title: cut(title, 160), summary: cut(((t) => (/<[a-z!/]/i.test(t) ? strip(t) : t))(strip(body)), 220), url, image: bigImage(image), source: source.name, lang: source.lang || '', date: isFinite(d) ? d : null });
   }
   return out;
 }
@@ -123,8 +128,9 @@ export function mountDiscover(app, { auth, dataDir }) {
   async function news() {
     const sources = (Array.isArray(conf().news) ? conf().news : DEFAULT_NEWS).filter(s => s?.name && httpUrl(s.url));
     const res = await Promise.all(sources.map(s => cached('news:' + s.url, 20 * 60e3, async () => parseFeed(await get(s.url), s)).then(v => ({ s, v }), () => ({ s, v: null }))));
-    const seen = new Set(), items = [];
-    for (const { v } of res) for (const it of v || []) { const k = it.title.toLowerCase(); if (!seen.has(k)) { seen.add(k); items.push(it); } }
+    // só a última semana, contada a cada pedido (a lista anda sozinha quando a pessoa atualiza); sem data não entra
+    const seen = new Set(), items = [], since = Date.now() - NEWS_MAX_AGE;
+    for (const { v } of res) for (const it of v || []) { const k = it.title.toLowerCase(); if (it.date >= since && !seen.has(k)) { seen.add(k); items.push(it); } }
     items.sort((a, b) => (b.date || 0) - (a.date || 0));
     return { items: items.slice(0, 150), failed: res.filter(r => !r.v).map(r => r.s.name) };
   }

@@ -1,6 +1,6 @@
 // Atualizações do app desktop entregues pelo próprio servidor: o repositório no GitHub pode ser privado.
 // O servidor consulta a release mais nova com uma chave de acesso (somente leitura) e entrega o instalador aos apps.
-// - Chave: variável GITHUB_TOKEN ou o arquivo <pasta de dados>/github-token.txt (no Umbrel: ~/localcord-data/github-token.txt).
+// - Chave: variável GITHUB_TOKEN ou o arquivo <pasta de dados>/github-token.txt (no Umbrel: ~/resenha-data/github-token.txt).
 //   Sem chave, funciona só se o repositório for público.
 // - GET /api/desktop/update            -> { version, name, size, url } da release mais nova (ou {} se não houver)
 // - GET /desktop/download/<instalador> -> o instalador (baixado do GitHub uma vez e guardado em <dados>/desktop)
@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import https from 'node:https';
 
-const SETUP = /^(Resenha|LocalCord)-Setup-[\d.]+\.exe$/i;
+const SETUP = /^Resenha-Setup-[\d.]+\.exe$/i;
 
 export function mountDesktopUpdate(app, dataDir) {
   const REPO = process.env.DESKTOP_REPO || 'Sploters/Resenha';
