@@ -296,6 +296,8 @@ body:has(#lightbox) #layer { z-index: 130; } /* menus de clique direito por cima
   #app:has(#chtabs) #side { margin-top: 33px; border-top: 1px solid var(--divider); border-left: 1px solid var(--divider); border-top-left-radius: 12px; }
   #app.hide-side:has(#chtabs) #side { border: 0; }
   #app:has(#chtabs) #side-head { border-top-left-radius: 11px; } /* fundo do hover e banner do servidor acompanham o canto */
+  /* a primeira aba começa na mesma linha do #side-head (logo depois da borda de 1 px do painel) */
+  #main > #chtabs { padding-left: 1px; }
   #main > #chtabs { border-bottom-color: transparent; background-image: linear-gradient(var(--divider), var(--divider)); background-repeat: no-repeat;
     background-size: calc(100% - var(--side-w) - 1px) 1px; background-position: right bottom; }
   :root.grad #app { background: var(--g1); }
