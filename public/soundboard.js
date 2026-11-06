@@ -1,5 +1,5 @@
 // Soundboard: sons pessoais (sincronizados na conta) + sons dos servidores, tocados para toda a sala de voz.
-import { h, icon, avatar, initials, whenGone } from './util.js';
+import { h, icon, avatar, initials, whenGone, soundEmoji } from './util.js';
 import { S, api, tryApi, toast, savePrefs, modal, promptBox, popout, closeFloating, guild, can, PERM, confirmBox, menu, emojiPicker } from './state.js';
 import { toggle, slider, comboFromEvent, comboLabel, captureKey } from './ui.js';
 
@@ -38,7 +38,7 @@ export function onIncoming(msg, voice) {
   const stage = document.getElementById('stage');
   if (stage) {
     const who = S.users.get(msg.user_id)?.display_name || 'alguém';
-    const el = h('div.sbflash', h('span.e', msg.emoji || '🔊'), h('span', `${who}: ${msg.name || 'som'}`));
+    const el = h('div.sbflash', h('span.e', soundEmoji(msg.emoji)), h('span', `${who}: ${msg.name || 'som'}`));
     stage.append(el); setTimeout(() => el.remove(), 2600);
   }
 }
@@ -75,7 +75,7 @@ async function pickAudio() {
 }
 export async function addSound(guildId) {
   const f = await pickAudio(); if (!f) return;
-  const st = { name: f.name, emoji: '🔊', volume: 100 };
+  const st = { name: f.name, emoji: '', volume: 100 };
   const name = h('input', { value: st.name, maxLength: 32, oninput: () => (st.name = name.value) });
   const emo = h('button.btn.grey', { style: { minWidth: '48px', fontSize: '20px' }, onclick: (e) => emojiPicker(e.currentTarget, (x) => { if (x.startsWith('<:')) return; st.emoji = x; emo.textContent = x; }, { noCustom: true }) }, st.emoji);
   const prev = h('button.btn.grey', { onclick: () => playLocal(f.url, st.volume) }, '▶ Ouvir');
@@ -89,7 +89,7 @@ export async function addSound(guildId) {
   } }]);
 }
 export async function editSound(src, s) {
-  const st = { name: s.name, emoji: s.emoji || '🔊', volume: vol(s) };
+  const st = { name: s.name, emoji: soundEmoji.raw(s.emoji), volume: vol(s) };
   const name = h('input', { value: st.name, maxLength: 32, oninput: () => (st.name = name.value) });
   const emo = h('button.btn.grey', { style: { minWidth: '48px', fontSize: '20px' }, onclick: (e) => emojiPicker(e.currentTarget, (x) => { if (x.startsWith('<:')) return; st.emoji = x; emo.textContent = x; }, { noCustom: true }) }, st.emoji);
   modal('Editar som', '', h('div', h('label.f', 'Nome', name), h('label.f', 'Emoji'), emo, h('label.f', { style: { marginTop: '14px' } }, 'Volume', slider(10, 200, st.volume, 5, v => (st.volume = v), v => v + '%')), h('button.btn.grey', { onclick: () => playLocal(s.url, st.volume) }, '▶ Ouvir')),
@@ -134,7 +134,7 @@ export function openSoundboard(anchor, voice, { openSettings } = {}) {
     const all = srcs.flatMap(src => src.sounds.map(s => ({ src, s }))), byId = new Map(all.map(x => [x.s.id, x]));
     const freq = Object.entries(S.prefs.sbUse || {}).filter(([id]) => byId.has(id)).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([id]) => byId.get(id));
     return [
-      { key: 'fav', title: 'Favoritos', ic: () => icon('star', 18), items: favs().map(id => byId.get(id)).filter(Boolean), empty: 'Passe o mouse num som e clique na ★ para favoritar.' },
+      { key: 'fav', title: 'Favoritos', ic: () => icon('star', 18), items: favs().map(id => byId.get(id)).filter(Boolean), empty: h('span', 'Passe o mouse num som e clique na ', icon('star', 14), ' para favoritar.') },
       freq.length && { key: 'freq', title: 'Usados com frequência', ic: () => icon('clock', 18), items: freq },
       ...srcs.map(src => {
         const add = src.own || can(src.guild.id, PERM.MANAGE_GUILD);
@@ -146,7 +146,7 @@ export function openSoundboard(anchor, voice, { openSettings } = {}) {
     return h('div.sbsnd', { title: s.name + (key ? ` — atalho: ${comboLabel(key)}` : ''), onclick: () => trigger(s, voice),
       oncontextmenu: (e) => menu(e, [{ label: 'Tocar só para mim (prévia)', fn: () => trigger(s, voice, { preview: true }) }, { label: fav ? 'Remover dos favoritos' : 'Favoritar', fn: () => { toggleFav(s.id); draw(); } },
         { label: 'Definir atalho…', fn: () => keyDialog(s) }, (src.own || (src.guild && can(src.guild.id, PERM.MANAGE_GUILD))) && { label: 'Editar / excluir…', fn: () => { closeFloating(); editSound(src, s); } }]) },
-      h('span.e', s.emoji || '🔊'), h('span.n', s.name),
+      h('span.e', soundEmoji(s.emoji)), h('span.n', s.name),
       // ao passar o mouse: prévia (só você ouve) e favoritar; clicar no resto do botão toca para a sala
       h('div.sbov', h('button', { title: 'Prévia (só você ouve)', onclick: (e) => { e.stopPropagation(); trigger(s, voice, { preview: true }); } }, icon('voice', 16)),
         h('button' + (fav ? '.on' : ''), { title: fav ? 'Remover dos favoritos' : 'Favoritar', onclick: (e) => { e.stopPropagation(); toggleFav(s.id); draw(); } }, icon('star', 16))));

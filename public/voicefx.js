@@ -2,15 +2,15 @@
 // pessoa que ouve aplica o efeito na hora. Assim cada um pode ouvir sem efeito (todo mundo ou só alguém), nada fica
 // mais alto que a voz normal (limitador no fim) e o processamento é leve (nós nativos do navegador + 1 worklet pequeno).
 export const FX = [
-  { id: 'robo', label: 'Robô', emoji: '🤖' },
-  { id: 'grossa', label: 'Voz grossa', emoji: '🐻' },
-  { id: 'esquilo', label: 'Esquilo', emoji: '🐿️' },
-  { id: 'monstro', label: 'Monstro', emoji: '👹' },
-  { id: 'alien', label: 'Alien', emoji: '👽' },
-  { id: 'radio', label: 'Rádio', emoji: '📻' },
-  { id: 'megafone', label: 'Megafone', emoji: '📢' },
-  { id: 'eco', label: 'Eco', emoji: '🏔️' },
-  { id: 'estadio', label: 'Estádio', emoji: '🏟️' },
+  { id: 'robo', label: 'Robô' },
+  { id: 'grossa', label: 'Voz grossa' },
+  { id: 'esquilo', label: 'Esquilo' },
+  { id: 'monstro', label: 'Monstro' },
+  { id: 'alien', label: 'Alien' },
+  { id: 'radio', label: 'Rádio' },
+  { id: 'megafone', label: 'Megafone' },
+  { id: 'eco', label: 'Eco' },
+  { id: 'estadio', label: 'Estádio' },
 ];
 export const FX_IDS = FX.map(f => f.id);
 export const fxInfo = (id) => FX.find(f => f.id === id) || null;

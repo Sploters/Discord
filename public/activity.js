@@ -125,13 +125,13 @@ function hlItem(x) {
   const u = uOf(x.user_id), who = h('b', x.user_id === S.me.id ? 'Você' : u.display_name), a = x.game && { platform: x.platform, game: x.game };
   const game = x.game && h('b', x.game.title);
   let ic = a ? gameIcon(a, 18) : null, tag = null, text = [], open = (e) => ctx.profile(e.currentTarget, x.user_id);
-  if (x.kind === 'marathon') { tag = h('span.hl-tag.gold', '🏆 Maratona'); text = [who, ' jogou ', game, ' por ', h('b', durShort(x.seconds))]; }
+  if (x.kind === 'marathon') { tag = h('span.hl-tag.gold', icon('trophy', 12), 'Maratona'); text = [who, ' jogou ', game, ' por ', h('b', durShort(x.seconds))]; }
   else if (x.kind === 'session') text = [who, ' jogou ', game, ' por ', durShort(x.seconds)];
-  else if (x.kind === 'new_game') { tag = h('span.hl-tag.new', '✨ Jogo novo'); text = [who, ' começou a jogar ', game]; }
-  else if (x.kind === 'streak') { tag = h('span.hl-tag.fire', `🔥 ${x.days} dias`); text = [who, ' jogou ', game, ` em ${x.days} dias diferentes esta semana`]; }
+  else if (x.kind === 'new_game') { tag = h('span.hl-tag.new', icon('sparkle', 12), 'Jogo novo'); text = [who, ' começou a jogar ', game]; }
+  else if (x.kind === 'streak') { tag = h('span.hl-tag.fire', icon('fire', 12), `${x.days} dias`); text = [who, ' jogou ', game, ` em ${x.days} dias diferentes esta semana`]; }
   else if (x.kind === 'clip') {
     const c = x.clip, st = c.streamer_id && c.streamer_id !== x.user_id ? uOf(c.streamer_id) : null;
-    ic = h('span.gicon.hl-clipic', { style: { width: '18px', height: '18px' } }, icon('clip', 13)); tag = h('span.hl-tag.clip', '🎬 Clipe');
+    ic = h('span.gicon.hl-clipic', { style: { width: '18px', height: '18px' } }, icon('clip', 13)); tag = h('span.hl-tag.clip', icon('clip', 12), 'Clipe');
     text = [who, ' salvou um clipe', st ? [' da transmissão de ', h('b', st.display_name)] : '', ': ', h('i', `“${c.title}”`)];
     open = () => ctx.go(c.guild_id, 'clips');
   }

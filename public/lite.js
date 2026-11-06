@@ -1,5 +1,5 @@
 // Modo leve: um botão que desliga o que pesa na CPU/GPU (bom para jogar com o app aberto) e lembra os valores anteriores para desfazer.
-import { h } from './util.js';
+import { h, icon } from './util.js';
 import { S, savePrefs, applyTheme, toast, desktop } from './state.js';
 import { toggle, row, section } from './ui.js';
 import { refreshFreeze } from './freeze.js';
@@ -57,7 +57,7 @@ export function litePage(ctx) {
         h('div', h('div.rt', on ? 'Modo leve ativado' : 'Ativar modo leve'), h('div.rd', on ? 'Desligue para voltar exatamente às configurações que você tinha.' : 'Um clique para a Resenha pesar o mínimo possível no computador. Ideal para jogar com o app aberto.')),
         toggle(on, (v) => { setLite(v, ctx?.voice); draw(); })),
       section('O que o modo leve faz'),
-      h('div.card2', ITEMS.map(it => row((on ? (it.key && !(it.key in applied) ? '• ' : '✓ ') : '• ') + it.title, it.desc + (on && it.key && !(it.key in applied) ? ' (já estava assim)' : ''), null))),
+      h('div.card2', ITEMS.map(it => row(h('span.litet', icon(on && !(it.key && !(it.key in applied)) ? 'check' : 'dot', 16), it.title), it.desc + (on && it.key && !(it.key in applied) ? ' (já estava assim)' : ''), null))),
       section('O que já vem leve na Resenha'),
       h('div.card2',
         row('Sem sobreposição dentro do jogo', 'A Resenha não injeta nada no jogo, então não há overlay para desligar.', null),

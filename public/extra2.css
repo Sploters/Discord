@@ -320,3 +320,26 @@ html:not(.anim) .clipflash .cf-badge { animation: cfFade 2.4s step-end forwards;
 }
 #active-now .an-top .an-dm { margin-left: auto; flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--bg-tert); }
 #active-now .an-top .an-dm:hover { color: var(--interactive-hover); }
+
+/* ---------- ícones SVG no lugar de emojis (alinhamento e cores) ---------- */
+.msg.system .arrow { display: inline-flex; align-items: center; } .msg.system .arrow .icon { fill: var(--green, #23a55a); }
+.msg.system .wave { display: inline-flex; align-items: center; gap: 6px; } .msg.system .wave .icon { fill: currentColor; }
+#chprev .pmsg.sys .arrow { display: inline-flex; vertical-align: -2px; margin-right: 4px; } #chprev .pmsg.sys .arrow .icon { fill: var(--green, #23a55a); }
+#chprev .preply .icon { fill: currentColor; vertical-align: -2px; }
+.empty .empty-ic { display: flex; justify-content: center; margin-bottom: 4px; } .empty .empty-ic .icon { fill: var(--text-muted); opacity: .7; }
+.invcard .ivicon .icon { fill: currentColor; }
+.hl-tag { display: inline-flex; align-items: center; gap: 4px; } .hl-tag .icon { fill: currentColor; }
+.muhead b { display: inline-flex; align-items: center; gap: 6px; } .muhead b .icon, .muthumb .icon, .mubtn .icon, .muvol .icon, .mux .icon { fill: currentColor; }
+.muthumb { color: var(--text-muted); }
+.mubtn { display: inline-flex; align-items: center; gap: 6px; }
+.muvol > span { display: inline-flex; align-items: center; gap: 6px; }
+.mux { display: inline-flex; align-items: center; justify-content: center; }
+.pollcard .pwin { display: inline-flex; vertical-align: -3px; } .pollcard .pwin .icon { fill: #f0b232; }
+.lfgok { display: inline-flex; align-items: center; gap: 4px; } .lfgok .icon, .btn .icon { fill: currentColor; }
+.litet { display: inline-flex; align-items: center; gap: 6px; } .litet .icon { fill: var(--green, #23a55a); flex: none; }
+.hintline .icon { fill: currentColor; vertical-align: -3px; } .hintline .hint-ic .icon { fill: var(--yellow, #f0b232); margin-right: 4px; }
+.newsitem .newse { display: flex; align-items: flex-start; justify-content: center; padding-top: 2px; } .newsitem .newse .icon { fill: var(--brand, #5865f2); }
+.pcrow b .icon { fill: var(--green, #23a55a); vertical-align: -2px; margin-left: 4px; }
+.role-row { display: flex; align-items: center; gap: 8px; } .role-row > .icon { fill: var(--text-muted); flex: none; }
+#auth p.sub.invited { display: flex; align-items: center; justify-content: center; gap: 8px; } #auth p.sub.invited .icon { fill: currentColor; }
+.sbflash .e .icon, .srow2 .e .icon, .sbitem .e .icon, .sbtile .e .icon { fill: currentColor; }

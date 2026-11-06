@@ -78,9 +78,9 @@ function card(p) {
   const btns = [];
   if (!me && !p.closed) {
     if (!myReq) btns.push(h('button.btn.green', { onclick: () => tryApi('POST', `/lfg/posts/${p.id}/request`, {}).then(r => r && (upsert(r), toast(`Pedido enviado para ${p.author.display_name}`))) }, 'Quero entrar'));
-    else if (myReq.state === 'pending') btns.push(h('button.btn.grey', { title: 'Cancelar o pedido', onclick: () => tryApi('POST', `/lfg/posts/${p.id}/request`, { cancel: true }).then(r => r && upsert(r)) }, 'Pedido enviado ✓'));
+    else if (myReq.state === 'pending') btns.push(h('button.btn.grey', { title: 'Cancelar o pedido', onclick: () => tryApi('POST', `/lfg/posts/${p.id}/request`, { cancel: true }).then(r => r && upsert(r)) }, 'Pedido enviado', icon('check', 14)));
   }
-  if (myReq?.state === 'accepted') btns.push(h('span.lfgok', '✓ Você está no grupo'));
+  if (myReq?.state === 'accepted') btns.push(h('span.lfgok', icon('check', 14), 'Você está no grupo'));
   if (myReq?.state === 'declined') btns.push(h('span.lfgno', 'Pedido recusado'));
   btns.push(h('button.btn.grey', { title: 'Copia o anúncio em texto para colar em grupos de LFG', onclick: () => { navigator.clipboard?.writeText(adText(p)); toast('Anúncio copiado'); } }, icon('copy', 16), 'Copiar anúncio'));
   if (me && !p.closed) btns.push(h('button.btn.link', { onclick: () => tryApi('POST', `/lfg/posts/${p.id}/close`).then(r => r && upsert(r)) }, 'Encerrar'));

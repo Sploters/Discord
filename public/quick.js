@@ -170,7 +170,7 @@ export function openStatusPanel(anchor, { openSettings, openFullProfile, logout 
         h('div.meun', me.username),
         h('div.megroup',
           item(icon('edit', 16), 'Editar perfil', () => { closeFloating(); openSettings?.('profile'); }),
-          item(h('i.sdot.' + cur[2]), h('span', 'Status: ' + cur[1], me.status === 'invisible' && h('span', { title: 'Seu status e sua atividade ficam ocultos quando você está invisível', style: { marginLeft: '6px' } }, '⚠')), () => openFly(body.querySelector('.meitem:nth-child(2)')), h('span.mearrow', '›'), true),
+          item(h('i.sdot.' + cur[2]), h('span', 'Status: ' + cur[1], me.status === 'invisible' && h('span', { title: 'Seu status e sua atividade ficam ocultos quando você está invisível', style: { marginLeft: '6px', display: 'inline-flex', color: 'var(--yellow, #f0b232)' } }, icon('warn', 14))), () => openFly(body.querySelector('.meitem:nth-child(2)')), h('span.mearrow', '›'), true),
           item(icon('sparkle', 16), 'Novidades', () => { closeFloating(); openNews(); }),
         ),
         S.prefs.lightMode && h('div.megroup',

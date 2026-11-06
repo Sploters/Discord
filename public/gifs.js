@@ -80,7 +80,7 @@ export async function gifPicker(anchor, onPick) {
       }
       if (my !== seq) return;
       items.push(...list); add(list);
-      if (!items.length) empty(q ? 'Nada encontrado' : tab === 'favs' ? 'Nenhum favorito ainda. Clique na ⭐ de um GIF para guardar aqui.' : tab === 'group' ? 'Ninguém mandou GIF por aqui ainda.' : 'Nada por aqui');
+      if (!items.length) empty(q ? 'Nada encontrado' : tab === 'favs' ? h('span', 'Nenhum favorito ainda. Clique na ', icon('star', 14), ' de um GIF para guardar aqui.') : tab === 'group' ? 'Ninguém mandou GIF por aqui ainda.' : 'Nada por aqui');
     } catch (e) { if (my === seq) empty(e.message); }
     finally { if (my === seq) busy = false; }
   }

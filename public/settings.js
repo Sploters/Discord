@@ -1,4 +1,4 @@
-import { h, icon, avatar, framePos, parsePos, whenGone } from './util.js';
+import { h, icon, avatar, framePos, parsePos, whenGone, soundEmoji } from './util.js';
 import { S, api, tryApi, savePrefs, user, guild, can, PERM, PERM_LABELS, toast, confirmBox, promptBox, modal, menu, nameOf, desktop, applyTheme, emojiPicker, channelById } from './state.js';
 import { createMic, newAudioContext, NOISE_MODES, VOICE_BITRATES } from './voice.js';
 import { profileCard } from './card.js';
@@ -169,7 +169,7 @@ function profilePage({ full } = {}) {
     d.banner && { label: 'Ajustar banner', fn: () => positionEditor('banner', d.banner, d.banner_pos, (v) => { d.banner_pos = v; touch(); }) },
     d.banner && { label: 'Remover banner', danger: true, fn: () => { d.banner = null; touch(); } }]);
   const bind = (key, input) => { input.value = d[key]; input.oninput = () => { d[key] = input.value; touch(); }; return input; };
-  const emojiBtn = h('button.btn.grey', { style: { minWidth: '44px' }, title: 'Escolher emoji', onclick: (e) => emojiPicker(e.currentTarget, (em) => { d.status_emoji = em.startsWith('<:') ? '' : em; emojiBtn.textContent = d.status_emoji || '😀'; touch(); }, { noCustom: true }) }, d.status_emoji || '😀');
+  const emojiBtn = h('button.btn.grey', { style: { minWidth: '44px' }, title: 'Escolher emoji', onclick: (e) => emojiPicker(e.currentTarget, (em) => { d.status_emoji = em.startsWith('<:') ? '' : em; emojiBtn.replaceChildren(d.status_emoji || icon('smile', 20)); touch(); }, { noCustom: true }) }, d.status_emoji || icon('smile', 20));
   const left = h('div.col',
     card(h('label.f', 'Nome de exibição', bind('display_name', h('input', { maxLength: 32 }))),
       h('label.f', 'Cor do avatar'), swatches(d.color, (c) => { d.color = c; touch(); }), h('label.f', { style: { marginTop: '16px' } }, 'Cor do banner / destaque'), swatches(d.banner_color, (c) => { d.banner_color = c; touch(); }), hint('Com tema do perfil ativo, o banner sem imagem usa a cor principal do tema.')),
@@ -434,7 +434,7 @@ function voicePage(ctx, reg) {
     section('Câmera'), card(sel('videoinput', 'videoId', 'Câmera'), h('label.f', 'Resolução', seg({ 360: '360p', 720: '720p', 1080: '1080p' }, S.prefs.camRes, v => { S.prefs.camRes = v; save(); })), h('label.f', 'Quadros por segundo', seg({ 15: '15', 30: '30', 60: '60' }, S.prefs.camFps, v => { S.prefs.camFps = v; save(); })), camBtn, camPrev),
     section('Diagnóstico'), card(h('button.btn.grey', { onclick: async () => { const st = voice.active ? await voice.stats() : []; modal('Diagnóstico de voz', voice.active ? 'Conexões com os outros participantes' : 'Você não está em uma sala de voz', h('div', ...st.map(s => row(user(s.uid).display_name, `estado: ${s.state}`, h('b', s.rtt != null ? s.rtt + ' ms' : '—'))), !st.length && hint('Entre em uma sala de voz para ver os dados.')), [{ label: 'Fechar' }]); } }, 'Ver conexões agora'),
       h('button.btn.grey', { style: { marginLeft: '8px' }, onclick: () => { voice.active ? voice.rebuildMic().then(() => toast('Áudio reiniciado')) : toast('Entre em uma sala primeiro', true); } }, 'Reiniciar áudio')),
-    !window.isSecureContext && card(hint('⚠️ Conexão não segura (HTTP): navegadores só liberam microfone/câmera/tela em HTTPS. Use https://…:3443 ou o aplicativo desktop.')));
+    !window.isSecureContext && card(hint([h('span.hint-ic', icon('warn', 16)), 'Conexão não segura (HTTP): navegadores só liberam microfone/câmera/tela em HTTPS. Use https://…:3443 ou o aplicativo desktop.'])));
 }
 
 // ============================ Transmissão ============================
@@ -457,12 +457,12 @@ function soundsPage() {
     return h('div.srow', h('div.sl1', toggle(cfg.on, v => { cfg.on = v; save(); }), h('div', h('div.rt', label), status)),
       h('div.sl2', slider(0, 100, cfg.vol, 5, v => { cfg.vol = v; save(); }, v => v + '%'),
         h('button.btn.grey', { title: 'Testar', onclick: () => playSound(name, { force: true }) }, '▶'),
-        h('button.btn.grey', { title: 'Usar seu próprio áudio (até 1 MB, 5 s)', onclick: async () => { const u = await uploadFile('audio/*', 1); if (u) { cfg.url = u.url; save(); status.textContent = 'Som personalizado'; } } }, '♪'),
-        h('button.btn.link', { title: 'Voltar ao som padrão', onclick: () => { cfg.url = null; save(); status.textContent = 'Som padrão'; } }, '↺')));
+        h('button.btn.grey', { title: 'Usar seu próprio áudio (até 1 MB, 5 s)', onclick: async () => { const u = await uploadFile('audio/*', 1); if (u) { cfg.url = u.url; save(); status.textContent = 'Som personalizado'; } } }, icon('music', 16)),
+        h('button.btn.link', { title: 'Voltar ao som padrão', onclick: () => { cfg.url = null; save(); status.textContent = 'Som padrão'; } }, icon('refresh', 16))));
   };
   return h('div', h('h2', 'Sons'), card(row('Silenciar todos os sons do app', null, toggle(!!S.prefs.soundsMuted, v => { S.prefs.soundsMuted = v; save(); })), h('label.f', { style: { marginTop: '12px' } }, 'Volume geral dos sons', slider(0, 100, S.prefs.soundVolume, 5, v => { S.prefs.soundVolume = v; save(); }, v => v + '%'))),
     ...Object.entries(groups).flatMap(([g, title]) => [section(title), card(...Object.keys(SOUND_DEFS).filter(n => SOUND_DEFS[n][1] === g).map(rowFor))]),
-    hint('♪ troca o som pelo seu próprio arquivo de áudio; ↺ volta ao padrão. As configurações acompanham sua conta.'));
+    hint([icon('music', 14), ' troca o som pelo seu próprio arquivo de áudio; ', icon('refresh', 14), ' volta ao padrão. As configurações acompanham sua conta.']));
 }
 
 // ============================ Soundboard (gerenciar) ============================
@@ -472,7 +472,7 @@ function soundboardPage() {
     box.replaceChildren(...soundSources().map(src => card(
       h('div.sbtitle', h('b', src.title), src.own ? h('button.btn', { onclick: () => addSound(null) }, '+ Novo som') : [h('small.mut', `${src.sounds.length} som(ns)`), h('span', { style: { flex: 1 } }),
         h('label.sbmute', 'Usar neste servidor', toggle(!src.off, v => { (S.prefs.sbOffGuilds ||= {})[src.key] = !v; save(); }))]),
-      ...(src.sounds.length ? src.sounds.map(s => h('div.srow2', h('span.e', s.emoji || '🔊'), h('span.n', s.name), h('small.mut', soundVol(s) + '%'),
+      ...(src.sounds.length ? src.sounds.map(s => h('div.srow2', h('span.e', soundEmoji(s.emoji)), h('span.n', s.name), h('small.mut', soundVol(s) + '%'),
         h('button.btn.grey', { onclick: () => playLocal(s.url, soundVol(s)) }, '▶'),
         (src.own || (src.guild && can(src.guild.id, PERM.MANAGE_GUILD))) && h('button.btn.grey', { onclick: () => editSound(src, s) }, 'Editar'))) : [h('div.mut', 'Nenhum som ainda.')]))));
   };
@@ -480,7 +480,7 @@ function soundboardPage() {
   document.addEventListener('sb-changed', onChange); draw(); queueMicrotask(() => whenGone(box, () => document.removeEventListener('sb-changed', onChange)));
   return h('div', h('h2', 'Soundboard'), card(row('Silenciar sons do soundboard', 'Você deixa de ouvir os sons que os outros tocam.', toggle(!!S.prefs.sbMuted, v => { S.prefs.sbMuted = v; save(); })),
     h('label.f', { style: { marginTop: '12px' } }, 'Volume dos sons que você ouve', slider(0, 100, S.prefs.sbVolume ?? 70, 5, v => { S.prefs.sbVolume = v; save(); }, v => v + '%'))),
-    hint('Abra o soundboard rapidamente pelo botão ♫ da barra do usuário ou da chamada. Clique direito num som: favoritar, atalho, prévia.'), box);
+    hint(['Abra o soundboard rapidamente pelo botão ', icon('soundboard', 14), ' da barra do usuário ou da chamada. Clique direito num som: favoritar, atalho, prévia.']), box);
 }
 
 // ============================ Notificações ============================
@@ -609,7 +609,7 @@ function serverSoundsPage(gid) {
   const g = guild(gid), canEdit = can(gid, PERM.MANAGE_GUILD), box = h('div');
   const draw = () => {
     const src = { key: gid, title: g.name, guild: g, sounds: g.sounds || [] };
-    box.replaceChildren(...(src.sounds.length ? src.sounds.map(s => h('div.srow2', h('span.e', s.emoji || '🔊'), h('span.n', s.name), h('small.mut', soundVol(s) + '%'), h('button.btn.grey', { onclick: () => playLocal(s.url, soundVol(s)) }, '▶'), canEdit && h('button.btn.grey', { onclick: () => editSound(src, s) }, 'Editar'))) : [hint('Nenhum som neste servidor ainda.')]));
+    box.replaceChildren(...(src.sounds.length ? src.sounds.map(s => h('div.srow2', h('span.e', soundEmoji(s.emoji)), h('span.n', s.name), h('small.mut', soundVol(s) + '%'), h('button.btn.grey', { onclick: () => playLocal(s.url, soundVol(s)) }, '▶'), canEdit && h('button.btn.grey', { onclick: () => editSound(src, s) }, 'Editar'))) : [hint('Nenhum som neste servidor ainda.')]));
   };
   const onChange = () => draw(); document.addEventListener('sb-changed', onChange); draw(); queueMicrotask(() => whenGone(box, () => document.removeEventListener('sb-changed', onChange)));
   return h('div', h('h2', 'Soundboard do servidor'), canEdit && card(hint('Sons curtos (até 15 s, 2 MB) que qualquer membro pode tocar na sala de voz, até 48 por servidor.'), h('button.btn', { onclick: () => addSound(gid) }, '+ Adicionar som')), card(box));

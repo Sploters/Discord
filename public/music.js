@@ -1,5 +1,5 @@
 // Bot de música: painel com fila, controles e volume do bot (o áudio chega como um participante da sala).
-import { h } from './util.js';
+import { h, icon } from './util.js';
 import { S, toast, popout } from './state.js';
 import { slider } from './ui.js';
 
@@ -58,26 +58,26 @@ export function openMusic(anchor, voice) {
   const ctl = (label, title, fn, cls = '') => h('button.mubtn' + cls, { title, onclick: fn }, label);
   const draw = () => {
     const inRoom = voice?.active && state?.channel_id === voice.channelId;
-    const kids = [h('div.muhead', h('b', '🎵 Música'), state?.active && h('small', 'sai sozinho após alguns minutos parado')), h('div.muadd', input, addBtn)];
+    const kids = [h('div.muhead', h('b', icon('music', 18), 'Música'), state?.active && h('small', 'sai sozinho após alguns minutos parado')), h('div.muadd', input, addBtn)];
     if (!state?.active) kids.push(h('div.muempty', 'O bot ainda não está na sala. Cole um link ou digite o nome de uma música e ele entra para tocar.'));
     else {
       const c = state.current;
       kids.push(c ? h('div.munow',
-        c.thumb ? h('img', { src: c.thumb, alt: '' }) : h('div.muthumb', '🎵'),
+        c.thumb ? h('img', { src: c.thumb, alt: '' }) : h('div.muthumb', icon('music', 28)),
         h('div.mumeta', h('b', { title: c.title }, c.title), h('small', [c.artist, `pedido por ${who(c.by)}`].filter(Boolean).join(' • ')), h('div.mubar', bar), time))
         : h('div.muempty', 'Nada tocando. Adicione uma música acima.'));
       kids.push(h('div.mubtns',
-        c && ctl(state.paused ? '▶' : '⏸', state.paused ? 'Continuar' : 'Pausar', () => act(state.paused ? 'resume' : 'pause')),
-        c && ctl('⏭', 'Pular', () => act('skip')),
-        c && ctl('⏹', 'Parar e limpar a fila', () => act('stop')),
-        state.queue.length > 1 && ctl('🔀', 'Embaralhar a fila', () => act('shuffle')),
+        c && ctl(icon(state.paused ? 'play' : 'pause', 18), state.paused ? 'Continuar' : 'Pausar', () => act(state.paused ? 'resume' : 'pause')),
+        c && ctl(icon('skip', 18), 'Pular', () => act('skip')),
+        c && ctl(icon('stop', 18), 'Parar e limpar a fila', () => act('stop')),
+        state.queue.length > 1 && ctl(icon('shuffle', 18), 'Embaralhar a fila', () => act('shuffle')),
         h('span', { style: { flex: 1 } }),
-        ctl('⏏ Tirar da chamada', 'Remover o bot da chamada', () => act('disconnect'), '.red')));
-      if (inRoom) kids.push(h('div.muvol', h('span', '🔊 Volume do bot (só para você)'), slider(0, 200, voice.volumes[state.bot_id] ?? 100, 5, v => voice.setVolume(state.bot_id, v), v => v + '%')));
+        ctl([icon('eject', 16), 'Tirar da chamada'], 'Remover o bot da chamada', () => act('disconnect'), '.red')));
+      if (inRoom) kids.push(h('div.muvol', h('span', icon('vol', 16), 'Volume do bot (só para você)'), slider(0, 200, voice.volumes[state.bot_id] ?? 100, 5, v => voice.setVolume(state.bot_id, v), v => v + '%')));
       kids.push(h('div.muqh', `Fila (${state.queue.length})`, state.queue.length > 0 && h('button.btn.link', { onclick: () => act('clear') }, 'Limpar')));
       kids.push(h('div.muq', ...(state.queue.length ? state.queue.map((t, i) => h('div.muitem',
         h('span.muidx', String(i + 1)), h('div.mumeta', h('b', { title: t.title }, t.title), h('small', [t.artist, t.duration ? fmt(t.duration) : '', who(t.by)].filter(Boolean).join(' • '))),
-        h('button.mux', { title: 'Remover da fila', onclick: () => act('remove', { id: t.id }) }, '✕'))) : [h('div.muempty', 'Fila vazia.')])));
+        h('button.mux', { title: 'Remover da fila', onclick: () => act('remove', { id: t.id }) }, icon('x', 16)))) : [h('div.muempty', 'Fila vazia.')])));
     }
     body.replaceChildren(...kids.filter(Boolean));
     tick();

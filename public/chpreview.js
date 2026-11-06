@@ -41,7 +41,7 @@ function hide() {
 
 const ctxFor = (gid) => ({ userName: (id) => (S.users.has(id) ? nameOf(id, gid) : null), emojiUrl });
 function msgRow(m, prev, gid) {
-  if (m.type === 1) return h('div.pmsg.sys', h('span.arrow', '→'), h('b', nameOf(m.author_id, gid)), ' ' + m.content);
+  if (m.type === 1) return h('div.pmsg.sys', h('span.arrow', icon('arrowr', 14)), h('b', nameOf(m.author_id, gid)), ' ' + m.content);
   const grouped = prev && prev.type !== 1 && prev.author_id === m.author_id && m.created_at - prev.created_at < 420000 && !m.reply;
   const body = h('div.pbody');
   if (m.content) body.innerHTML = md(inviteText(themeText(m.content)), ctxFor(gid));
@@ -53,7 +53,7 @@ function msgRow(m, prev, gid) {
     grouped ? h('i.pav') : h('div.pav', avatar(user(m.author_id), 28, { status: false })),
     h('div.pm',
       !grouped && h('div.phead', styleName(h('b', { style: col ? { color: col } : null }, nameOf(m.author_id, gid)), user(m.author_id).name_style), h('span.ts', stamp(m.created_at))),
-      m.reply && h('div.preply', '↪ ', h('b', '@' + nameOf(m.reply.author?.id, gid)), ' ', themeText(m.reply.content) || 'anexo'),
+      m.reply && h('div.preply', icon('reply', 14), ' ', h('b', '@' + nameOf(m.reply.author?.id, gid)), ' ', themeText(m.reply.content) || 'anexo'),
       (m.content || !files.length) && body, thumbs.length > 0 && h('div.pthumbs', thumbs), others));
 }
 

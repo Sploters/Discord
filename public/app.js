@@ -63,7 +63,7 @@ function showAuth(mode = 'login') {
   a.append(h('div.card', { onkeydown: (e) => e.key === 'Enter' && submit() },
     h('h1', mode === 'login' ? 'Boas-vindas de volta!' : 'Criar uma conta'),
     h('p.sub', mode === 'login' ? 'Estamos muito animados em te ver novamente!' : 'Junte-se ao servidor dos seus amigos.'),
-    pendingInvite && h('p.sub', { style: { color: '#fff' } }, '🎟️ Você foi convidado! Entre para aceitar o convite.'),
+    pendingInvite && h('p.sub.invited', { style: { color: '#fff' } }, icon('invite', 18), 'Você foi convidado! Entre para aceitar o convite.'),
     h('label.f', 'Nome de usuário', u),
     mode === 'register' && h('label.f', 'Nome de exibição (opcional)', dn),
     h('label.f', 'Senha', p), mode === 'register' && h('label.f', 'Confirmar senha', p2), err,
@@ -639,10 +639,10 @@ function statusMenu(e) {
 function quickSwitch() {
   const inp = h('input', { placeholder: 'Para onde você quer ir?', style: { width: '100%' } }), res = h('div');
   const items = [...[...S.dms.values()].map(d => ({ label: '@' + user(dmPeer(d).id).display_name, fn: () => go('@me', d.id) })),
-    ...[...S.guilds.values()].flatMap(g => g.channels.filter(c => c.type !== 4).map(c => ({ label: `${c.type === 2 ? '🔊' : '#'} ${chName(c)}`, alt: c.name, hint: g.name, fn: () => go(g.id, c.id) }))),
+    ...[...S.guilds.values()].flatMap(g => g.channels.filter(c => c.type !== 4).map(c => ({ label: chName(c), ic: c.type === 2 ? 'voice' : 'hash', alt: c.name, hint: g.name, fn: () => go(g.id, c.id) }))),
     ...[...S.guilds.values()].map(g => ({ label: g.name, hint: 'servidor', fn: () => go(g.id) }))];
   const m = modal('Busca rápida', '', h('div', h('label.f', inp), res), [], {});
-  const draw = () => { res.replaceChildren(...items.filter(i => (i.label + ' ' + (i.alt || '')).toLowerCase().includes(inp.value.toLowerCase())).slice(0, 10).map(i => h('div.role-row', { onclick: () => { m.close(); i.fn(); } }, i.label, h('small', { style: { marginLeft: 'auto', color: 'var(--text-muted)' } }, i.hint || '')))); };
+  const draw = () => { res.replaceChildren(...items.filter(i => (i.label + ' ' + (i.alt || '')).toLowerCase().includes(inp.value.toLowerCase())).slice(0, 10).map(i => h('div.role-row', { onclick: () => { m.close(); i.fn(); } }, i.ic && icon(i.ic, 18), i.label, h('small', { style: { marginLeft: 'auto', color: 'var(--text-muted)' } }, i.hint || '')))); };
   inp.oninput = draw; draw();
   inp.onkeydown = (e) => { if (e.key === 'Enter') res.firstChild?.click(); };
 }
@@ -979,8 +979,8 @@ function msgEl(m, prev) {
   const grouped = prev && prev.author_id === m.author_id && m.created_at - prev.created_at < 600000 && !m.reply && !S.prefs.compact && prev.type !== 1;
   const a = user(m.author_id), col = roleColor(gid, m.author_id);
   const mentioned = m.mentions?.includes(S.me.id) || (m.content || '').includes(`<@${S.me.id}>`);
-  if (m.type === 1) return h('div.msg.system', { 'data-mid': m.id }, h('span.arrow', '→'), h('span', h('b', { style: { color: col || 'var(--header)' } }, nameOf(m.author_id, gid)), ' ' + m.content), h('span.ts', stamp(m.created_at)),
-    h('button.btn.grey.wave', { onclick: () => tryApi('POST', `/channels/${m.channel_id}/messages`, { content: `👋 Bem-vindo(a), <@${m.author_id}>!` }) }, '👋 Dar boas-vindas'));
+  if (m.type === 1) return h('div.msg.system', { 'data-mid': m.id }, h('span.arrow', icon('arrowr', 18)), h('span', h('b', { style: { color: col || 'var(--header)' } }, nameOf(m.author_id, gid)), ' ' + m.content), h('span.ts', stamp(m.created_at)),
+    h('button.btn.grey.wave', { onclick: () => tryApi('POST', `/channels/${m.channel_id}/messages`, { content: `👋 Bem-vindo(a), <@${m.author_id}>!` }) }, icon('smile', 18), 'Dar boas-vindas'));
   const el = h('div.msg' + (grouped ? '.cont' : '.first') + (mentioned ? '.mentioned' : '') + (S.editing === m.id ? '.editing' : ''), { 'data-mid': m.id, oncontextmenu: (e) => msgMenu(e, m) });
   if (!grouped) el.append(h('div.av', { onclick: (e) => profile(e.currentTarget, m.author_id, gid) }, avatar(a, 40, { status: false })));
   else el.append(h('div.time-s', clock(m.created_at)));
@@ -1045,7 +1045,7 @@ function inviteCard(code) {
   fetchInvite(code).then(info => {
     if (!info) {
       card.className = 'invcard bad';
-      return card.replaceChildren(h('div.ivh', 'Convite para um servidor'), h('div.ivbody', h('div.ivicon', '✕'), h('div.ivinfo', h('b', 'Convite inválido'), h('small', 'Pode ter expirado ou sido apagado.'))));
+      return card.replaceChildren(h('div.ivh', 'Convite para um servidor'), h('div.ivbody', h('div.ivicon', icon('x', 28)), h('div.ivinfo', h('b', 'Convite inválido'), h('small', 'Pode ter expirado ou sido apagado.'))));
     }
     const g = info.guild, inside = () => S.guilds.has(g.id);
     const btn = h('button.btn');
@@ -1458,7 +1458,7 @@ function renderHome(main) {
     const PEND = (r) => r.type === 3 ? 0 : r.type === 4 ? 1 : 2; // pedidos recebidos/enviados no topo de "Todos"
     list.sort((a, b) => (PEND(a) - PEND(b)) || (ORD[S.users.get(a.user.id)?.status || 'offline'] - ORD[S.users.get(b.user.id)?.status || 'offline']) || nm(a).localeCompare(nm(b)));
     pane.append(h('div.fctl', q), h('div.fh', `${{ online: 'Online', all: 'Todos os amigos', pending: 'Pendentes', blocked: 'Bloqueados' }[tab]} — ${list.length}`));
-    if (!list.length) return pane.append(h('div.empty', { style: { marginTop: '60px' } }, h('div', { style: { fontSize: '48px' } }, '🌙'), h('p', tab === 'pending' ? 'Nenhum pedido pendente.' : tab === 'blocked' ? 'Você não bloqueou ninguém.' : 'Ninguém por aqui ainda. Que tal adicionar um amigo?')));
+    if (!list.length) return pane.append(h('div.empty', { style: { marginTop: '60px' } }, h('div.empty-ic', icon('moon', 48)), h('p', tab === 'pending' ? 'Nenhum pedido pendente.' : tab === 'blocked' ? 'Você não bloqueou ninguém.' : 'Ninguém por aqui ainda. Que tal adicionar um amigo?')));
     for (const r of list) {
       const u = S.users.get(r.user.id) || r.user;
       const btn = (ic, title, fn, cls = '') => h('button.circle' + cls, { title, onclick: (e) => { e.stopPropagation(); fn(); } }, icon(ic, 20));
@@ -1784,7 +1784,7 @@ function clipMenu(e, key, who) {
 const ctxSettings = () => ({ voice, logout, go });
 function noiseMenu(e) {
   const cur = S.prefs.noiseMode;
-  menu(e, [['off', 'Nenhuma'], ['standard', 'Padrão (navegador)'], ['rnnoise', 'Alta — RNNoise (IA)'], ['gtcrn', 'Máxima — GTCRN (IA)']].map(([k, l]) => ({ label: (cur === k ? '✓ ' : '   ') + 'Ruído: ' + l, fn: async () => { if ((cur || 'standard') === k) return; S.prefs.noiseMode = k; savePrefs(); await voice.rebuildMic(); toast('Redução de ruído: ' + l); } })));
+  menu(e, [['off', 'Nenhuma'], ['standard', 'Padrão (navegador)'], ['rnnoise', 'Alta — RNNoise (IA)'], ['gtcrn', 'Máxima — GTCRN (IA)']].map(([k, l]) => ({ label: 'Ruído: ' + l, radio: cur === k, fn: async () => { if ((cur || 'standard') === k) return; S.prefs.noiseMode = k; savePrefs(); await voice.rebuildMic(); toast('Redução de ruído: ' + l); } })));
 }
 async function startShare() {
   if (voice.screen) return liveShareModal();
@@ -1974,7 +1974,7 @@ function openPingChart(anchor) {
     if (spread > 80 || (ci.jitterMs ?? 0) > 30) tips.push(['mid', 'Ping instável (variando muito): costuma ser Wi-Fi, download pesado na mesma rede ou a VPN passando por um relay em vez de ligar direto.']);
     if (avg > 120) tips.push(['mid', `Ping alto (${Math.round(avg)} ms). Se a VPN (Tailscale) estiver usando um relay, uma conexão direta reduz bastante: no seu computador, rode tailscale ping ${location.hostname} — se aparecer "via DERP", a ligação não está direta.`]);
     connBox.replaceChildren(
-      h('div.pcrow', h('span', 'Conexão'), h('b', ci.proto ? ci.proto.toUpperCase() + (ci.proto === 'udp' ? ' ✓' : '') : '—'), h('span', 'Perda'), h('b', `${(loss * 100).toFixed(1)}%`), h('span', 'Oscilação'), h('b', ci.jitterMs != null ? `${ci.jitterMs} ms` : '—')),
+      h('div.pcrow', h('span', 'Conexão'), h('b', ci.proto ? [ci.proto.toUpperCase(), ci.proto === 'udp' && icon('check', 14)] : '—'), h('span', 'Perda'), h('b', `${(loss * 100).toFixed(1)}%`), h('span', 'Oscilação'), h('b', ci.jitterMs != null ? `${ci.jitterMs} ms` : '—')),
       ...(tips.length ? tips.map(([k, t]) => h('div.ptipline.' + k, t)) : [h('div.ptipline.good', 'Conexão boa e estável.')]));
   };
   readConn();

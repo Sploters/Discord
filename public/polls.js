@@ -55,7 +55,7 @@ export function pollCard(m) {
     return h('button.popt' + (me ? '.mine' : '') + (win ? '.win' : ''), { disabled: p.closed, title: o.voters.length ? o.voters.map(id => nameOf(id, gid) || user(id).display_name).join(', ') : 'Ninguém votou ainda', onclick: () => pick(o) },
       h('span.pfill', { style: { width: pct + '%' } }),
       h('span.pmark' + (p.multi ? '.sq' : ''), me && icon('check', 14)),
-      h('span.ptext', o.text, win && h('span.pwin', '🏆')),
+      h('span.ptext', o.text, win && h('span.pwin', { title: 'Vencedora' }, icon('trophy', 16))),
       h('span.pvoters', o.voters.slice(0, 4).map(id => avatar(user(id), 18, { status: false }))),
       h('span.pnum', `${pct}%`, h('small', ` ${n}`)));
   };
