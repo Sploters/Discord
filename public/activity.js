@@ -181,6 +181,47 @@ function hlItem(x) {
     h('div.hl-ic', avatar(u, 32, { status: false }), ic && h('span.hl-badge', ic)),
     h('div.hl-txt', tag, h('span', text.flat()), h('small', clock(x.at))));
 }
+// vários destaques iguais no mesmo dia (10 clipes da mesma pessoa, 4 partidas do mesmo jogo) viram uma linha só:
+// "João salvou 10 clipes" (abre a lista) / "João jogou CS2 por 5h 10min em 4 partidas"
+const hlKey = (x) => x.kind === 'clip' ? `clip|${x.user_id}` : `${x.kind === 'marathon' ? 'session' : x.kind}|${x.user_id}|${x.platform || ''}|${x.game?.id || ''}`;
+function groupDay(items) {
+  const out = [], by = new Map();
+  for (const x of items) { const k = hlKey(x); let g = by.get(k); if (!g) { by.set(k, g = { k, list: [] }); out.push(g); } g.list.push(x); }
+  return out;
+}
+const hlOpen = new Set(), dayOpen = new Set(); // o que a pessoa abriu continua aberto quando o painel redesenha (a cada 30 s)
+const timeRange = (list) => { const a = clock(list[list.length - 1].at), b = clock(list[0].at); return a === b ? b : `${a} – ${b}`; };
+function hlGroup(g, day, redraw) {
+  const list = g.list, x = list[0];
+  if (list.length === 1) return hlItem(x);
+  const u = uOf(x.user_id), me = x.user_id === S.me.id;
+  const who = h('b.hl-who', { title: 'Ver perfil', onclick: (e) => { e.stopPropagation(); ctx.profile(e.currentTarget, x.user_id); } }, me ? 'Você' : u.display_name);
+  const key = day + '|' + g.k;
+  if (x.kind === 'clip') {
+    const open = hlOpen.has(key);
+    const head = h('div.hl-item.hl-clip.hl-multi', { title: open ? 'Esconder os clipes' : 'Ver os clipes', 'aria-expanded': String(open), onclick: () => { open ? hlOpen.delete(key) : hlOpen.add(key); redraw(); }, oncontextmenu: (e) => ctx.userMenu(e, x.user_id) },
+      h('div.hl-ic', avatar(u, 32, { status: false }), h('span.hl-badge', h('span.gicon.hl-clipic', { style: { width: '18px', height: '18px' } }, icon('clip', 13)))),
+      h('div.hl-txt', h('span.hl-tag.clip', icon('clip', 12), 'Clipes'), h('span', who, ` salvou ${list.length} clipes`), h('small', timeRange(list))),
+      h('span.hl-chev', icon('chevdown', 16)));
+    if (!open) return head;
+    return h('div.hl-group', head, h('div.hl-sub', ...list.map(c => h('button.hl-subitem', { title: 'Assistir ao clipe', onclick: () => openClip(c.clip.id) },
+      icon('play', 12), h('span', c.clip.title || 'Clipe'), h('small', clock(c.at))))));
+  }
+  if (x.kind === 'session' || x.kind === 'marathon') {
+    const a = { platform: x.platform, game: x.game }, secs = list.reduce((t, y) => t + (y.seconds || 0), 0), long = list.some(y => y.kind === 'marathon');
+    return h('div.hl-item.hl-' + (long ? 'marathon' : 'session'), { title: `Sobre ${x.game.title}`, onclick: openGame(a), oncontextmenu: (e) => ctx.userMenu(e, x.user_id) },
+      h('div.hl-ic', avatar(u, 32, { status: false }), h('span.hl-badge', gameIcon(a, 18))),
+      h('div.hl-txt', long && h('span.hl-tag.gold', icon('trophy', 12), 'Maratona'), h('span', who, ' jogou ', h('b', x.game.title), ' por ', h('b', durShort(secs)), ` em ${list.length} partidas`), h('small', timeRange(list))));
+  }
+  return hlItem(x); // jogo novo e sequência não se repetem no mesmo dia; se vier repetido, mostra o mais recente
+}
+const DAY_MAX = 4; // linhas por dia antes do "Mostrar mais"
+function hlDay(k, items, redraw) {
+  const groups = groupDay(items), open = dayOpen.has(k), shown = open ? groups : groups.slice(0, DAY_MAX), rest = groups.length - shown.length;
+  return h('div.hl-day', h('div.hl-dayh', k), ...shown.map(g => hlGroup(g, k, redraw)),
+    rest > 0 && h('button.hl-more', { onclick: () => { dayOpen.add(k); redraw(); } }, icon('chevdown', 14), `Mostrar mais ${rest}`),
+    open && groups.length > DAY_MAX && h('button.hl-more', { onclick: () => { dayOpen.delete(k); redraw(); } }, h('span.hl-up', icon('chevdown', 14)), 'Mostrar menos'));
+}
 
 // painel inteiro. Topo, em destaque: o que os amigos estão fazendo AGORA (jogando, em chamada, online). Embaixo: os destaques.
 export function activityPanel(box) {
@@ -212,7 +253,7 @@ export function activityPanel(box) {
     const hl = feed?.highlights || [], groups = [];
     for (const x of hl) { const k = dayHead(x.at); let g = groups.find(y => y.k === k); if (!g) groups.push(g = { k, items: [] }); g.items.push(x); }
     const hist = !feed ? [h('div.an-empty.small', 'Carregando…')]
-      : hl.length ? groups.map(g => h('div.hl-day', h('div.hl-dayh', g.k), ...g.items.map(hlItem)))
+      : hl.length ? groups.map(g => hlDay(g.k, g.items, draw))
         : [h('div.an-empty.small', h('p', 'Nada marcante ainda esta semana. Partidas longas, jogos novos, sequências e clipes dos seus amigos aparecem aqui.'))];
     body.replaceChildren(h('section.an-now', ...now), h('section.an-hist', h('div.an-cap', 'Destaques da semana'), ...hist));
   };

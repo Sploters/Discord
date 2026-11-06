@@ -18,7 +18,7 @@ import { connectionsPage } from './activity.js';
 import { litePage, liteOn } from './lite.js';
 import { openNativeTest } from './nativetest.js';
 import { newsPage } from './changelog.js';
-import { checkAppUpdate, installAppUpdate, silentUpdate } from './appupdate.js';
+import { checkAppUpdate, installAppUpdate, silentUpdate, appUpdateReady } from './appupdate.js';
 import { openReport } from './diag.js';
 
 const SWATCHES = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55d', '#faa61a', '#9b59b6', '#1abc9c', '#e67e22', '#3498db', '#95a5a6', '#2c2f33', '#ffffff'];
@@ -543,7 +543,11 @@ function versionRow(version) {
     btn.className = 'btn green'; btn.textContent = `Atualizar para ${r.latest}`;
     const quiet = silentUpdate();
     if (quiet) btn.textContent = `Reiniciar e atualizar para ${r.latest}`;
-    btn.onclick = async () => { btn.disabled = true; btn.textContent = quiet ? 'Reiniciando…' : 'Baixando…'; if (!await installAppUpdate()) { btn.disabled = false; btn.textContent = quiet ? `Reiniciar e atualizar para ${r.latest}` : `Atualizar para ${r.latest}`; toast(quiet ? 'Não deu para atualizar agora. Tente de novo em instantes.' : 'Baixando o instalador: quando terminar, abra o Resenha-Setup.'); } };
+    btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = 'Baixando…';
+      // app que atualiza sozinho: espera a versão nova terminar de baixar no app (até ~3 min) e só então reinicia
+      if (quiet) { let v = null; for (let i = 0; i < 60 && !(v = await appUpdateReady()); i++) await new Promise(r => setTimeout(r, 3000)); if (v) btn.textContent = 'Reiniciando…'; }
+      if (!await installAppUpdate()) { btn.disabled = false; btn.textContent = quiet ? `Reiniciar e atualizar para ${r.latest}` : `Atualizar para ${r.latest}`; toast(quiet ? 'Não deu para atualizar agora. Tente de novo em instantes.' : 'Baixando o instalador: quando terminar, abra o Resenha-Setup.'); } };
   } }, 'Procurar atualização');
   return row('Versão', status, btn);
 }

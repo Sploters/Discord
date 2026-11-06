@@ -33,11 +33,18 @@ export async function checkAppUpdate() {
 
 // app que atualiza sozinho (sem abrir o instalador): só pede para reiniciar
 export const silentUpdate = () => !!window.lcDesktop?.silentUpdate;
-// instala: o app novo instala em silêncio e reabre; o antigo baixa e abre o instalador; se não der, baixa pelo servidor
-// (ou abre a página da release)
+// a versão nova já está baixada no app (pronta para instalar em silêncio)? Apps 1.0.28+ procuram e baixam na hora
+export async function appUpdateReady() {
+  const d = window.lcDesktop;
+  const u = await (d?.checkUpdate || d?.getUpdate)?.().catch(() => null);
+  return u?.ready ? u.version : null;
+}
+// instala: o app que atualiza sozinho instala em silêncio e reabre. Ele NUNCA cai no instalador com janelas: se não
+// deu agora, só devolve false (a página avisa para tentar de novo). App antigo (sem atualização silenciosa): baixa o
+// instalador pelo servidor (ou abre a página da release), como antes.
 export async function installAppUpdate() {
   const ok = await window.lcDesktop?.installUpdate?.().catch(() => false);
-  if (!ok) { if (dlUrl) location.assign(dlUrl); else window.open(RELEASES, '_blank'); }
+  if (!ok && !silentUpdate()) { if (dlUrl) location.assign(dlUrl); else window.open(RELEASES, '_blank'); }
   return ok;
 }
 
@@ -63,6 +70,13 @@ function showCard(version) {
 export function initAppUpdate() {
   const d = window.lcDesktop;
   if (!d?.getUpdate || !d.installUpdate) return; // navegador ou app sem a ponte
+  // no app que atualiza sozinho o aviso só aparece com a versão nova já baixada: "Reiniciar agora" instala na hora
+  if (silentUpdate()) {
+    d.onUpdate?.((u) => { if (u?.ready) showCard(u.version); });
+    const check = () => checkAppUpdate().then(async (r) => { if (!r?.available) return; const v = await appUpdateReady(); if (v) showCard(v); }).catch(() => { });
+    check(); setInterval(check, 3600e3);
+    return;
+  }
   d.onUpdate?.((u) => showCard(u?.version));
   const check = () => checkAppUpdate().then(r => { if (r?.available) showCard(r.latest); }).catch(() => { });
   check(); setInterval(check, 3600e3);

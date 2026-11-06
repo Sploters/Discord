@@ -328,7 +328,10 @@ const getJson = (url) => new Promise((resolve) => {
 const newer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
 // 1º o servidor Resenha (funciona com o repositório privado: o servidor consulta o GitHub com a chave dele);
 // se o servidor ainda não tiver a rota ou a chave, tenta o GitHub direto (repositório público)
-async function checkUpdate() {
+// uma consulta por vez: a página também pode pedir (botão "Reiniciar agora" antes da busca automática terminar)
+let checking = null;
+function checkUpdate() { return (checking ||= doCheckUpdate().finally(() => { checking = null; })); }
+async function doCheckUpdate() {
   let found = null;
   if (cfg.server) {
     const r = await getJson(new URL('/api/desktop/update', cfg.server).href);
@@ -365,7 +368,8 @@ const portable = !!process.env.PORTABLE_EXECUTABLE_DIR;
 function runInstaller(file, reopen) {
   const args = portable ? [] : ['/S', '--updated', ...(reopen ? ['--force-run'] : [])];
   log('instalando atualização', update?.version, args.join(' '));
-  require('node:child_process').spawn(file, args, { detached: true, stdio: 'ignore' }).unref();
+  const p = require('node:child_process').spawn(file, args, { detached: true, stdio: 'ignore', windowsHide: true });
+  p.on('error', (e) => log('instalador não abriu', e.message)); p.unref();
 }
 function download(url, dest, redirects = 5) {
   return new Promise((resolve, reject) => {
@@ -382,6 +386,8 @@ function download(url, dest, redirects = 5) {
   });
 }
 ipcMain.handle('get-update', () => update && { version: update.version, ready: !!update.file });
+// a página pede para procurar já (e baixar): devolve a versão nova e se ela está pronta para instalar (desde a 1.0.28)
+ipcMain.handle('check-update', async () => { await checkUpdate().catch(() => { }); if (update && !update.file) await prepareUpdate().catch(() => { }); return update && { version: update.version, ready: !!update.file }; });
 // diagnóstico para o relatório de problema: fim do main.log, placas de vídeo, aceleração e versões (sem senhas/chaves)
 ipcMain.handle('get-diagnostics', async () => {
   let logTail = ''; try { logTail = fs.readFileSync(path.join(app.getPath('userData'), 'main.log'), 'utf8').split('\n').slice(-150).join('\n'); } catch { }
@@ -396,8 +402,12 @@ ipcMain.handle('get-diagnostics', async () => {
   };
 });
 // "Reiniciar agora": instala sem janelas e o app reabre sozinho já na versão nova
+// Nunca abre o instalador com janelas: se o app ainda não achou a versão nova (a página viu primeiro), procura e baixa
+// agora; se não der, devolve false e a página só avisa para tentar de novo.
 ipcMain.handle('install-update', async () => {
-  if (!update || updating) return false;
+  if (updating) return true; // já está instalando
+  if (!update) await checkUpdate().catch(() => { });
+  if (!update || updating) return !!updating;
   updating = true;
   try {
     const file = update.file || await prepareUpdate();

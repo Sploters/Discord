@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('lcDesktop', {
   changeServer: () => ipcRenderer.invoke('change-server'),
   testServer: (input) => ipcRenderer.invoke('test-server', input),
   getUpdate: () => ipcRenderer.invoke('get-update'),
+  checkUpdate: () => ipcRenderer.invoke('check-update'), // procura e baixa já (desde a 1.0.28)
   getDiagnostics: () => ipcRenderer.invoke('get-diagnostics'), // relatório de problema (desde a 1.0.23)
   installUpdate: () => ipcRenderer.invoke('install-update'),
   silentUpdate: true, // o app atualiza sem abrir o instalador (só reinicia); a página ajusta os textos
