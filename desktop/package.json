@@ -28,7 +28,8 @@
       "build/icon.ico",
       "native.js",
       "clipflash.js",
-      "appaudio.js"
+      "appaudio.js",
+      "updsplash.js"
     ],
     "win": {
       "target": [

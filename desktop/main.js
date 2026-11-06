@@ -2,6 +2,7 @@ const remote = require('./remote');
 const native = require('./native');
 const clipFlash = require('./clipflash');
 const appAudio = require('./appaudio');
+const updSplash = require('./updsplash');
 const { app, BrowserWindow, Tray, Menu, ipcMain, desktopCapturer, session, shell, globalShortcut, nativeImage, dialog, screen } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -355,7 +356,9 @@ function prepareUpdate() {
   const u = update; if (!u) return Promise.reject(new Error('sem atualização'));
   return (u.downloading ||= (async () => {
     const file = path.join(app.getPath('temp'), u.name), part = file + '.part';
-    await download(u.url, part);
+    // progresso para a tela "Atualizando" da página (desde a 1.0.29)
+    let last = -1;
+    await download(u.url, part, 5, (got, size) => { const pct = size ? Math.floor(got * 100 / size) : -1; if (pct !== last) { last = pct; win?.webContents.send('update-progress', { version: u.version, pct, got, size }); } });
     fs.renameSync(part, file); u.file = file; log('atualização baixada', u.version, file);
     return file;
   })().catch((e) => { u.downloading = null; throw e; }));
@@ -365,20 +368,28 @@ function prepareUpdate() {
 const portable = !!process.env.PORTABLE_EXECUTABLE_DIR;
 // instalação silenciosa (sem janelas): /S = silencioso, --updated = atualização da instalação que já existe (mesmo
 // lugar, atalhos e dados), --force-run = abre o app de novo quando termina
+// reopen (o usuário pediu para atualizar agora): mostra a janelinha "Atualizando…" enquanto instala; fechando o app com a
+// atualização baixada (sem reopen) instala quieto, sem janela
 function runInstaller(file, reopen) {
   const args = portable ? [] : ['/S', '--updated', ...(reopen ? ['--force-run'] : [])];
   log('instalando atualização', update?.version, args.join(' '));
+  if (reopen && !portable) {
+    // o ícone está dentro do app.asar (o PowerShell não lê): copia para a pasta temporária
+    let icon = ''; try { icon = path.join(app.getPath('temp'), 'resenha-update.ico'); fs.writeFileSync(icon, fs.readFileSync(path.join(__dirname, 'build', 'icon.ico'))); } catch { icon = ''; }
+    return updSplash.installWithSplash(file, args, { version: update?.version, icon }, log);
+  }
   const p = require('node:child_process').spawn(file, args, { detached: true, stdio: 'ignore', windowsHide: true });
   p.on('error', (e) => log('instalador não abriu', e.message)); p.unref();
 }
-function download(url, dest, redirects = 5) {
+function download(url, dest, redirects = 5, onProgress) {
   return new Promise((resolve, reject) => {
     libOf(url).get(url, { ...reqOpts(url, 'application/octet-stream'), timeout: 60000 }, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) { res.resume(); return resolve(download(new URL(res.headers.location, url).href, dest, redirects - 1)); }
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) { res.resume(); return resolve(download(new URL(res.headers.location, url).href, dest, redirects - 1, onProgress)); }
       if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
       // download interrompido não pode virar "instalador pronto": confere o tamanho anunciado
       const size = +res.headers['content-length'] || 0;
       const f = fs.createWriteStream(dest); res.pipe(f); f.on('error', reject);
+      if (onProgress) { let got = 0; res.on('data', (c) => { got += c.length; onProgress(got, size); }); }
       // conexão caiu no meio: sem isso o download nunca terminava nem falhava
       res.on('aborted', () => reject(new Error('download interrompido'))); res.on('error', reject);
       f.on('finish', () => f.close(() => { const got = fs.statSync(dest).size; if (size && got !== size) reject(new Error(`download incompleto (${got} de ${size} bytes)`)); else resolve(); }));
@@ -412,7 +423,8 @@ ipcMain.handle('install-update', async () => {
   try {
     const file = update.file || await prepareUpdate();
     runInstaller(file, true);
-    quitting = true; app.quit(); return true;
+    // a página mostra "Instalando…" por um instante; a janelinha do instalador aparece logo em seguida
+    quitting = true; setTimeout(() => app.quit(), 900); return true;
   } catch (e) { log('update err', e.message); updating = false; return false; }
 });
 

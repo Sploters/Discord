@@ -257,3 +257,12 @@ input[type=range] { width: 100%; accent-color: var(--brand); }
 #voice-panel .abr { flex: none; font-size: 11px; font-weight: 700; padding: 1px 5px; border-radius: 4px; color: var(--text-muted); background: var(--bg-mod-hover); font-variant-numeric: tabular-nums; white-space: nowrap; }
 #voice-panel .abr:hover { color: var(--text-strong); background: var(--bg-mod-sel); }
 .abrpop .qpop { width: 300px; } .abrpop .qpop .seg button { flex: 1 1 30%; }
+
+/* botão ocupado (ação em andamento, ver busy() em util.js): spinner pequeno depois de 250 ms, sem trocar o texto */
+button.busy { pointer-events: none; } /* sem clique repetido enquanto a ação anterior não termina */
+button.busy::after { content: ""; display: inline-block; width: 11px; height: 11px; margin-left: 7px; vertical-align: -1px; flex: none; border: 2px solid currentColor;
+  border-right-color: transparent; border-radius: 50%; opacity: 0; animation: busyIn .15s .25s forwards, busySpin .7s linear infinite; }
+button.busy.ibtn::after, button.busy.gstar::after, button.busy.adel::after { display: none; }
+button.ibtn.busy, button.gstar.busy, button.adel.busy { opacity: .55; transition: opacity .15s .25s; }
+@keyframes busyIn { to { opacity: .85; } }
+@keyframes busySpin { to { transform: rotate(360deg); } }

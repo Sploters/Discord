@@ -18,7 +18,7 @@ import { connectionsPage } from './activity.js';
 import { litePage, liteOn } from './lite.js';
 import { openNativeTest } from './nativetest.js';
 import { newsPage } from './changelog.js';
-import { checkAppUpdate, installAppUpdate, silentUpdate, appUpdateReady } from './appupdate.js';
+import { checkAppUpdate, installAppUpdate, silentUpdate, runAppUpdate } from './appupdate.js';
 import { openReport } from './diag.js';
 
 const SWATCHES = ['#5865f2', '#57f287', '#fee75c', '#eb459e', '#ed4245', '#3ba55d', '#faa61a', '#9b59b6', '#1abc9c', '#e67e22', '#3498db', '#95a5a6', '#2c2f33', '#ffffff'];
@@ -533,21 +533,22 @@ function reportPage() {
 // versão do app desktop com "Procurar atualização": diz se já está na mais nova ou oferece atualizar
 function versionRow(version) {
   const status = h('span', `Resenha Desktop ${version}`);
+  let latest = null; // depois de achar a versão nova, o mesmo botão passa a atualizar (um handler só)
   const btn = h('button.btn.grey', { onclick: async () => {
+    if (latest) {
+      if (silentUpdate()) return void runAppUpdate(latest); // tela "Atualizando" com o progresso, até o app fechar e reabrir
+      btn.disabled = true; btn.textContent = 'Baixando…';
+      if (!await installAppUpdate()) { btn.disabled = false; btn.textContent = `Atualizar para ${latest}`; toast('Baixando o instalador: quando terminar, abra o Resenha-Setup.'); }
+      return;
+    }
     btn.disabled = true; btn.textContent = 'Procurando…';
     const r = await checkAppUpdate();
     btn.disabled = false;
     if (!r?.latest) { btn.textContent = 'Procurar atualização'; return toast('Não consegui consultar as atualizações agora. Tente de novo em instantes.', true); }
-    if (!r.available) { btn.textContent = 'Procurar atualização'; status.textContent = `Resenha Desktop ${version} — você está na versão mais nova`; return; }
-    status.textContent = `Resenha Desktop ${version} — versão ${r.latest} disponível`;
-    btn.className = 'btn green'; btn.textContent = `Atualizar para ${r.latest}`;
-    const quiet = silentUpdate();
-    if (quiet) btn.textContent = `Reiniciar e atualizar para ${r.latest}`;
-    btn.onclick = async () => {
-      btn.disabled = true; btn.textContent = 'Baixando…';
-      // app que atualiza sozinho: espera a versão nova terminar de baixar no app (até ~3 min) e só então reinicia
-      if (quiet) { let v = null; for (let i = 0; i < 60 && !(v = await appUpdateReady()); i++) await new Promise(r => setTimeout(r, 3000)); if (v) btn.textContent = 'Reiniciando…'; }
-      if (!await installAppUpdate()) { btn.disabled = false; btn.textContent = quiet ? `Reiniciar e atualizar para ${r.latest}` : `Atualizar para ${r.latest}`; toast(quiet ? (window.lcDesktop?.checkUpdate ? 'Não deu para atualizar agora. Tente de novo em instantes.' : 'O app ainda não baixou a versão nova: feche e abra o Resenha (ele baixa sozinho e avisa).') : 'Baixando o instalador: quando terminar, abra o Resenha-Setup.'); } };
+    if (!r.available) { btn.textContent = 'Procurar atualização'; status.textContent = `Resenha Desktop ${version} — você está na versão mais nova`; return toast('Você já está na versão mais nova'); }
+    latest = r.latest;
+    status.textContent = `Resenha Desktop ${version} — versão ${latest} disponível`;
+    btn.className = 'btn green'; btn.textContent = silentUpdate() ? `Reiniciar e atualizar para ${latest}` : `Atualizar para ${latest}`;
   } }, 'Procurar atualização');
   return row('Versão', status, btn);
 }

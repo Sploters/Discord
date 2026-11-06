@@ -1,5 +1,5 @@
 // Moderação: castigo (timeout), banimento e registro de auditoria
-import { h, avatar, stamp } from './util.js';
+import { h, avatar, stamp, busy } from './util.js';
 import { tryApi, toast, modal, nameOf, user, guild, member } from './state.js';
 import { seg } from './ui.js';
 
@@ -63,7 +63,7 @@ export function auditPage(gid) {
           h('small', stamp(e.created_at) + (det && tgt ? ' • ' + det : '')))));
     }
     more.style.display = r.entries.length === 100 ? '' : 'none';
-    more.onclick = () => load(r.entries.at(-1).id);
+    more.onclick = () => busy(more, load(r.entries.at(-1).id));
     if (!box.children.length) box.append(hint('Nenhuma ação registrada ainda.'));
   };
   load();

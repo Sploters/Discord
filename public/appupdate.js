@@ -7,6 +7,7 @@
 // "Atualizar agora" usa o instalador automático do app; se ele falhar, baixa o instalador pelo servidor.
 // "Depois" esconde o aviso até o app abrir de novo.
 import { h, icon } from './util.js';
+import { toast } from './state.js';
 
 const REPO = 'Sploters/Resenha';
 const RELEASES = `https://github.com/${REPO}/releases/latest`;
@@ -48,6 +49,53 @@ export async function installAppUpdate() {
   return ok;
 }
 
+// ---------- tela "Atualizando" ----------
+// Do clique até o app fechar: baixando (com porcentagem, apps 1.0.29+) → instalando. Depois disso o próprio app mostra
+// uma janelinha "Atualizando o Resenha…" enquanto o instalador roda, e a página reaberta avisa "Atualizado para X".
+let progressCb = null, progressHooked = false;
+function updOverlay(version) {
+  document.querySelector('.updov')?.remove();
+  const fill = h('div.uo-fill'), bar = h('div.uo-bar.ind', fill), pct = h('span.uo-pct'), status = h('p.uo-status', 'Preparando…');
+  const actions = h('div.uo-btns');
+  const title = h('h3', `Atualizando para a versão ${version || 'nova'}`);
+  const el = h('div.updov', { role: 'dialog', 'aria-modal': 'true', 'aria-live': 'polite' },
+    h('div.uo-card', h('div.uo-ico', icon('dl', 22)), title, status, h('div.uo-prog', bar, pct), actions));
+  document.body.append(el);
+  return {
+    step(text, indeterminate) { status.textContent = text; if (indeterminate) { bar.classList.add('ind'); pct.textContent = ''; } },
+    progress(p) { if (!(p >= 0)) return; bar.classList.remove('ind'); fill.style.width = p + '%'; pct.textContent = p + '%'; },
+    fail(text) {
+      el.classList.add('bad'); title.textContent = 'Não deu para atualizar'; bar.classList.remove('ind'); fill.style.width = '0'; pct.textContent = ''; status.textContent = text;
+      actions.replaceChildren(h('button.btn.grey', { onclick: () => el.remove() }, 'Fechar'));
+    },
+  };
+}
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// atualiza com a tela de progresso; devolve true quando o app vai fechar para instalar
+export async function runAppUpdate(version) {
+  if (!silentUpdate()) return installAppUpdate(); // app antigo: baixa o instalador, como antes
+  const d = window.lcDesktop, ov = updOverlay(version);
+  progressCb = (p) => ov.progress(p?.pct);
+  if (!progressHooked && d.onUpdateProgress) { progressHooked = true; d.onUpdateProgress((p) => progressCb?.(p)); }
+  ov.step('Baixando a versão nova…');
+  let v = await appUpdateReady();
+  for (let i = 0; !v && i < 60; i++) { await sleep(3000); v = await appUpdateReady(); }
+  if (!v) { progressCb = null; ov.fail(d.checkUpdate ? 'Não deu para baixar a versão nova agora. Confira a internet e tente de novo.' : 'O app ainda não baixou a versão nova. Feche e abra o Resenha: ele baixa sozinho e avisa quando estiver pronta.'); return false; }
+  ov.progress(100);
+  ov.step('Instalando… o app fecha e abre sozinho em alguns segundos.', true);
+  const ok = await installAppUpdate(); progressCb = null;
+  if (!ok) ov.fail('Não deu para instalar agora. Tente de novo em instantes.');
+  return ok;
+}
+// a página abriu numa versão mais nova do que da última vez: avisa que a atualização deu certo
+function announceUpdated() {
+  window.lcDesktop?.getSettings?.().then((s) => {
+    const v = s?.version; if (!v) return;
+    let seen = null; try { seen = localStorage.getItem('lc_desk_seen'); localStorage.setItem('lc_desk_seen', v); } catch { }
+    if (seen && newer(v, seen)) toast(`Resenha atualizado para a versão ${v}`);
+  }).catch(() => { });
+}
+
 let shown = null;
 function showCard(version) {
   if (!version || shown?.dataset.v === version) return;
@@ -56,9 +104,10 @@ function showCard(version) {
   const quiet = silentUpdate(), label = quiet ? 'Reiniciar agora' : 'Atualizar agora';
   const msg = h('p', quiet ? 'Reinicie o app para usar a versão nova. Leva alguns segundos e não abre instalador.' : 'Uma versão nova do app desktop está pronta. Leva menos de um minuto.');
   const btn = h('button.btn.green', { onclick: async () => {
-    btn.disabled = true; later.disabled = true; btn.textContent = quiet ? 'Reiniciando…' : 'Baixando…';
-    msg.textContent = quiet ? 'O app fecha, atualiza e abre de novo sozinho.' : 'O app fecha sozinho e abre o instalador quando o download terminar.';
-    if (!await installAppUpdate()) { btn.disabled = false; later.disabled = false; btn.textContent = label; msg.textContent = quiet ? 'Não deu para atualizar agora. Tente de novo em instantes.' : 'Baixando o instalador: quando terminar, abra o Resenha-Setup.'; }
+    if (quiet) { shown?.remove(); shown = null; return void runAppUpdate(version); } // a tela "Atualizando" assume daqui
+    btn.disabled = true; later.disabled = true; btn.textContent = 'Baixando…';
+    msg.textContent = 'O app fecha sozinho e abre o instalador quando o download terminar.';
+    if (!await installAppUpdate()) { btn.disabled = false; later.disabled = false; btn.textContent = label; msg.textContent = 'Baixando o instalador: quando terminar, abra o Resenha-Setup.'; }
   } }, label);
   const later = h('button.btn.link', { onclick: () => { try { sessionStorage.setItem('lc_upd_later', version); } catch { } shown?.remove(); shown = null; } }, 'Depois');
   shown = h('div.appupd', { 'data-v': version, role: 'status' },
@@ -70,6 +119,7 @@ function showCard(version) {
 export function initAppUpdate() {
   const d = window.lcDesktop;
   if (!d?.getUpdate || !d.installUpdate) return; // navegador ou app sem a ponte
+  announceUpdated();
   // no app que atualiza sozinho o aviso só aparece com a versão nova já baixada: "Reiniciar agora" instala na hora
   if (silentUpdate()) {
     d.onUpdate?.((u) => { if (u?.ready) showCard(u.version); });

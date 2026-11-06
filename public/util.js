@@ -1,4 +1,21 @@
 // DOM helper: h('div.cls#id', {onclick, style:{}}, ...children)
+// botão ocupado: enquanto a ação (Promise) não termina, o botão fica com um spinner discreto (só depois de 250 ms, para
+// ações rápidas não piscarem) e ignora cliques repetidos (nada de pedido duplicado). Automático para todo <button> criado
+// com h() cujo onclick devolve uma Promise; busy(el, promise) faz o mesmo à mão.
+export function busy(el, p) {
+  if (!p || typeof p.then !== 'function') return p;
+  el.classList.add('busy'); el.setAttribute('aria-busy', 'true');
+  const done = () => { clearTimeout(t); el.classList.remove('busy'); el.removeAttribute('aria-busy'); };
+  const t = setTimeout(done, 30000); // segurança: uma ação que nunca termina não trava o botão para sempre
+  p.then(done, done);
+  return p;
+}
+function busyHandler(el, fn) {
+  return function (e) {
+    if (el.classList.contains('busy')) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+    return busy(el, fn.call(this, e));
+  };
+}
 export function h(tag, props, ...kids) {
   const m = tag.match(/^([a-z0-9]*)((?:[.#][\w-]+)*)$/i);
   const el = document.createElement(m[1] || 'div');
@@ -6,7 +23,8 @@ export function h(tag, props, ...kids) {
   if (props && (typeof props !== 'object' || props instanceof Node || Array.isArray(props))) { kids.unshift(props); props = null; }
   for (const [k, v] of Object.entries(props || {})) {
     if (v == null || v === false) continue;
-    if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    if (k === 'onclick' && el.tagName === 'BUTTON') el.addEventListener('click', busyHandler(el, v));
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
     else if (k === 'style' && typeof v === 'object') { for (const [sk, sv] of Object.entries(v)) { if (sk.startsWith('--')) el.style.setProperty(sk, sv); else el.style[sk] = sv; } } // variáveis CSS (--x) só entram por setProperty
     else if (k === 'class') el.className += ' ' + v;
     else if (k in el && k !== 'list') el[k] = v;
