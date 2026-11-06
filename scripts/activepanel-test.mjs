@@ -28,10 +28,10 @@ await stop();
 const db = new DatabaseSync(DATA + '/resenha.db'), D = 864e5, H = 3600e3, now = Date.now();
 const day = (n, hour = 21) => { const d = new Date(now - n * D); d.setHours(hour, 0, 0, 0); return Math.min(d.getTime(), now - 60e3); };
 let nid = 1; const ins = (uid, kind, game, title, at, data, platform = 'pc') => db.prepare('INSERT INTO activities(id,user_id,platform,kind,game_id,title,data,created_at) VALUES(?,?,?,?,?,?,?,?)').run('t' + nid++, uid, platform, kind, game, title, data ? JSON.stringify(data) : null, at);
-const session = (uid, game, title, at, secs, platform) => { ins(uid, 'game_start', game, title, at - secs * 1000, null, platform); ins(uid, 'game_stop', game, title, at, { seconds: secs }, platform); };
+const session = (uid, game, title, at, secs, platform, extra = null) => { ins(uid, 'game_start', game, title, at - secs * 1000, extra, platform); ins(uid, 'game_stop', game, title, at, { seconds: secs, ...extra }, platform); };
 session(U.ana.id, 'peak', 'PEAK', now - 20 * D, 3600);                       // histórico antigo (fora da semana)
 session(U.ana.id, 'hades', 'Hades', day(2, 23), 4 * 3600 + 20 * 60);          // jogo novo + maratona
-for (const n of [1, 3, 4, 6]) session(U.beto.id, 'cs2', 'Counter-Strike 2', day(n, 22), 45 * 60, 'pc'); // sequência + partidas
+for (const n of [1, 3, 4, 6]) session(U.beto.id, 'cs2', 'Counter-Strike 2', day(n, 22), 45 * 60, 'pc', { steam: '730' }); // sequência + partidas (jogo da Steam)
 session(U.beto.id, 'peak', 'PEAK', day(1, 15), 10 * 60);                       // curtinha: não é destaque
 session(U.caio.id, 'eldenring', 'ELDEN RING', day(1, 20), 5 * 3600);            // caio escondeu: não aparece
 session(U.zeca.id, 'dota2', 'Dota 2', day(1, 20), 6 * 3600);                    // não é amigo: não aparece
@@ -76,9 +76,27 @@ try {
   // ana parou de jogar: sai do topo na hora
   await ana.close(); await sleep(1200);
   ok(await me.evaluate(() => !document.querySelector('#active-now .an-play')), 'parou de jogar: some do "agora" na hora');
-  // clicar no clipe leva à galeria
-  await me.evaluate(() => document.querySelector('#active-now .hl-clip')?.closest('.hl-item').click()); await sleep(800);
-  ok(await me.evaluate(() => window.__lc.S.view.kind === 'clips'), 'clicar no clipe abre a galeria de clipes do servidor');
+  // clicar no destaque do clipe (o cartão todo) abre o player em popup, sem sair do painel
+  await me.evaluate(() => document.querySelector('#active-now .hl-item.hl-clip').click()); await sleep(900);
+  const clipPop = await me.evaluate(() => { const m = document.querySelector('.modal.clipmodal'); return m && { title: m.querySelector('.pttl')?.textContent, src: m.querySelector('video')?.getAttribute('src'), btns: [...m.querySelectorAll('.pbtns .btn')].map(b => b.textContent.trim()), view: window.__lc.S.view.kind }; });
+  ok(clipPop?.title === 'Ace no último round' && /aaaaaaaa/.test(clipPop.src || '') && clipPop.view !== 'clips', 'clicar no clipe abre o player em popup (continua no painel)', clipPop);
+  ok(clipPop?.btns.includes('Ver na galeria') && clipPop.btns.includes('Baixar'), 'popup do clipe: Ver na galeria e Baixar', clipPop?.btns);
+  await me.evaluate(() => document.querySelector('.modal.clipmodal .inv-x').click()); await sleep(300);
+  // clicar num destaque de jogo abre o popup do jogo (Steam: botão para a loja; amigos que jogaram)
+  await me.evaluate(() => document.querySelector('#active-now .hl-item.hl-streak').click()); await sleep(900);
+  const gp = await me.evaluate(() => { const m = document.querySelector('.modal.gamemodal'); return m && { title: m.querySelector('h2')?.textContent, steam: m.querySelector('a.gm-steam')?.getAttribute('href'), people: [...m.querySelectorAll('.gm-person')].map(p => p.innerText.replace(/\s+/g, ' ')) }; });
+  ok(gp?.title === 'Counter-Strike 2' && gp.steam === 'https://store.steampowered.com/app/730/', 'jogo da Steam: popup com o nome e "Ver na Steam" (loja do jogo)', gp);
+  ok(gp?.people.some(t => /beto/.test(t) && /3h esta semana/.test(t) && /em 4 dias/.test(t)), 'popup do jogo: quais amigos jogaram e quanto na semana', gp?.people);
+  if (process.env.SHOTS) await me.screenshot({ path: '.testshots/activepanel-gamepop.png' });
+  await me.evaluate(() => document.querySelector('.modal.gamemodal .gm-x').click()); await sleep(300);
+  await me.evaluate(() => document.querySelector('#active-now .hl-item.hl-marathon').click()); await sleep(700);
+  const gp2 = await me.evaluate(() => { const m = document.querySelector('.modal.gamemodal'); return m && { title: m.querySelector('h2')?.textContent, steam: !!m.querySelector('a.gm-steam'), ph: !!m.querySelector('.gm-ph') }; });
+  ok(gp2?.title === 'Hades' && !gp2.steam && gp2.ph, 'jogo fora da Steam: popup sem botão da loja, com o ícone', gp2);
+  await me.evaluate(() => document.querySelector('.modal.gamemodal .gm-x').click()); await sleep(300);
+  // o nome da pessoa no destaque abre o perfil (não o popup do jogo)
+  await me.evaluate(() => document.querySelector('#active-now .hl-item.hl-marathon .hl-who').click()); await sleep(600);
+  ok(await me.evaluate(() => !!document.querySelector('.pcard') && !document.querySelector('.modal.gamemodal')), 'clicar no nome abre o perfil');
+  await me.keyboard.press('Escape'); await sleep(300);
   // janela estreita: o painel vira gaveta
   const narrow = await page(U.eu, null, 980); await narrow.evaluate(() => window.__lc.go('@me')); await sleep(1500);
   const before = await narrow.evaluate(() => { const r = document.querySelector('#active-now').getBoundingClientRect(); return { left: Math.round(r.left), vis: getComputedStyle(document.querySelector('.an-toggle')).display }; });

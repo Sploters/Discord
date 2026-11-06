@@ -5,7 +5,8 @@ import { canCallInvite, sendCallInvite } from './callinvite.js';
 import { h, icon, avatar, clock } from './util.js';
 import { chName } from './chnames.js';
 import { styleName } from './themes.js';
-import { S, api, tryApi, toast, confirmBox, guild, channelById } from './state.js';
+import { S, api, tryApi, toast, confirmBox, guild, channelById, modal } from './state.js';
+import { openClip } from './clipsgallery.js';
 import { toggle, row, section, seg } from './ui.js';
 
 const ctx = {}; // injetado por app.js: openDM, profile, userMenu, go, joinVoice, watchFriend, voice(), openSettings, renderActiveNow
@@ -70,6 +71,46 @@ export function gameBanner(a) {
   return el;
 }
 
+// ---------------------------------------------------------------- popup do jogo
+// capa (arte da Steam, ou o ícone do programa), tags e avaliação da Steam, quais amigos jogaram e "Ver na Steam"
+const norm = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+const sameGame = (x, a) => !!x && (x.id === a.game.id || norm(x.title) === norm(a.game.title) || (!!steamIdOf({ platform: x.platform || 'pc', game: x }) && steamIdOf({ platform: x.platform || 'pc', game: x }) === steamIdOf(a)));
+function gamePeople(a) {
+  const by = new Map(), get = (uid) => { if (!by.has(uid)) by.set(uid, { uid, now: null, secs: 0, days: 0, fresh: false }); return by.get(uid); };
+  for (const x of S.activities.values()) if (sameGame({ ...x.game, platform: x.platform }, a)) get(x.user_id).now = x;
+  for (const x of feed?.highlights || []) {
+    if (!x.game || !sameGame({ ...x.game, platform: x.platform }, a)) continue;
+    const p = get(x.user_id);
+    if (x.kind === 'session' || x.kind === 'marathon') p.secs += x.seconds; else if (x.kind === 'streak') p.days = Math.max(p.days, x.days); else if (x.kind === 'new_game') p.fresh = true;
+  }
+  return [...by.values()].sort((x, y) => (y.now ? 1 : 0) - (x.now ? 1 : 0) || y.secs - x.secs).map(p => {
+    const u = uOf(p.uid), bits = [p.now && `jogando agora · ${since(p.now.since)}`, p.secs && `${durShort(p.secs)} esta semana`, p.days >= 3 && `em ${p.days} dias`, p.fresh && 'jogo novo'].filter(Boolean);
+    return h('div.gm-person', { onclick: (e) => ctx.profile(e.currentTarget, p.uid) }, avatar(u, 32, { ring: 'var(--bg-float)' }), h('div.an-who', h('b', p.uid === S.me.id ? 'Você' : u.display_name), h('small', bits.join(' · ') || 'jogou esta semana')));
+  });
+}
+export function gameModal(a) {
+  const sid = steamIdOf(a), ic = iconUrl(a);
+  const hero = h('div.gm-hero', ic ? h('img.gm-icon', { src: ic, alt: '' }) : h('span.gm-icon.gm-ph', icon('gamepad', 44)));
+  const meta = h('div.gm-meta'), tags = h('div.gm-tags');
+  const store = sid && h('a.btn.gm-steam', { href: `https://store.steampowered.com/app/${sid}/`, target: '_blank', rel: 'noopener noreferrer' }, icon('external', 16), 'Ver na Steam');
+  const people = gamePeople(a);
+  const body = h('div.gm', hero, h('div.gm-main',
+    h('div.gm-head', h('h2', a.game.title), store),
+    meta, tags,
+    people.length ? [h('div.gm-cap', 'Amigos que jogaram'), h('div.gm-people', people)] : h('p.gm-none', 'Nenhum amigo jogou isto esta semana.')));
+  const m = modal('', null, body, [], { width: 'min(560px, 94vw)' });
+  const md = m.el.querySelector('.modal'); md.classList.add('gamemodal'); md.querySelector('.mf')?.remove(); md.querySelector('.mh')?.remove();
+  hero.append(h('button.inv-x.gm-x', { title: 'Fechar', onclick: m.close }, icon('x', 20)));
+  if (sid) steamArt(sid).then(x => {
+    if (!x) return;
+    if (x.image) { hero.prepend(h('img.gm-art', { src: x.image, alt: '', referrerPolicy: 'no-referrer', onerror: (e) => e.target.remove() })); hero.classList.add('has-art'); }
+    const rv = x.reviews; meta.replaceChildren(...[rv && h('span.gm-rev', icon('star', 14), `${rv.label} · ${rv.pct}%`), (x.free || x.price) && h('span', x.free ? 'Gratuito' : x.price)].filter(Boolean));
+    tags.replaceChildren(...(x.tags || []).map(t => h('span.gm-tag', t)));
+  });
+  return m;
+}
+const openGame = (a) => (e) => { e?.stopPropagation(); gameModal(a); };
+
 // ---------------------------------------------------------------- ações reais (só aparecem quando a situação permite)
 function voiceActions(uid) {
   const v = S.voice.get(uid), ch = v && channelById(v.channel_id), voice = ctx.voice(), out = [];
@@ -96,10 +137,10 @@ const goRoom = (r) => (r.g ? ctx.go(r.g.id, r.ch.id) : ctx.go('@me', r.ch.id));
 function playCard(uid, a) {
   const u = uOf(uid), r = roomOf(uid), lk = feed?.friends.find(f => f.user_id === uid)?.linked.find(l => l.platform === a.platform);
   return h('div.an-card.an-play', { onclick: (e) => ctx.profile(e.currentTarget, uid), oncontextmenu: (e) => ctx.userMenu(e, uid) },
-    gameBanner(a),
+    h('div.an-gamelink', { title: `Sobre ${a.game.title}`, onclick: openGame(a) }, gameBanner(a)),
     h('div.an-top', avatar(u, 40, { ring: 'var(--bg-sec)' }), h('div.an-who', nameEl(u), h('small', `${platformName(a.platform)} · ${since(a.since)}`)),
       h('button.ibtn.an-dm', { title: 'Mensagem', onclick: (e) => { e.stopPropagation(); ctx.openDM(uid); } }, icon('dm', 18))),
-    h('div.an-game', gameIcon(a, 22), h('span', a.game.title)),
+    h('div.an-game.an-gamelink', { title: `Sobre ${a.game.title}`, onclick: openGame(a) }, gameIcon(a, 22), h('span', a.game.title)),
     r && roomLine(r),
     lk && lk.profile_url && h('a.act-link', { href: lk.profile_url, target: '_blank', rel: 'noopener noreferrer', onclick: (e) => e.stopPropagation() }, `Perfil ${platformName(a.platform)}${lk.name ? ' de ' + lk.name : ''}`),
     h('div.act-btns', ...voiceActions(uid)));
@@ -122,9 +163,10 @@ const dayHead = (t) => {
   return d.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'short' }).replace(/^./, c => c.toUpperCase());
 };
 function hlItem(x) {
-  const u = uOf(x.user_id), who = h('b', x.user_id === S.me.id ? 'Você' : u.display_name), a = x.game && { platform: x.platform, game: x.game };
+  const u = uOf(x.user_id), a = x.game && { platform: x.platform, game: x.game };
+  const who = h('b.hl-who', { title: 'Ver perfil', onclick: (e) => { e.stopPropagation(); ctx.profile(e.currentTarget, x.user_id); } }, x.user_id === S.me.id ? 'Você' : u.display_name);
   const game = x.game && h('b', x.game.title);
-  let ic = a ? gameIcon(a, 18) : null, tag = null, text = [], open = (e) => ctx.profile(e.currentTarget, x.user_id);
+  let ic = a ? gameIcon(a, 18) : null, tag = null, text = [], open = a ? openGame(a) : (e) => ctx.profile(e.currentTarget, x.user_id), hint = a ? `Sobre ${x.game.title}` : '';
   if (x.kind === 'marathon') { tag = h('span.hl-tag.gold', icon('trophy', 12), 'Maratona'); text = [who, ' jogou ', game, ' por ', h('b', durShort(x.seconds))]; }
   else if (x.kind === 'session') text = [who, ' jogou ', game, ' por ', durShort(x.seconds)];
   else if (x.kind === 'new_game') { tag = h('span.hl-tag.new', icon('sparkle', 12), 'Jogo novo'); text = [who, ' começou a jogar ', game]; }
@@ -132,10 +174,10 @@ function hlItem(x) {
   else if (x.kind === 'clip') {
     const c = x.clip, st = c.streamer_id && c.streamer_id !== x.user_id ? uOf(c.streamer_id) : null;
     ic = h('span.gicon.hl-clipic', { style: { width: '18px', height: '18px' } }, icon('clip', 13)); tag = h('span.hl-tag.clip', icon('clip', 12), 'Clipe');
-    text = [who, ' salvou um clipe', st ? [' da transmissão de ', h('b', st.display_name)] : '', ': ', h('i', `“${c.title}”`)];
-    open = () => ctx.go(c.guild_id, 'clips');
+    text = [who, ' salvou um clipe', st ? [' da transmissão de ', h('b', st.display_name)] : '', ': ', h('i.hl-cliptitle', icon('play', 12), `“${c.title}”`)];
+    open = () => openClip(c.id); hint = 'Assistir ao clipe';
   }
-  return h('div.hl-item.hl-' + x.kind, { onclick: open, oncontextmenu: (e) => ctx.userMenu(e, x.user_id) },
+  return h('div.hl-item.hl-' + x.kind, { title: hint, onclick: open, oncontextmenu: (e) => ctx.userMenu(e, x.user_id) },
     h('div.hl-ic', avatar(u, 32, { status: false }), ic && h('span.hl-badge', ic)),
     h('div.hl-txt', tag, h('span', text.flat()), h('small', clock(x.at))));
 }

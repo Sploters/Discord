@@ -343,3 +343,36 @@ html:not(.anim) .clipflash .cf-badge { animation: cfFade 2.4s step-end forwards;
 .role-row { display: flex; align-items: center; gap: 8px; } .role-row > .icon { fill: var(--text-muted); flex: none; }
 #auth p.sub.invited { display: flex; align-items: center; justify-content: center; gap: 8px; } #auth p.sub.invited .icon { fill: currentColor; }
 .sbflash .e .icon, .srow2 .e .icon, .sbitem .e .icon, .sbtile .e .icon { fill: currentColor; }
+
+/* ---------- popup do jogo (clicar num jogo no "Ativo agora" / perfil) ---------- */
+.modal.gamemodal { padding: 0; overflow: hidden; }
+.modal.gamemodal .mb { padding: 0; }
+.gm-hero { position: relative; display: flex; align-items: center; justify-content: center; height: 120px; background: linear-gradient(135deg, var(--bg-tert), var(--bg-sec)); }
+.gm-hero.has-art { height: auto; aspect-ratio: 460 / 215; }
+.gm-hero .gm-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.gm-hero .gm-icon { position: relative; width: 72px; height: 72px; border-radius: 16px; object-fit: contain; filter: drop-shadow(0 4px 12px rgba(0,0,0,.4)); }
+.gm-hero.has-art .gm-icon { position: absolute; left: 16px; bottom: -28px; width: 64px; height: 64px; background: var(--bg-float); padding: 6px; border-radius: 14px; box-sizing: border-box; }
+.gm-hero .gm-ph { display: grid; place-items: center; background: var(--bg-float); color: var(--text-muted); } .gm-hero .gm-ph .icon { fill: currentColor; }
+.gm-hero .gm-x { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,.45); color: #fff; border-radius: 50%; }
+.gm-main { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 10px; }
+.gm-hero.has-art + .gm-main { padding-top: 38px; }
+.gm-head { display: flex; align-items: center; gap: 12px; } .gm-head h2 { margin: 0; flex: 1; min-width: 0; font-size: 20px; color: var(--header); }
+.gm-steam { display: inline-flex; align-items: center; gap: 6px; flex: none; text-decoration: none; } .gm-steam .icon { fill: currentColor; }
+.gm-meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: var(--text-muted); } .gm-meta:empty { display: none; }
+.gm-rev { display: inline-flex; align-items: center; gap: 4px; } .gm-rev .icon { fill: #f0b232; }
+.gm-tags { display: flex; flex-wrap: wrap; gap: 6px; } .gm-tags:empty { display: none; }
+.gm-tag { font-size: 12px; padding: 3px 9px; border-radius: 10px; background: var(--bg-tert); color: var(--text); }
+.gm-cap { margin-top: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); }
+.gm-people { display: flex; flex-direction: column; gap: 2px; }
+.gm-person { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; cursor: pointer; } .gm-person:hover { background: var(--bg-mod-hover); }
+.gm-person .an-who { display: flex; flex-direction: column; min-width: 0; } .gm-person small { color: var(--text-muted); font-size: 12.5px; }
+.gm-none { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
+/* áreas clicáveis do painel */
+#active-now .an-gamelink { cursor: pointer; } #active-now .an-game.an-gamelink:hover span { text-decoration: underline; }
+#active-now .an-card.an-play > .an-gamelink:hover .gbanner img { filter: brightness(1.08); }
+#active-now .hl-who { cursor: pointer; } #active-now .hl-who:hover { text-decoration: underline; }
+#active-now .hl-cliptitle { display: inline-flex; align-items: center; gap: 3px; color: var(--text-link, #00a8fc); font-style: normal; }
+#active-now .hl-cliptitle .icon { fill: currentColor; } #active-now .hl-item:hover .hl-cliptitle { text-decoration: underline; }
+.pcard .pplaybox { cursor: pointer; } .pcard .pplaybox:hover { background: rgba(0,0,0,.28); }
+/* player de clipe aberto fora da galeria */
+.clipplayer .pbtns { display: flex; align-items: center; gap: 8px; flex: none; flex-wrap: wrap; justify-content: flex-end; }

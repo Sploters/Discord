@@ -283,7 +283,7 @@ export function mountDiscover(app, { auth, dataDir }) {
     try {
       const it = await storeItems(ids.map(Number));
       res.set('Cache-Control', 'private, max-age=3600');
-      res.json(Object.fromEntries(Object.values(it).map(x => [x.appid, { image: x.image, thumb: x.thumb, title: x.title }])));
+      res.json(Object.fromEntries(Object.values(it).map(x => [x.appid, { image: x.image, thumb: x.thumb, title: x.title, url: x.url, tags: x.tags, reviews: x.reviews, price: x.price, free: x.free }])));
     } catch { res.json({}); }
   });
 }

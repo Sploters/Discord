@@ -947,6 +947,7 @@ app.get('/api/guilds/:id/clips', auth, wrap((req, res) => {
   res.json({ clips: list.map(c => clipObj(c, req.uid)), total: get('SELECT COUNT(*) n FROM clips WHERE guild_id=?', gid).n });
 }));
 const clipFor = (req, res) => { const c = get('SELECT * FROM clips WHERE id=?', req.params.id); if (!c || !canAccessChannel(req.uid, get('SELECT * FROM channels WHERE id=?', c.channel_id))) { bad(res, 'Clipe não encontrado', 404); return null; } return c; };
+app.get('/api/clips/:id', auth, wrap((req, res) => { const c = clipFor(req, res); if (c) res.json(clipObj(c, req.uid)); })); // um clipe (popup do "Ativo agora")
 app.patch('/api/clips/:id', auth, wrap((req, res) => {
   const c = clipFor(req, res); if (!c) return;
   if (!canEditClip(c, req.uid)) return bad(res, 'Sem permissão', 403);

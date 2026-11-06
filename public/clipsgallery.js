@@ -89,8 +89,9 @@ async function remove(c) {
 function upsert(c) { const i = st.clips.findIndex(x => x.id === c.id); if (i >= 0) { st.clips[i] = c; draw(); } }
 
 // player: vídeo grande, anterior/próximo (botões e setas), Esc fecha; lápis ao lado do nome renomeia ali mesmo
-function player(i) {
-  if (i < 0 || !st.clips[i]) return;
+// list: os clipes navegáveis (a galeria passa os dela; o popup do "Ativo agora" passa só um). opts.standalone: aberto fora da galeria
+function player(i, list = st.clips, opts = {}) {
+  if (i < 0 || !list[i]) return;
   // a prévia do cartão (mouse em cima) continuaria tocando atrás do player: dois vídeos decodificando pesam em máquina fraca
   st.root?.querySelectorAll('.clipcard video').forEach(x => x.pause());
   let cur = i;
@@ -99,19 +100,22 @@ function player(i) {
   const pen = h('button.ibtn.pedit', { title: 'Renomear', onclick: () => editTitle() }, icon('edit', 16));
   const trow = h('div.ptrow', title, pen);
   const dl = h('a.btn.grey', { download: '' }, icon('dl', 16), 'Baixar');
-  const box = h('div.clipplayer', h('div.pstage', prev, vbox, next), h('div.pbar', h('div.ptxt', trow, meta), dl));
+  // fora da galeria: atalho para a galeria do servidor (e para a mensagem no chat)
+  const extra = opts.standalone && [h('button.btn.grey', { onclick: () => { dlg.close(); ctx.go(list[cur].guild_id, 'clips'); } }, icon('clip', 16), 'Ver na galeria'),
+    list[cur].message_id && h('button.btn.grey', { onclick: () => { const c = list[cur]; dlg.close(); ctx.go(c.guild_id, c.channel_id); setTimeout(() => ctx.jumpTo?.(c.message_id), 600); } }, icon('dm', 16), 'Ir para a mensagem')];
+  const box = h('div.clipplayer', h('div.pstage', prev, vbox, next), h('div.pbar', h('div.ptxt', trow, meta), h('div.pbtns', extra, dl)));
   const show = (k) => {
-    if (k < 0 || k >= st.clips.length) return; cur = k; const c = st.clips[k];
+    if (k < 0 || k >= list.length) return; cur = k; const c = list[k];
     if (trow.querySelector('input')) trow.replaceChildren(title, pen);
     v.poster = thumbUrl(c.url) || ''; v.src = c.url; v.play().catch(() => { });
     title.textContent = c.title; title.title = c.title; pen.hidden = !canEdit(c);
     meta.textContent = `${c.streamer ? 'de ' + who(c.streamer) + ' · ' : ''}clipado por ${who(c.author)} · ${ago(c.created_at)} · ${c.secs}s${c.has_audio ? '' : ' · sem áudio'}`;
     dl.href = c.url; dl.download = fileName(c);
-    prev.disabled = k === 0; next.disabled = k === st.clips.length - 1;
+    prev.disabled = k === 0; next.disabled = k === list.length - 1; prev.hidden = next.hidden = list.length < 2;
   };
   // renomear no lugar: Enter salva, Esc ou clicar fora cancela/salva
   const editTitle = () => {
-    const c = st.clips[cur]; if (!c || !canEdit(c) || trow.querySelector('input')) return;
+    const c = list[cur]; if (!c || !canEdit(c) || trow.querySelector('input')) return;
     const inp = h('input.pttlin', { name: 'clip-title', 'aria-label': 'Nome do clipe', value: c.title, maxLength: 100 });
     let done = false;
     const finish = async (save) => {
@@ -119,7 +123,7 @@ function player(i) {
       const t = inp.value.trim();
       if (save && t && t !== c.title) {
         const r = await tryApi('PATCH', `/clips/${c.id}`, { title: t });
-        if (r) { upsert({ ...r, fav: c.fav }); if (st.clips[cur]?.id === c.id) title.textContent = title.title = r.title; }
+        if (r) { Object.assign(c, { title: r.title }); upsert({ ...r, fav: c.fav }); if (list[cur]?.id === c.id) title.textContent = title.title = r.title; }
       }
       if (inp.isConnected) trow.replaceChildren(title, pen);
     };
@@ -135,6 +139,13 @@ function player(i) {
   md?.querySelector('.mf')?.remove(); // sem rodapé: fechar fica no X do topo (e clicando fora)
   md?.querySelector('.mh')?.append(h('button.inv-x', { title: 'Fechar', onclick: dlg.close }, icon('x', 20)));
   show(cur);
+}
+
+// abre um clipe pelo id, em popup, de qualquer lugar (ex.: destaque "salvou um clipe" no painel "Ativo agora")
+export async function openClip(id) {
+  const c = await tryApi('GET', `/clips/${encodeURIComponent(id)}`);
+  if (!c) return; // apagado ou sem acesso: tryApi já avisou
+  player(0, [c], { standalone: true });
 }
 
 function draw() {
