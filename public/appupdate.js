@@ -20,7 +20,7 @@ export async function checkAppUpdate() {
   const current = (await d.getSettings?.().catch(() => null))?.version || null;
   const found = [];
   try { const r = await fetch('/api/desktop/update', { cache: 'no-store' }); const j = r.ok ? await r.json() : null; if (j?.version) { found.push(j.version); dlUrl = j.url || null; } } catch { }
-  if (!found.length) {
+  { // o GitHub direto também (repositório público): o servidor pode estar com a resposta guardada de minutos atrás
     try {
       const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' });
       if (r.ok) { const j = await r.json(); if (j.assets?.some(a => /^Resenha-Setup-.*\.exe$/i.test(a.name))) found.push(String(j.tag_name || '').replace(/^v/i, '')); }

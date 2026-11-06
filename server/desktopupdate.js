@@ -30,14 +30,14 @@ export function mountDesktopUpdate(app, dataDir) {
 
   let cache = { at: 0, rel: null, err: '' };
   async function latest() {
-    if (Date.now() - cache.at < 10 * 60e3) return cache.rel;
+    if (Date.now() - cache.at < 2 * 60e3) return cache.rel; // 2 min: versão recém-publicada aparece logo
     try {
       const j = await json(`https://api.github.com/repos/${REPO}/releases/latest`);
       const a = (j.assets || []).find(x => SETUP.test(x.name));
       cache = { at: Date.now(), rel: a ? { version: String(j.tag_name || '').replace(/^v/i, ''), id: a.id, name: a.name, size: a.size } : null, err: '' };
     } catch (e) {
       if (e.message !== cache.err) console.log(`  Atualização do app desktop: não consegui consultar o GitHub (${e.message})${token() ? '' : ' — sem chave: com o repositório privado, coloque github-token.txt na pasta de dados'}`);
-      cache = { at: Date.now() - 8 * 60e3, rel: cache.rel, err: e.message }; // tenta de novo em 2 min
+      cache = { at: Date.now() - 60e3, rel: cache.rel, err: e.message }; // tenta de novo em 1 min
     }
     return cache.rel;
   }

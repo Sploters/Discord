@@ -547,7 +547,7 @@ function versionRow(version) {
       btn.disabled = true; btn.textContent = 'Baixando…';
       // app que atualiza sozinho: espera a versão nova terminar de baixar no app (até ~3 min) e só então reinicia
       if (quiet) { let v = null; for (let i = 0; i < 60 && !(v = await appUpdateReady()); i++) await new Promise(r => setTimeout(r, 3000)); if (v) btn.textContent = 'Reiniciando…'; }
-      if (!await installAppUpdate()) { btn.disabled = false; btn.textContent = quiet ? `Reiniciar e atualizar para ${r.latest}` : `Atualizar para ${r.latest}`; toast(quiet ? 'Não deu para atualizar agora. Tente de novo em instantes.' : 'Baixando o instalador: quando terminar, abra o Resenha-Setup.'); } };
+      if (!await installAppUpdate()) { btn.disabled = false; btn.textContent = quiet ? `Reiniciar e atualizar para ${r.latest}` : `Atualizar para ${r.latest}`; toast(quiet ? (window.lcDesktop?.checkUpdate ? 'Não deu para atualizar agora. Tente de novo em instantes.' : 'O app ainda não baixou a versão nova: feche e abra o Resenha (ele baixa sozinho e avisa).') : 'Baixando o instalador: quando terminar, abra o Resenha-Setup.'); } };
   } }, 'Procurar atualização');
   return row('Versão', status, btn);
 }
