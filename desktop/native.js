@@ -17,6 +17,7 @@ const helperPath = () => {
 function capable() {
   if (process.platform !== 'win32') return Promise.resolve({ ok: false, reason: 'Só no app para Windows.' });
   const exe = helperPath(); if (!exe) return Promise.resolve({ ok: false, reason: 'Componente de transmissão nativa não encontrado. Atualize o app.' });
+  if (winBuild && winBuild < 20348) return Promise.resolve({ ok: false, reason: BORDER_MSG });
   if (probed) return probed;
   probed = new Promise((res) => execFile(exe, ['--probe'], { windowsHide: true, timeout: 10000 }, (err, out) => {
     let j = null; try { j = JSON.parse(String(out).trim().split(/\r?\n/).pop()); } catch { }
@@ -25,6 +26,11 @@ function capable() {
   }));
   return probed;
 }
+
+// Windows 10: a captura do programa nativo (WGC) sempre desenha uma borda amarela em volta da tela/janela, e só o Windows
+// 11 deixa tirar. Lá a transmissão fica no caminho normal (até 60 FPS), que captura sem a borda.
+const winBuild = process.platform === 'win32' ? +require('os').release().split('.')[2] || 0 : 0;
+const BORDER_MSG = 'No Windows 10 a captura a 120 FPS mostra uma borda amarela em volta da tela (limitação do Windows; no Windows 11 não acontece). Transmitindo a 60 FPS, sem a borda.';
 
 // id do desktopCapturer -> o que o programa entende: janela (HWND) ou um ponto dentro do monitor (pixels físicos)
 async function sourceFor(id) {

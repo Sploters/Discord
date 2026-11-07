@@ -44,8 +44,16 @@ if (pinnedIp) app.commandLine.appendSwitch('host-resolver-rules', `MAP ${srvHost
 // vídeo da placa e os recursos de vídeo dos drivers para todo mundo, e justo no PC em que isso devia ajudar o vídeo
 // ficava escuro e piscando no app, enquanto no navegador (sem essas mudanças) ficava normal. Esses desligamentos agora
 // só entram com "Compatibilidade de vídeo" ligada (abaixo).
+// recursos do Chromium desligados (junta tudo numa opção só: a última --disable-features apagaria as anteriores)
+const offFeatures = new Set();
 // bug do Chromium no Windows: a janela deixa de repintar até trocar de programa
-app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+offFeatures.add('CalculateNativeWinOcclusion');
+// borda amarela em volta da tela ao transmitir: é a moldura que o Windows desenha na captura moderna (WGC). No Windows 11
+// o Chromium tira a moldura; no Windows 10 não dá para tirar, então lá a tela inteira é capturada pelo método antigo
+// (DXGI, sem moldura e igualmente rápido). Ver também desktop/native.js (120 FPS).
+const winBuild = process.platform === 'win32' ? +require('node:os').release().split('.')[2] || 0 : 0;
+const wgcBorder = process.platform === 'win32' && winBuild < 20348;
+if (wgcBorder) offFeatures.add('AllowWgcScreenCapturer');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 // PC com duas placas (vídeo integrado do processador + placa dedicada): usa a dedicada. Se o app rodasse na integrada
 // com o monitor ligado na dedicada, cada quadro teria que passar de uma placa para a outra (piscadas, cores erradas)
@@ -65,9 +73,10 @@ if (gpuCompat && cfg.hardwareAcceleration !== false) {
   app.commandLine.appendSwitch('disable-accelerated-video-decode'); // clipes e transmissões decodificados pela CPU
   app.commandLine.appendSwitch('force-color-profile', 'srgb'); // sem conversão de cor do monitor/HDR
   // vídeo desenhado junto com a página: sem sobreposição de hardware nem realce/HDR automático do driver
-  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,DirectCompositionVideoOverlays,DirectCompositionVideoOverlaySupport,DirectCompositionVideoSwapChainForFullscreen,NvidiaVpSuperResolution,NvidiaVpTrueHDR,IntelVpSuperResolution,DirectCompositionLetterboxVideoOptimization');
+  for (const f of ['DirectCompositionVideoOverlays', 'DirectCompositionVideoOverlaySupport', 'DirectCompositionVideoSwapChainForFullscreen', 'NvidiaVpSuperResolution', 'NvidiaVpTrueHDR', 'IntelVpSuperResolution', 'DirectCompositionLetterboxVideoOptimization']) offFeatures.add(f);
   app.commandLine.appendSwitch('disable-direct-composition-video-overlays');
 }
+app.commandLine.appendSwitch('disable-features', [...offFeatures].join(','));
 const log = (...a) => { try { fs.appendFileSync(path.join(app.getPath('userData'), 'main.log'), `${new Date().toISOString()} ${a.join(' ')}\n`); } catch { /* sem log */ } };
 let win, tray, quitting = false, pickedSource = null, pickedName = '', badge = 0;
 const serverHost = () => { try { return new URL(cfg.server).hostname; } catch { return ''; } };

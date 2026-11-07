@@ -218,3 +218,21 @@ export function notify(title, body, onclick) {
   n.onclick = () => { window.focus(); onclick?.(); n.close(); };
 }
 export { h, icon };
+
+// "Fantasma" de popup no app desktop: em alguns PCs (placa de vídeo/driver), quando um popup, menu ou janela flutuante
+// fecha, o Windows só atualiza o pedaço que o Chromium disse que mudou e a sombra arredondada do popup fica desenhada
+// até um Alt+Tab ou passar o mouse por cima. Ao fechar qualquer coisa flutuante, cobre a janela por 2 quadros com uma
+// camada quase transparente (imperceptível): a tela inteira é redesenhada e o resto do popup some.
+if (window.lcDesktop) {
+  let pending = false;
+  const repaint = () => {
+    if (pending) return; pending = true;
+    requestAnimationFrame(() => {
+      const v = document.createElement('div'); v.className = 'lc-repaint'; document.body.append(v);
+      requestAnimationFrame(() => requestAnimationFrame(() => { v.remove(); pending = false; }));
+    });
+  };
+  const watch = (el) => el && new MutationObserver((ms) => { if (ms.some(m => [...m.removedNodes].some(n => n.nodeType === 1 && n.className !== 'lc-repaint'))) repaint(); }).observe(el, { childList: true });
+  const start = () => { watch(document.getElementById('layer')); watch(document.body); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+}

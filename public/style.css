@@ -266,3 +266,5 @@ button.busy.ibtn::after, button.busy.gstar::after, button.busy.adel::after { dis
 button.ibtn.busy, button.gstar.busy, button.adel.busy { opacity: .55; transition: opacity .15s .25s; }
 @keyframes busyIn { to { opacity: .85; } }
 @keyframes busySpin { to { transform: rotate(360deg); } }
+/* redesenho da janela inteira ao fechar popups (ver o fim de state.js): quase transparente, some em 2 quadros */
+.lc-repaint { position: fixed; inset: 0; z-index: 2147483647; pointer-events: none; background: rgba(0, 0, 0, .004); }

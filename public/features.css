@@ -56,16 +56,27 @@ html.anim .btn, html.anim .roundbtn, html.anim .ibtn { transition: background .1
 html.anim .btn:active, html.anim .roundbtn:active { transform: scale(.95); }
 
 /* ---- abas de canais + favoritos ---- */
-#chtabs { flex: none; display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px; background: var(--bg-tert); border-bottom: 1px solid var(--divider); overflow: hidden; }
-#chtabs .ct-list { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; } #chtabs .ct-list::-webkit-scrollbar { display: none; }
-.ct-tab { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 6px 0 10px; border-radius: 6px; color: var(--interactive); cursor: pointer; font-size: 13px; font-weight: 500; flex: 0 1 170px; min-width: 70px; max-width: 170px; }
+#app { --ct-h: 40px; } /* altura da barra de abas */
+#chtabs { flex: none; display: flex; align-items: center; gap: 6px; height: var(--ct-h); padding: 0 8px; background: var(--bg-tert); border-bottom: 1px solid var(--divider); overflow: hidden; }
+#chtabs .ct-list { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 1 1 0; overflow-x: auto; scrollbar-width: none; } #chtabs .ct-list::-webkit-scrollbar { display: none; }
+/* como nos navegadores: com poucas abas cada uma é larga (até 240 px); com muitas, todas encolhem por igual para caber.
+   Estreita, a aba esconde o X (menos a ativa) e, no limite, mostra só o ícone; nome comprido termina em "…" */
+.ct-tab { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 6px 0 10px; border-radius: 8px; color: var(--interactive); cursor: pointer; font-size: 13.5px; font-weight: 500;
+  flex: 0 1 240px; min-width: 40px; max-width: 240px; box-sizing: border-box; container-type: inline-size; overflow: hidden; }
+.ct-tab .ct-x { flex: none; }
+#chtabs .ct-add { flex: none; position: sticky; right: 0; background: var(--bg-tert); } /* o + continua à vista com muitas abas */
+/* larguras do conteúdo da aba (sem o espaçamento): abaixo de ~110 px some o X das inativas; abaixo de ~50 px fica só o ícone */
+@container (max-width: 92px) { .ct-tab:not(.active) .ct-x { display: none; } .ct-tab .ct-pill { padding: 0 4px; } }
+@container (max-width: 30px) { .ct-tab .ct-txt, .ct-tab .ct-x, .ct-tab .ct-pill, .ct-tab .ct-dot { display: none; } .ct-tab .ct-name { justify-content: center; } }
+/* separador fino entre abas inativas (some perto da ativa e da que está com o mouse) */
+.ct-tab:not(.active):not(:hover) + .ct-tab:not(.active):not(:hover) { background: linear-gradient(var(--divider), var(--divider)) left center / 1px 16px no-repeat; }
 .ct-tab:hover { background: var(--bg-mod-hover); color: var(--interactive-hover); } .ct-tab.active { background: var(--bg-pri); color: #fff; }
 .ct-name { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1; } .ct-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .ct-ico { display: inline-flex; flex: none; color: var(--text-muted); } .ct-ico svg { fill: currentColor; } .ct-tab.active .ct-ico { color: var(--interactive); }
 .ct-x, .ct-add, .ct-star { border: 0; background: none; color: inherit; display: flex; align-items: center; justify-content: center; border-radius: 4px; cursor: pointer; padding: 3px; opacity: .7; } .ct-x:hover, .ct-add:hover, .ct-star:hover { opacity: 1; background: var(--bg-mod-hover); }
 .ct-add, .ct-star { color: var(--interactive); } .ct-star.on { color: #f0b232; opacity: 1; }
 .ct-pill { background: var(--red); color: #fff; border-radius: 8px; padding: 0 5px; font-size: 11px; font-weight: 700; } .ct-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; flex: none; }
-.ct-favs { display: flex; align-items: center; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; } .ct-favs::-webkit-scrollbar { display: none; }
+.ct-favs { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 0 1 auto; max-width: 35%; overflow-x: auto; scrollbar-width: none; } .ct-favs::-webkit-scrollbar { display: none; }
 .ct-sep { width: 1px; height: 18px; background: var(--divider); margin: 0 4px; flex: none; }
 .ct-fav { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; font-size: 12px; background: var(--bg-mod-hover); color: var(--interactive); cursor: pointer; white-space: nowrap; flex: none; max-width: 140px; overflow: hidden; text-overflow: ellipsis; } .ct-fav:hover { color: #fff; } .ct-fav .ct-ico { color: inherit; opacity: .75; }
 
@@ -288,12 +299,12 @@ body:has(#lightbox) #layer { z-index: 130; } /* menus de clique direito por cima
 @media (max-width: 900px) { #app { --side-w: 200px; } }
 #app.hide-side { --side-w: 0px; }
 @media (min-width: 641px) {
-  #app:has(#chtabs) #side { margin-top: 34px; }
+  #app:has(#chtabs) #side { margin-top: var(--ct-h); }
   /* o primeiro ícone do menu lateral (Mensagens diretas) começa na altura do cabeçalho da lista (#side-head), logo abaixo das abas */
-  #app:has(#chtabs) #rail { padding-top: 34px; }
+  #app:has(#chtabs) #rail { padding-top: var(--ct-h); }
   /* como no Discord: o painel lateral tem o canto de cima arredondado e uma borda fina, encaixado no fundo escuro do menu.
      A linha de baixo das abas só passa por cima do chat; em cima da lista quem desenha a linha é a borda do painel. */
-  #app:has(#chtabs) #side { margin-top: 33px; border-top: 1px solid var(--divider); border-left: 1px solid var(--divider); border-top-left-radius: 12px; }
+  #app:has(#chtabs) #side { margin-top: calc(var(--ct-h) - 1px); border-top: 1px solid var(--divider); border-left: 1px solid var(--divider); border-top-left-radius: 12px; }
   #app.hide-side:has(#chtabs) #side { border: 0; }
   #app:has(#chtabs) #side-head { border-top-left-radius: 11px; } /* fundo do hover e banner do servidor acompanham o canto */
   /* a primeira aba começa na mesma linha do #side-head (logo depois da borda de 1 px do painel) */
