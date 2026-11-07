@@ -34,7 +34,7 @@ import { profileCard, STATUS_TXT } from './card.js';
 import { timeoutDialog, removeTimeout, banDialog, timedOutUntil } from './mod.js';
 import { recordVoiceMessage, voiceEl } from './voicemsg.js';
 import { initPlugins, mentionUser, addMention, resolveMentions } from './plugins.js';
-import { initActivity, setActivities, onActivityUpdate, onIntegrationUpdate, activityPanel, activityOf, playingLine, refreshFeedView, gameIcon } from './activity.js';
+import { initActivity, setActivities, onActivityUpdate, onIntegrationUpdate, activityPanel, activityOf, playingLine, refreshFeedView, gameIcon, voiceGameIcon } from './activity.js';
 import { toggleTranslation, isTranslated, translationBlock, translateOutgoing, draftMenu } from './translate.js';
 import { initDiag, openReport } from './diag.js';
 import { initPwa } from './pwa.js';
@@ -538,7 +538,7 @@ function vuserRow(g, v) {
   const u = user(v.user_id);
   const row = h('div.vuser', { 'data-uid': v.user_id, oncontextmenu: (e) => userMenu(e, v.user_id, g.id), onclick: (e) => profile(e.currentTarget, v.user_id, g.id) },
     (() => { const a = avatar(u, 24, { status: false }); if (voice?.speaking.has(v.user_id)) a.classList.add('speaking'); if (voice?.sbActive.has(v.user_id)) a.classList.add('sbplay'); a.dataset.uid = v.user_id; return a; })(),
-    h('span.nm', nameOf(v.user_id, g.id), fxBadge(v.fx)), appBadge(v), v.screen && h('span.live', 'Ao vivo'),
+    h('span.nm', nameOf(v.user_id, g.id), fxBadge(v.fx)), voiceGameIcon(v.user_id), appBadge(v), v.screen && h('span.live', 'Ao vivo'),
     h('span.ico', v.video && icon('video', 14), muteIco(v), v.deaf && icon('headoff', 14)));
   if (v.screen) { const mine = v.user_id === S.me.id; streamHover(row, { uid: v.user_id, mine, getStream: () => (mine ? voice.screen : voice.peers.get(v.user_id)?.streams.screen), onWatch: () => watchFromList(v) }); }
   return row;
@@ -2058,7 +2058,7 @@ initLfg({ go, profile: (a, uid) => profile(a, uid), inVoice: () => !!voice?.chan
 initClipsGallery({ go, jumpTo: (mid) => jumpTo(mid) });
 initDiag(() => voice); initPwa(); setTimeout(initAppUpdate, 1500); // aviso de versão nova do app desktop (depois da abertura, sem atrasá-la)
 initCallInvite({ go, joinVoice, voice: () => voice, channelById, guild });
-initActivity({ openDM, profile: (a, uid) => profile(a, uid), userMenu: (e, uid) => userMenu(e, uid), go, joinVoice, watchFriend, voice: () => voice, openSettings: (k) => openSettings(k, ctxSettings()), renderActiveNow, renderMembers: () => { if ($('#members')) renderMembers(); } });
+initActivity({ openDM, profile: (a, uid) => profile(a, uid), userMenu: (e, uid) => userMenu(e, uid), go, joinVoice, watchFriend, voice: () => voice, openSettings: (k) => openSettings(k, ctxSettings()), renderActiveNow, renderMembers: () => { if ($('#members')) renderMembers(); }, renderSide: () => renderSide() });
 // testes: importa um módulo do app pelo mesmo endereço (com a versão) que o app usa, para pegar a mesma instância
 const VQ = new URL(import.meta.url).search;
 window.__lc = { S, import: (f) => import('./' + f + VQ), get voice() { return voice; }, go, openSettings: (k) => openSettings(k, { voice, logout, go, gid: S.view.gid }) };

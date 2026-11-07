@@ -23,6 +23,7 @@ export function onActivityUpdate(d) {
   const k = d.user_id + ':' + d.platform;
   if (d.activity) S.activities.set(k, d.activity); else S.activities.delete(k);
   ctx.renderActiveNow?.(); ctx.renderMembers?.(); scheduleFeed();
+  if (S.voice.has(d.user_id)) ctx.renderSide?.(); // ícone do jogo ao lado do nome na sala de voz
 }
 export function onIntegrationUpdate(d) {
   if (S.integrations) { const i = S.integrations.find(x => x.id === d.platform); if (i) i.account = d.account; }
@@ -110,6 +111,45 @@ export function gameModal(a) {
   return m;
 }
 const openGame = (a) => (e) => { e?.stopPropagation(); gameModal(a); };
+
+// ---------------------------------------------------------------- ícone do jogo na sala de voz + popup "Jogando agora"
+// Ao lado do nome de quem está jogando. Passando o mouse: popup com a imagem, o nome do jogo, o que está fazendo (quando
+// a plataforma conta) e há quanto tempo, em tempo real. Clicar no ícone, na imagem ou no nome abre o popup do jogo.
+const elapsed = (t) => { const s = Math.max(0, Math.floor((Date.now() - t) / 1000)), hh = Math.floor(s / 3600), mm = Math.floor(s / 60) % 60, ss = s % 60; return (hh ? hh + ':' + String(mm).padStart(2, '0') : mm) + ':' + String(ss).padStart(2, '0'); };
+let gameCard = null, gameCardTimer = null, gameCardTick = null;
+export function hideGameCard() { clearTimeout(gameCardTimer); clearInterval(gameCardTick); gameCard?.remove(); gameCard = null; }
+function showGameCard(anchor, uid) {
+  hideGameCard();
+  const a = activityOf(uid); if (!a) return;
+  const mine = activityOf(S.me.id), same = uid !== S.me.id && mine && sameGame({ ...mine.game, platform: mine.platform }, a);
+  const open = (e) => { hideGameCard(); openGame(a)(e); };
+  const time = h('span.gc-time', elapsed(a.since));
+  gameCard = h('div.gamecard', { role: 'dialog', 'aria-label': `Jogando ${a.game.title}`, onmouseleave: (e) => { if (!anchor.contains(e.relatedTarget)) hideGameCard(); } },
+    h('div.gc-head', 'Jogando agora'),
+    h('div.gc-row',
+      h('button.gc-img', { title: `Sobre ${a.game.title}`, onclick: open }, gameIcon(a, 56)),
+      h('div.gc-info',
+        h('button.gc-title', { title: `Sobre ${a.game.title}`, onclick: open }, a.game.title),
+        a.state && h('div.gc-state', a.state),
+        h('div.gc-badges', h('span.gc-badge.gc-play', { title: 'Tempo jogando' }, icon('gamepad', 12), time),
+          a.platform !== 'pc' && h('span.gc-badge', platformName(a.platform))))),
+    h('div.gc-btns',
+      h('button.btn.sm.gc-btn', { onclick: open }, 'Sobre o jogo'),
+      same && h('button.btn.grey.sm.gc-btn', { disabled: true, title: 'Você está jogando isto agora' }, 'Você também está jogando')));
+  document.body.append(gameCard);
+  const r = anchor.getBoundingClientRect(), cw = gameCard.offsetWidth, ch = gameCard.offsetHeight;
+  gameCard.style.left = Math.max(8, Math.min(r.right + 10, innerWidth - cw - 8)) + 'px';
+  gameCard.style.top = Math.max(8, Math.min(r.top - 12, innerHeight - ch - 8)) + 'px';
+  gameCardTick = setInterval(() => { if (!gameCard?.isConnected) return hideGameCard(); time.textContent = elapsed(a.since); }, 1000);
+}
+// ícone pequeno (16 px) para a linha de quem está na sala; null se a pessoa não está jogando
+export function voiceGameIcon(uid) {
+  const a = activityOf(uid); if (!a) return null;
+  const el = h('span.vgame', { title: '', 'aria-label': `Jogando ${a.game.title}`, onclick: (e) => { hideGameCard(); openGame(a)(e); } }, gameIcon(a, 16));
+  el.addEventListener('mouseenter', () => { clearTimeout(gameCardTimer); gameCardTimer = setTimeout(() => showGameCard(el, uid), 250); });
+  el.addEventListener('mouseleave', (e) => { clearTimeout(gameCardTimer); if (!e.relatedTarget?.closest?.('.gamecard')) setTimeout(() => { if (gameCard && !gameCard.matches(':hover')) hideGameCard(); }, 150); });
+  return el;
+}
 
 // ---------------------------------------------------------------- ações reais (só aparecem quando a situação permite)
 function voiceActions(uid) {

@@ -1206,3 +1206,27 @@ html.anim .updov .uo-card { animation: lc-pop .25s cubic-bezier(.2, .9, .3, 1.15
 .updov.bad .uo-prog { display: none; }
 .updov .uo-btns:not(:empty) { margin-top: 4px; display: flex; justify-content: center; }
 @keyframes uoSlide { from { left: -35%; } to { left: 100%; } }
+
+/* ícone do jogo ao lado do nome na sala de voz e popup "Jogando agora" ao passar o mouse (activity.js) */
+.vuser .vgame { display: inline-flex; flex: none; padding: 2px; border-radius: 4px; cursor: pointer; }
+.vuser .vgame:hover { background: var(--bg-mod-hover); }
+.vuser .vgame .gicon { vertical-align: 0; }
+.gamecard { position: fixed; z-index: 1200; width: 280px; box-sizing: border-box; padding: 12px; border-radius: 10px; background: var(--bg-float, var(--bg-sec)); border: 1px solid var(--divider);
+  box-shadow: 0 8px 24px rgba(0,0,0,.4); color: var(--text); }
+html.anim .gamecard { animation: lc-pop .14s ease-out; }
+.gamecard .gc-head { font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 10px; }
+.gamecard .gc-row { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.gamecard .gc-img { flex: none; padding: 0; border: 0; background: var(--bg-tert); border-radius: 10px; overflow: hidden; cursor: pointer; display: flex; }
+.gamecard .gc-img .gicon { border-radius: 10px; } .gamecard .gc-img:hover { filter: brightness(1.1); }
+.gamecard .gc-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.gamecard .gc-title { padding: 0; border: 0; background: none; text-align: left; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--header);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gamecard .gc-title:hover { text-decoration: underline; }
+.gamecard .gc-state { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gamecard .gc-badges { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 3px; }
+.gamecard .gc-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
+.gamecard .gc-badge .icon { fill: currentColor; }
+.gamecard .gc-play { color: var(--green, #23a55a); font-family: ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.gamecard .gc-btns { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.gamecard .gc-btn { width: 100%; justify-content: center; min-height: 32px; }
+.gamecard .gc-btn[disabled] { opacity: .6; cursor: default; }
