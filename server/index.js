@@ -19,6 +19,7 @@ import { createThumbs } from './thumbs.js';
 import { mountDesktopUpdate } from './desktopupdate.js';
 import { trimWebm, keyframeTimes } from '../public/webm.js';
 import { mountGifs } from './gifs.js';
+import { mountQrLogin } from './qrlogin.js';
 import { mountLfg } from './lfg.js';
 import { mountDiscover } from './discover.js';
 import { translate, translateEnabled, engineName } from './translate.js';
@@ -254,6 +255,7 @@ app.post('/api/login', wrap((req, res) => {
   res.json({ token });
 }));
 app.post('/api/logout', auth, wrap((req, res) => { run('DELETE FROM sessions WHERE token=?', req.token); res.json({}); }));
+mountQrLogin(app, { auth, wrap, bad, run, userPub, ipLimited, clean }); // entrar lendo um QR Code com o celular já logado (server/qrlogin.js)
 
 app.patch('/api/me', auth, wrap((req, res) => {
   const b = req.body, u = getUser(req.uid);

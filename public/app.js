@@ -38,6 +38,7 @@ import { initActivity, setActivities, onActivityUpdate, onIntegrationUpdate, act
 import { toggleTranslation, isTranslated, translationBlock, translateOutgoing, draftMenu } from './translate.js';
 import { initDiag, openReport } from './diag.js';
 import { initPwa } from './pwa.js';
+import { renderAuth, qrCodeInUrl, approveQr } from './auth.js';
 import { initAppUpdate, installAppUpdate, myDesktopVersion, refreshDesktopVersion, latestDesktop, isOlder } from './appupdate.js';
 applyTheme();
 
@@ -47,31 +48,12 @@ const gwSend = (t, d) => ws?.readyState === 1 && ws.send(JSON.stringify({ t, d }
 initMusic(gwSend);
 
 // =============== Autenticação ===============
+// tela de entrar / criar conta (public/auth.js); o celular que abriu /qr/<código> aprova o login de outro aparelho
+const qrCode = qrCodeInUrl();
 function showAuth(mode = 'login') {
   $('#app').classList.add('hidden');
-  const a = $('#auth'); a.classList.remove('hidden'); a.replaceChildren();
-  const err = h('div.err'), u = h('input', { autocomplete: 'username', maxLength: 32 }), p = h('input', { type: 'password', autocomplete: mode === 'login' ? 'current-password' : 'new-password' });
-  const dn = h('input', { maxLength: 32 }), p2 = h('input', { type: 'password' });
-  const submit = async () => {
-    err.textContent = '';
-    if (mode === 'register' && p.value !== p2.value) return (err.textContent = 'As senhas não coincidem');
-    try {
-      const r = await api('POST', mode === 'login' ? '/login' : '/register', { username: u.value, password: p.value, display_name: dn.value });
-      S.token = r.token; localStorage.setItem('lc_token', r.token); a.classList.add('hidden'); connect();
-    } catch (e) { err.textContent = e.message; }
-  };
-  a.append(h('div.card', { onkeydown: (e) => e.key === 'Enter' && submit() },
-    h('h1', mode === 'login' ? 'Boas-vindas de volta!' : 'Criar uma conta'),
-    h('p.sub', mode === 'login' ? 'Estamos muito animados em te ver novamente!' : 'Junte-se ao servidor dos seus amigos.'),
-    pendingInvite && h('p.sub.invited', { style: { color: '#fff' } }, icon('invite', 18), 'Você foi convidado! Entre para aceitar o convite.'),
-    h('label.f', 'Nome de usuário', u),
-    mode === 'register' && h('label.f', 'Nome de exibição (opcional)', dn),
-    h('label.f', 'Senha', p), mode === 'register' && h('label.f', 'Confirmar senha', p2), err,
-    h('button.btn.block', { onclick: submit }, mode === 'login' ? 'Entrar' : 'Continuar'),
-    h('p', { style: { fontSize: '14px', color: 'var(--text-muted)', marginBottom: 0 } },
-      mode === 'login' ? 'Precisa de uma conta? ' : 'Já tem uma conta? ',
-      h('a', { href: '#', onclick: (e) => { e.preventDefault(); showAuth(mode === 'login' ? 'register' : 'login'); } }, mode === 'login' ? 'Registre-se' : 'Entrar'))));
-  u.focus();
+  const a = $('#auth'); a.classList.remove('hidden');
+  renderAuth(a, mode, { invited: !!pendingInvite, qrPending: !!qrCode, onToken: (token) => { S.token = token; localStorage.setItem('lc_token', token); a.classList.add('hidden'); a.replaceChildren(); connect(); } });
 }
 function logout() {
   api('POST', '/logout').catch(() => { });
@@ -154,6 +136,7 @@ function onEvent(t, d) {
       $('#auth').classList.add('hidden'); $('#app').classList.remove('hidden');
       applyTheme(); setupDesktop(); startGameDetect(); syncThrottle(!!voice?.active);
       loadPendingInvites(); // convites para chamada que chegaram enquanto estava fora (ou antes de recarregar)
+      if (qrCode && !S.qrDone) { S.qrDone = true; approveQr(qrCode, S.me).then(ok => { if (ok) toast('Pronto! O outro aparelho entrou na sua conta.'); }); }
       if (!S.synced) api('GET', '/me/settings').then(r => { // sincroniza preferências entre dispositivos
         const keep = { inputId: S.prefs.inputId, outputId: S.prefs.outputId, videoId: S.prefs.videoId };
         const local = { ...S.prefs }; Object.assign(S.prefs, r.settings || {}, keep); relite(r.settings || {}, local); S.friendPolicy = r.friend_policy; S.synced = true;
