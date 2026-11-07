@@ -8,7 +8,9 @@ import { S, tryApi, toast, menu, modal, confirmBox, promptBox, can, PERM, guild,
 let ctx = {}; // injetado por app.js: go(gid, cid), jumpTo(mid)
 export const initClipsGallery = (c) => { ctx = c; };
 
-const st = { gid: null, filter: 'all', q: '', clips: [], total: 0, more: false, loading: false, root: null };
+const st = { gid: null, filter: 'all', q: '', clips: [], total: 0, more: false, loading: false, root: null, focus: null, focusPages: 0, toTop: false };
+// "Ver na galeria" (do player em popup ou do clipe no chat): a galeria abre com aquele clipe à vista e destacado
+export function galleryFocus(id) { st.focus = id || null; st.focusPages = 0; }
 const ago = (t) => { const s = (Date.now() - t) / 1000; if (s < 60) return 'agora'; if (s < 3600) return `há ${Math.floor(s / 60)} min`; if (s < 86400) return `há ${Math.floor(s / 3600)} h`; const d = Math.floor(s / 86400); return d < 30 ? `há ${d} d` : new Date(t).toLocaleDateString('pt-BR'); };
 const mb = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
 const canEdit = (c) => c.author.id === S.me.id || can(c.guild_id, PERM.MANAGE_MESSAGES);
@@ -26,7 +28,21 @@ async function load(reset) {
   st.loading = false;
   if (!r || gid !== st.gid) return;
   st.clips = reset ? r.clips : [...st.clips, ...r.clips]; st.total = r.total; st.more = r.clips.length === 30;
+  if (reset) st.toTop = true; // filtro/busca nova: começa do topo; "Carregar mais" mantém onde estava
   draw();
+  if (st.focus) showFocus();
+}
+// leva até o clipe pedido: carrega mais páginas se ele ainda não apareceu, rola até ele e destaca por alguns segundos
+function showFocus() {
+  const id = st.focus, el = st.root?.querySelector(`.clipcard[data-id="${CSS.escape(String(id))}"]`);
+  if (el) {
+    st.focus = null;
+    el.scrollIntoView({ block: 'center', behavior: document.documentElement.classList.contains('anim') ? 'smooth' : 'auto' });
+    el.classList.add('focus'); setTimeout(() => el.classList.remove('focus'), 3000);
+    return;
+  }
+  if (st.more && ++st.focusPages <= 20) return void load(false);
+  st.focus = null; toast('Esse clipe não está mais na galeria', true);
 }
 
 function card(c, i) {
@@ -101,7 +117,7 @@ function player(i, list = st.clips, opts = {}) {
   const trow = h('div.ptrow', title, pen);
   const dl = h('a.btn.grey', { download: '' }, icon('dl', 16), 'Baixar');
   // fora da galeria: atalho para a galeria do servidor (e para a mensagem no chat)
-  const extra = opts.standalone && [h('button.btn.grey', { onclick: () => { dlg.close(); ctx.go(list[cur].guild_id, 'clips'); } }, icon('clip', 16), 'Ver na galeria'),
+  const extra = opts.standalone && [h('button.btn.grey', { onclick: () => { dlg.close(); galleryFocus(list[cur].id); ctx.go(list[cur].guild_id, 'clips'); } }, icon('clip', 16), 'Ver na galeria'),
     list[cur].message_id && h('button.btn.grey', { onclick: () => { const c = list[cur]; dlg.close(); ctx.go(c.guild_id, c.channel_id); setTimeout(() => ctx.jumpTo?.(c.message_id), 600); } }, icon('dm', 16), 'Ir para a mensagem')];
   const box = h('div.clipplayer', h('div.pstage', prev, vbox, next), h('div.pbar', h('div.ptxt', trow, meta), h('div.pbtns', extra, dl)));
   const show = (k) => {
@@ -158,15 +174,18 @@ function draw() {
     h('b', st.q ? 'Nenhum clipe encontrado' : st.filter === 'fav' ? 'Nenhum favorito ainda' : st.filter === 'mine' ? 'Você ainda não tem clipes' : 'Nenhum clipe ainda'),
     h('p', st.q ? 'Tente outro nome.' : st.filter === 'fav' ? 'Clique na estrela de um clipe para guardá-lo aqui.' : 'Numa sala de voz, assista uma transmissão e use o botão de clipes (ou Ctrl+Alt+C) para salvar os últimos segundos. Eles aparecem aqui para todo o servidor.'));
   const focused = document.activeElement?.classList?.contains('csearch');
+  const top = st.toTop ? 0 : root.querySelector('.cbody')?.scrollTop || 0; st.toTop = false; // redesenhar não pode jogar a lista para o topo
   root.replaceChildren(
     h('div#topbar', h('span.hash', icon('clip', 24)), h('span', 'Clipes'), h('span.topic', `${st.total} ${st.total === 1 ? 'clipe' : 'clipes'} em ${g?.name || 'este servidor'}`)),
     h('div.cbody', h('div.ctool', h('div.ctabs', tabs), search), grid, empty || null,
       st.more && h('button.btn.grey.cmore', { onclick: () => load(false) }, 'Carregar mais')));
   if (focused) { const s = root.querySelector('.csearch'); s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+  if (top) root.querySelector('.cbody').scrollTop = top;
 }
 
 export function renderClips(main, gid) {
   if (st.gid !== gid) Object.assign(st, { gid, filter: 'all', q: '', clips: [], total: 0, more: false });
+  if (st.focus) Object.assign(st, { filter: 'all', q: '' }); // o clipe pedido tem de estar na lista: sem filtro nem busca
   st.root = h('div#clipsview'); main.replaceChildren(st.root);
   draw(); load(true);
 }

@@ -1230,3 +1230,8 @@ html.anim .gamecard { animation: lc-pop .14s ease-out; }
 .gamecard .gc-btns { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
 .gamecard .gc-btn { width: 100%; justify-content: center; min-height: 32px; }
 .gamecard .gc-btn[disabled] { opacity: .6; cursor: default; }
+/* clipe aberto por "Ver na galeria": contorno e brilho por alguns segundos */
+#clipsview .clipcard.focus { outline: 2px solid var(--brand, #5865f2); outline-offset: 2px; box-shadow: 0 0 0 6px color-mix(in srgb, var(--brand, #5865f2) 25%, transparent); }
+html.anim #clipsview .clipcard { transition: outline-color .4s, box-shadow .4s; }
+html.anim #clipsview .clipcard.focus { animation: clipFocus 1s ease-out 2; }
+@keyframes clipFocus { 50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--brand, #5865f2) 10%, transparent); } }

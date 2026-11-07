@@ -24,7 +24,7 @@ import { initRemote, onRemoteEvent, tileButton as remoteTileButton, controlling 
 import { pollModal, pollCard } from './polls.js';
 import { initLfg, renderLfg, onLfgEvent } from './lfg.js';
 import { renderDiscover } from './discover.js';
-import { initClipsGallery, renderClips, onClipEvent } from './clipsgallery.js';
+import { initClipsGallery, renderClips, onClipEvent, galleryFocus } from './clipsgallery.js';
 import { initCallInvite, callCard, onCallInvite, onCallInviteUpdate, canCallInvite, sendCallInvite, inviteFrom, loadPendingInvites, acceptInvite, declineInvite } from './callinvite.js';
 import { seg, toggle as uiToggle, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
 import { openSettings, openFullProfile } from './settings.js';
@@ -1129,7 +1129,7 @@ function clipMsgCard(m) {
   const thumb = h('div.cmthumb', { title: 'Assistir aqui', onclick: () => { thumb.replaceWith(fsVideo({ src: c.url, autoplay: true, preload: 'auto', poster: thumbUrl(c.url) || undefined }, '.cmvideo')); } },
     thumbUrl(c.url) && h('img', { src: thumbUrl(c.url), loading: 'lazy', alt: '', onerror: (e) => e.target.remove() }), h('span.cmplay', icon('play', 22)), c.secs ? h('span.cmdur', c.secs + 's') : null);
   return h('div.clipmsg', thumb, h('div.cminfo', h('b', c.title), h('small', [who && `transmissão de ${who}`, !c.has_audio && 'sem áudio'].filter(Boolean).join(' · ') || 'clipe'),
-    gid && h('button.btn.link.sm', { onclick: () => go(gid, 'clips') }, icon('clip', 14), 'Ver na galeria')));
+    gid && h('button.btn.link.sm', { onclick: () => { galleryFocus(c.id); go(gid, 'clips'); } }, icon('clip', 14), 'Ver na galeria')));
 }
 function attachEl(f) {
   const ext = (f.name.split('.').pop() || '').toLowerCase(), url = f.url;
