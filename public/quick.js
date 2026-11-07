@@ -6,7 +6,7 @@ import { S, api, tryApi, toast, savePrefs, popout, closeFloating, user, nameOf }
 import { seg, toggle, slider } from './ui.js';
 import { NOISE_MODES } from './voice.js';
 
-const STATUS = [['online', 'Online', 's-online', ''], ['idle', 'Ausente', 's-idle', 'Aparece como ausente'], ['dnd', 'Não perturbe', 's-dnd', 'Silencia notificações'], ['invisible', 'Invisível', 's-offline', 'Aparece offline, mas você usa normalmente']];
+const STATUS = [['online', 'Online', 's-online', ''], ['idle', 'Ausente', 's-idle', ''], ['dnd', 'Não perturbe', 's-dnd', 'Silencia notificações'], ['invisible', 'Invisível', 's-offline', 'Aparece offline']];
 
 async function devices(kind) {
   try { const ds = await navigator.mediaDevices.enumerateDevices(); return ds.filter(d => d.kind === kind); } catch { return []; }
@@ -166,7 +166,7 @@ export function openStatusPanel(anchor, { openSettings, openFullProfile, logout 
       h('div.mehead', banner, h('div.meav', { title: 'Ver perfil completo', onclick: () => { closeFly(); closeFloating(); openFullProfile?.(); } }, avatar(me, 80, { ring: 'var(--bg-float)' })), csBox),
       h('div.mebody',
         h('div.mename', styleName(h('span', me.display_name), me.name_style),
-          h('button.mecopy', { title: 'Copiar nome de usuário', onclick: () => { navigator.clipboard?.writeText(me.username); toast('Nome de usuário copiado'); } }, icon('copy', 16))),
+          h('button.mecopy', { title: 'Copiar nome de usuário', onclick: () => { navigator.clipboard?.writeText(me.username); toast('Nome de usuário copiado'); } }, icon('copyname', 16))),
         h('div.meun', me.username),
         h('div.megroup',
           item(icon('edit', 16), 'Editar perfil', () => { closeFloating(); openSettings?.('profile'); }),
@@ -176,8 +176,7 @@ export function openStatusPanel(anchor, { openSettings, openFullProfile, logout 
         S.prefs.lightMode && h('div.megroup',
           item(icon('leaf', 16), h('span', 'Modo leve ativo', h('small.melite', 'neste computador')), () => { closeFloating(); openSettings?.('lite'); })),
         h('div.megroup',
-          item(icon('phoneoff', 16), 'Trocar de conta', () => { closeFloating(); logout?.(); }),
-          item(icon('copy', 16), 'Copiar ID do usuário', () => { navigator.clipboard?.writeText(me.id); toast('ID copiado'); closeFloating(); }))));
+          h('div.meitem.danger', { role: 'menuitem', onclick: () => { closeFloating(); logout?.(); }, onmouseenter: closeFly }, h('span.mei', icon('logout', 16)), h('span.mel', 'Sair')))));
   };
   draw();
   const el = popout(anchor, body, 'up'); el.classList.add('quick', 'mecard');

@@ -416,3 +416,4 @@ html.anim #home .tab .tab-badge { animation: lc-pop .25s cubic-bezier(.2, .9, .3
 #active-now .an-req.inv .an-reqic { color: var(--green, #23a55a); }
 #active-now .an-reqic .icon { fill: currentColor; }
 #active-now .an-req .an-who small { white-space: normal; }
+.mepop .meitem.danger { color: var(--red, #f23f43); } .mepop .meitem.danger:hover { background: var(--red, #f23f43); color: #fff; }
