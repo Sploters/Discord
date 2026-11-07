@@ -1,7 +1,7 @@
 // Atividade social: estado em tempo real, painel "Ativo agora" (o que os amigos fazem AGORA, em destaque, e os destaques
 // marcantes da semana) e página de contas vinculadas.
 // A decisão de QUEM pode ver cada atividade é do servidor; aqui só se exibe o que ele enviou.
-import { canCallInvite, sendCallInvite } from './callinvite.js';
+import { canCallInvite, sendCallInvite, pendingInvites, acceptInvite, declineInvite } from './callinvite.js';
 import { h, icon, avatar, clock } from './util.js';
 import { chName } from './chnames.js';
 import { styleName } from './themes.js';
@@ -263,6 +263,25 @@ function hlDay(k, items, redraw) {
     open && groups.length > DAY_MAX && h('button.hl-more', { onclick: () => { dayOpen.delete(k); redraw(); } }, h('span.hl-up', icon('chevdown', 14)), 'Mostrar menos'));
 }
 
+// ---------------------------------------------------------------- pedidos de amizade e convites para a chamada
+// Primeira coisa do painel: quem quer ser seu amigo e quem chamou você para a sala, com a resposta ali mesmo.
+const mins = (t) => { const m = Math.max(1, Math.ceil((t - Date.now()) / 60000)); return m === 1 ? '1 min' : m + ' min'; };
+function requestCards() {
+  const reqs = [...S.rels.values()].filter(r => r.type === 3).map(r => uOf(r.user.id)), invs = pendingInvites();
+  if (!reqs.length && !invs.length) return [];
+  const card = (u, kind, sub, btns) => h('div.an-card.an-req.' + kind, { onclick: (e) => ctx.profile(e.currentTarget, u.id), oncontextmenu: (e) => ctx.userMenu(e, u.id) },
+    h('div.an-top', avatar(u, 40, { ring: 'var(--bg-sec)' }), h('div.an-who', nameEl(u), h('small', sub)),
+      h('span.an-reqic', icon(kind === 'inv' ? 'voice' : 'users', 16))),
+    h('div.act-btns', ...btns));
+  return [h('div.an-cap', `Para você — ${reqs.length + invs.length}`),
+    ...invs.map(i => { const u = S.users.get(i.from.id) || i.from; return card(u, 'inv', `Chamou você para ${i.channel.name} · ${i.guild.name} · expira em ${mins(i.expires_at)}`, [
+      h('button.btn.green.sm', { onclick: (e) => { e.stopPropagation(); return acceptInvite(i.id); } }, icon('voice', 14), i.member ? 'Entrar' : 'Entrar no servidor'),
+      h('button.btn.grey.sm', { onclick: (e) => { e.stopPropagation(); return declineInvite(i.id); } }, 'Recusar')]); }),
+    ...reqs.map(u => card(u, 'req', 'Quer ser seu amigo', [
+      h('button.btn.green.sm', { onclick: (e) => { e.stopPropagation(); return tryApi('PUT', `/relationships/${u.id}`, {}); } }, icon('check', 14), 'Aceitar'),
+      h('button.btn.grey.sm', { onclick: (e) => { e.stopPropagation(); return tryApi('DELETE', `/relationships/${u.id}`); } }, 'Ignorar')]))];
+}
+
 // painel inteiro. Topo, em destaque: o que os amigos estão fazendo AGORA (jogando, em chamada, online). Embaixo: os destaques.
 export function activityPanel(box) {
   box.id ||= 'active-now';
@@ -278,13 +297,14 @@ export function activityPanel(box) {
     }
     playing.sort((x, y) => x.a.since - y.a.since);
     const mine = activityOf(S.me.id);
+    const forMe = requestCards();
     const now = [
       ...(playing.length ? [h('div.an-cap', `Jogando — ${playing.length}`), ...playing.map(({ u, a }) => playCard(u.id, a))] : []),
       ...(inVoice.length ? [h('div.an-cap', `Em chamada — ${inVoice.length}`), ...inVoice.sort(byName).map(({ u, r }) => voiceCard(u.id, r))] : []),
       ...(online.length ? [h('div.an-cap', `Online — ${online.length}`), ...online.sort(byName).map(({ u }) => h('div.an-row', { onclick: () => ctx.openDM(u.id), oncontextmenu: (e) => ctx.userMenu(e, u.id) }, avatar(u, 32, { ring: 'var(--bg-sec)' }),
         h('div.an-who', nameEl(u), h('small', u.custom_status || STATUS[u.status] || 'Online')), ...voiceActions(u.id).slice(0, 1)))] : []),
     ];
-    if (!now.length) now.push(h('div.an-empty', h('b', 'Tudo quieto por aqui…'), h('p', 'Quando seus amigos jogarem, entrarem numa chamada ou ficarem online, eles aparecem aqui.'),
+    if (!now.length && !forMe.length) now.push(h('div.an-empty', h('b', 'Tudo quieto por aqui…'), h('p', 'Quando seus amigos jogarem, entrarem numa chamada ou ficarem online, eles aparecem aqui.'),
       !S.integrations?.some(i => i.account) && !window.lcDesktop?.detectGame && h('button.btn.sm', { onclick: () => ctx.openSettings('connections') }, 'Mostrar o que eu jogo')));
     // você também está jogando: linha discreta (dá para esconder o jogo daqui)
     if (mine) now.push(h('div.an-me', gameIcon(mine, 18), h('span', 'Você está jogando ', h('b', mine.game.title)),
@@ -295,7 +315,7 @@ export function activityPanel(box) {
     const hist = !feed ? [h('div.an-empty.small', 'Carregando…')]
       : hl.length ? groups.map(g => hlDay(g.k, g.items, draw))
         : [h('div.an-empty.small', h('p', 'Nada marcante ainda esta semana. Partidas longas, jogos novos, sequências e clipes dos seus amigos aparecem aqui.'))];
-    body.replaceChildren(h('section.an-now', ...now), h('section.an-hist', h('div.an-cap', 'Destaques da semana'), ...hist));
+    body.replaceChildren(forMe.length ? h('section.an-forme', ...forMe) : '', h('section.an-now', ...now), h('section.an-hist', h('div.an-cap', 'Destaques da semana'), ...hist));
   };
   S.redrawFeed = draw; draw();
   loadFeed().then(() => { if (body.isConnected) draw(); });

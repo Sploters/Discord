@@ -25,7 +25,7 @@ import { pollModal, pollCard } from './polls.js';
 import { initLfg, renderLfg, onLfgEvent } from './lfg.js';
 import { renderDiscover } from './discover.js';
 import { initClipsGallery, renderClips, onClipEvent } from './clipsgallery.js';
-import { initCallInvite, callCard, onCallInvite, onCallInviteUpdate, canCallInvite, sendCallInvite } from './callinvite.js';
+import { initCallInvite, callCard, onCallInvite, onCallInviteUpdate, canCallInvite, sendCallInvite, inviteFrom, loadPendingInvites, acceptInvite, declineInvite } from './callinvite.js';
 import { seg, toggle as uiToggle, qualityPanel, qualityLabel, comboFromEvent, comboToAccel } from './ui.js';
 import { openSettings, openFullProfile } from './settings.js';
 import { saveCustomTheme } from './themeeditor.js';
@@ -153,6 +153,7 @@ function onEvent(t, d) {
       if (!ready) buildShell(); ready = true;
       $('#auth').classList.add('hidden'); $('#app').classList.remove('hidden');
       applyTheme(); setupDesktop(); startGameDetect(); syncThrottle(!!voice?.active);
+      loadPendingInvites(); // convites para chamada que chegaram enquanto estava fora (ou antes de recarregar)
       if (!S.synced) api('GET', '/me/settings').then(r => { // sincroniza preferências entre dispositivos
         const keep = { inputId: S.prefs.inputId, outputId: S.prefs.outputId, videoId: S.prefs.videoId };
         const local = { ...S.prefs }; Object.assign(S.prefs, r.settings || {}, keep); relite(r.settings || {}, local); S.friendPolicy = r.friend_policy; S.synced = true;
@@ -1440,7 +1441,7 @@ function renderActiveNow() {
 }
 function renderHome(main) {
   if (S.view.tab === 'blocked' || S.view.tab === 'pending' || S.view.tab === 'activity') S.view.tab = 'online'; // bloqueados: Privacidade e segurança; pendentes: "Todos"; a atividade virou o painel "Ativo agora"
-  const tab = S.view.tab, rels = [...S.rels.values()];
+  const tab = S.view.tab, rels = [...S.rels.values()], reqs = rels.filter(r => r.type === 3).length;
   const tabs = [['online', 'Online'], ['all', 'Todos']];
   const q = h('input.fsearch', { placeholder: 'Buscar', oninput: () => draw() });
   const ORD = { online: 0, idle: 1, dnd: 2, invisible: 3, offline: 4 };
@@ -1452,7 +1453,7 @@ function renderHome(main) {
       const send = async () => { try { await api('POST', '/relationships', { username: inp.value }); msg.style.color = 'var(--green)'; msg.textContent = `Pedido de amizade enviado para ${inp.value}.`; inp.value = ''; } catch (e) { msg.style.color = 'var(--red)'; msg.textContent = e.message; } };
       return pane.append(h('h2', { style: { margin: '0 0 4px', color: 'var(--header)', fontSize: '16px' } }, 'Adicionar amigo'), h('p', { style: { color: 'var(--text-muted)', margin: '0 0 16px' } }, 'Você pode adicionar amigos pelo nome de usuário.'), h('div.addf', inp, h('button.btn', { onclick: send }, 'Enviar pedido')), msg);
     }
-    let list = rels.filter(r => tab === 'online' ? r.type === 1 && S.users.get(r.user.id).status !== 'offline' : tab === 'all' ? r.type === 1 || r.type === 3 || r.type === 4 : tab === 'pending' ? r.type === 3 || r.type === 4 : r.type === 2);
+    let list = rels.filter(r => tab === 'online' ? (r.type === 1 && (S.users.get(r.user.id).status !== 'offline' || inviteFrom(r.user.id))) || r.type === 3 : tab === 'all' ? r.type === 1 || r.type === 3 || r.type === 4 : tab === 'pending' ? r.type === 3 || r.type === 4 : r.type === 2);
     list = list.filter(r => r.user.username.toLowerCase().includes(q.value.toLowerCase()) || r.user.display_name.toLowerCase().includes(q.value.toLowerCase()));
     const nm = (r) => (r.user.display_name || r.user.username).toLowerCase();
     const PEND = (r) => r.type === 3 ? 0 : r.type === 4 ? 1 : 2; // pedidos recebidos/enviados no topo de "Todos"
@@ -1462,21 +1463,27 @@ function renderHome(main) {
     for (const r of list) {
       const u = S.users.get(r.user.id) || r.user;
       const btn = (ic, title, fn, cls = '') => h('button.circle' + cls, { title, onclick: (e) => { e.stopPropagation(); fn(); } }, icon(ic, 20));
-      pane.append(h('div.frow', { onclick: () => openDM(u.id), oncontextmenu: (e) => userMenu(e, u.id) }, avatar(u, 36, { ring: 'var(--bg-pri)' }),
-        h('div.fn', styleName(h('b', u.display_name), u.name_style), h('small', r.type === 3 ? 'Pedido de amizade recebido' : r.type === 4 ? 'Pedido de amizade enviado' : r.type === 2 ? 'Bloqueado' : (u.custom_status || STATUS_TXT[u.status]))),
+      const inv = r.type === 1 && inviteFrom(u.id); // chamou você para a sala dele (convite ainda valendo)
+      pane.append(h('div.frow' + (r.type === 3 ? '.req' : inv ? '.inv' : ''), { onclick: () => openDM(u.id), oncontextmenu: (e) => userMenu(e, u.id) }, avatar(u, 36, { ring: 'var(--bg-pri)' }),
+        h('div.fn', h('div.fn-top', styleName(h('b', u.display_name), u.name_style), r.type === 3 && h('span.ftag.req', icon('users', 12), 'Pedido de amizade'),
+          inv && h('span.ftag.inv', { title: `${inv.channel.name} · ${inv.guild.name}` }, icon('voice', 12), 'Chamou você')),
+          h('small', inv ? `Chamou você para ${inv.channel.name} · ${inv.guild.name}` : r.type === 3 ? 'Quer ser seu amigo' : r.type === 4 ? 'Pedido de amizade enviado' : r.type === 2 ? 'Bloqueado' : (u.custom_status || STATUS_TXT[u.status]))),
+        inv && h('button.btn.green.sm.f-join', { title: 'Entrar na chamada', onclick: (e) => { e.stopPropagation(); return acceptInvite(inv.id); } }, icon('voice', 14), 'Entrar'),
+        inv && btn('x', 'Recusar convite', () => declineInvite(inv.id), '.no'),
         r.type === 1 && btn('dm', 'Mensagem', () => openDM(u.id)),
         r.type === 3 && btn('check', 'Aceitar', () => tryApi('PUT', `/relationships/${u.id}`, {}), '.ok'),
-        (r.type === 3 || r.type === 4 || r.type === 2 || r.type === 1) && btn('x', r.type === 1 ? 'Remover' : r.type === 2 ? 'Desbloquear' : 'Ignorar', () => tryApi('DELETE', `/relationships/${u.id}`), '.no')));
+        (r.type === 3 || r.type === 4 || r.type === 2 || (r.type === 1 && !inv)) && btn('x', r.type === 1 ? 'Remover' : r.type === 2 ? 'Desbloquear' : 'Ignorar', () => tryApi('DELETE', `/relationships/${u.id}`), '.no')));
     }
   };
   main.replaceChildren(h('div#home',
     h('div#topbar', h('button.ibtn.menu-btn', { onclick: () => $('#app').classList.toggle('nav-open') }, icon('more')), icon('users', 24), h('span', 'Amigos'), h('div', { style: { width: '1px', height: '24px', background: 'var(--divider)', margin: '0 8px' } }),
       h('div.tabs', tabs.map(([k, l]) => h('div.tab' + (tab === k ? '.active' : ''), { onclick: () => { S.view.tab = k; renderHome(main); } }, l)),
-        h('div.tab.green' + (tab === 'add' ? '.active' : ''), { onclick: () => { S.view.tab = 'add'; renderHome(main); } }, icon('plus', 18), 'Adicionar amigo')),
+        h('div.tab.green' + (tab === 'add' ? '.active' : ''), { onclick: () => { S.view.tab = 'add'; renderHome(main); } }, icon('plus', 18), 'Adicionar amigo',
+          reqs > 0 && h('span.tab-badge', { title: `${reqs} pedido${reqs > 1 ? 's' : ''} de amizade` }, reqs > 99 ? '99+' : reqs))),
       // janela estreita: o painel "Ativo agora" não cabe ao lado e abre como gaveta por este botão
       h('button.ibtn.an-toggle', { title: 'Ativo agora', onclick: () => $('#home').classList.toggle('an-open') }, icon('gamepad', 22))),
     h('div#homebody', pane, h('aside#active-now'), h('div.an-scrim', { onclick: () => $('#home').classList.remove('an-open') }))));
-  draw(); renderActiveNow();
+  S.redrawHome = draw; draw(); renderActiveNow();
 }
 
 // =============== Voz: palco ===============
@@ -2057,7 +2064,7 @@ initRemote({ savePrefs, send: gwSend, name: (uid) => nameOf(uid, channelById(voi
 initLfg({ go, profile: (a, uid) => profile(a, uid), inVoice: () => !!voice?.channelId, voiceChannel: () => (voice?.channelId && channelById(voice.channelId)?.type === 2 ? voice.channelId : '') });
 initClipsGallery({ go, jumpTo: (mid) => jumpTo(mid) });
 initDiag(() => voice); initPwa(); setTimeout(initAppUpdate, 1500); // aviso de versão nova do app desktop (depois da abertura, sem atrasá-la)
-initCallInvite({ go, joinVoice, voice: () => voice, channelById, guild });
+initCallInvite({ go, joinVoice, voice: () => voice, channelById, guild, onPending: () => { if (S.view.kind === 'home') { S.redrawHome?.(); refreshFeedView(); } } });
 initActivity({ openDM, profile: (a, uid) => profile(a, uid), userMenu: (e, uid) => userMenu(e, uid), go, joinVoice, watchFriend, voice: () => voice, openSettings: (k) => openSettings(k, ctxSettings()), renderActiveNow, renderMembers: () => { if ($('#members')) renderMembers(); }, renderSide: () => renderSide() });
 // testes: importa um módulo do app pelo mesmo endereço (com a versão) que o app usa, para pegar a mesma instância
 const VQ = new URL(import.meta.url).search;

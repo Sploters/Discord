@@ -29,7 +29,7 @@ export async function sendCallInvite(uid) {
 async function accept(id) {
   try {
     const r = await api('POST', `/call-invites/${encodeURIComponent(id)}/accept`);
-    document.getElementById('call-banner')?.remove();
+    document.getElementById('call-banner')?.remove(); if (pend.delete(id)) changed();
     // virou membro agora: o servidor chega pelo GUILD_CREATE; espera um pouco para o canal existir no cliente
     for (let i = 0; i < 20 && !ctx.channelById(r.channel_id); i++) await new Promise(res => setTimeout(res, 100));
     ctx.go(r.guild_id, r.channel_id); ctx.joinVoice(r.channel_id);
@@ -37,7 +37,7 @@ async function accept(id) {
   } catch (e) { toast(e.message, true); return false; }
 }
 async function decline(id) {
-  document.getElementById('call-banner')?.remove();
+  document.getElementById('call-banner')?.remove(); if (pend.delete(id)) changed();
   await tryApi('POST', `/call-invites/${encodeURIComponent(id)}/decline`);
 }
 
@@ -66,9 +66,33 @@ function paintCard(card, inv) {
 }
 const repaintCards = (inv) => document.querySelectorAll(`.callcard[data-id="${inv.id}"]`).forEach(c => paintCard(c, inv));
 
+// ---------- convites pendentes para mim (lista de amigos e "Ativo agora") ----------
+// id -> convite; some ao responder, ao ser cancelado ou ao expirar. ctx.onPending() redesenha quem mostra.
+const pend = new Map();
+let expiryTimer = null;
+const changed = () => {
+  clearTimeout(expiryTimer);
+  const next = Math.min(...[...pend.values()].map(i => i.expires_at));
+  if (Number.isFinite(next)) expiryTimer = setTimeout(changed, Math.max(500, next - Date.now() + 200)); // some sozinho ao expirar
+  ctx.onPending?.();
+};
+const track = (inv) => { if (inv.to === S.me.id && inv.state === 'pending' && inv.expires_at > Date.now()) pend.set(inv.id, inv); else pend.delete(inv.id); };
+export function pendingInvites() {
+  for (const [id, i] of pend) if (i.expires_at <= Date.now()) pend.delete(id);
+  return [...pend.values()].sort((a, b) => b.expires_at - a.expires_at);
+}
+export const inviteFrom = (uid) => pendingInvites().find(i => i.from.id === uid) || null;
+export async function loadPendingInvites() {
+  const list = await api('GET', '/call-invites').catch(() => null); if (!Array.isArray(list)) return;
+  pend.clear(); for (const i of list) { track(i); cache.set(i.id, Promise.resolve(i)); }
+  changed();
+}
+export const acceptInvite = (id) => accept(id);
+export const declineInvite = (id) => decline(id);
+
 // recebi um convite: aviso com toque (o mesmo lugar do "está te ligando" das DMs)
 export function onCallInvite(inv) {
-  cache.set(inv.id, Promise.resolve(inv)); repaintCards(inv);
+  cache.set(inv.id, Promise.resolve(inv)); repaintCards(inv); track(inv); changed();
   if (S.me.status === 'dnd') return; // não perturbe: fica só o cartão na DM
   const u = inv.from; document.getElementById('call-banner')?.remove();
   let n = 0; const t = setInterval(() => { if (!document.getElementById('call-banner') || ++n > 5) return clearInterval(t); playSound('ring'); }, 2600);
@@ -80,7 +104,7 @@ export function onCallInvite(inv) {
   setTimeout(() => { if (document.getElementById('call-banner') === el) el.remove(); }, Math.max(5000, Math.min(60000, inv.expires_at - Date.now())));
 }
 export function onCallInviteUpdate(inv) {
-  cache.set(inv.id, Promise.resolve(inv)); repaintCards(inv);
+  cache.set(inv.id, Promise.resolve(inv)); repaintCards(inv); if (pend.has(inv.id) || inv.to === S.me.id) { track(inv); changed(); }
   const b = document.getElementById('call-banner'); if (b?.dataset.id === inv.id && inv.state !== 'pending') b.remove();
   if (inv.from.id === S.me.id && (inv.state === 'accepted' || inv.state === 'declined')) toast(`${user(inv.to).display_name} ${TXT[inv.state]} o convite para a chamada`);
 }

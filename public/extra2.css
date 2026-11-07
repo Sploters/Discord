@@ -392,3 +392,27 @@ html:not(.anim) .clipflash { animation: cfFade 2s step-end forwards; }
 #active-now .hl-more { display: flex; align-items: center; gap: 4px; margin: 2px 0 0 8px; padding: 4px 6px; border-radius: 6px; background: none; color: var(--text-muted); font-size: 12.5px; font-weight: 600; cursor: pointer; }
 #active-now .hl-more:hover { color: var(--interactive-hover); background: var(--bg-mod-hover); }
 #active-now .hl-more .icon { fill: currentColor; } #active-now .hl-more .hl-up { display: flex; transform: rotate(180deg); }
+
+/* pedidos de amizade e convites para a chamada: contador no "Adicionar amigo", selo na lista e cartões no "Ativo agora" */
+#home .tab.green { position: relative; }
+#home .tab .tab-badge { min-width: 18px; height: 18px; padding: 0 5px; margin-left: 2px; border-radius: 9px; background: var(--red, #f23f43); color: #fff; font-size: 11.5px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; line-height: 1; box-shadow: 0 0 0 2px var(--bg-pri); }
+html.anim #home .tab .tab-badge { animation: lc-pop .25s cubic-bezier(.2, .9, .3, 1.3); }
+#home .tab.green.active .tab-badge { box-shadow: none; }
+.frow .fn-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.frow .fn-top > b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.frow .ftag { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+.frow .ftag .icon { fill: currentColor; }
+.frow .ftag.req { background: rgba(88,101,242,.22); color: #949cf7; }
+.frow .ftag.inv { background: rgba(35,165,90,.2); color: #2dc770; }
+:root[data-theme="light"] .frow .ftag.req { color: #4752c4; } :root[data-theme="light"] .frow .ftag.inv { color: #1a8a4a; }
+.frow.inv { box-shadow: inset 3px 0 0 var(--green, #23a55a); }
+.frow.req { box-shadow: inset 3px 0 0 var(--brand, #5865f2); }
+.frow .f-join { flex: none; margin-right: 6px; display: inline-flex; align-items: center; gap: 4px; }
+#active-now .an-forme { display: flex; flex-direction: column; margin-bottom: 4px; }
+#active-now .an-card.an-req { border-left: 3px solid var(--brand, #5865f2); }
+#active-now .an-card.an-req.inv { border-left-color: var(--green, #23a55a); }
+#active-now .an-reqic { margin-left: auto; flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--bg-tert); color: var(--interactive); }
+#active-now .an-req.inv .an-reqic { color: var(--green, #23a55a); }
+#active-now .an-reqic .icon { fill: currentColor; }
+#active-now .an-req .an-who small { white-space: normal; }

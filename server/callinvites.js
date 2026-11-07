@@ -76,5 +76,11 @@ export function createCallInvites({ get, voiceChannelOf, roomSize, isFriend, isM
     return { invite: pub(i), guild_id: i.guild_id, channel_id: i.channel_id };
   }
 
-  return { create, read, respond, _invites: invites };
+  // convites para mim ainda pendentes (a página mostra na lista de amigos e no "Ativo agora", mesmo se o aviso sumiu)
+  function pendingFor(uid) {
+    sweep();
+    return [...invites.values()].filter(i => i.to === uid && stateOf(i) === 'pending').sort((a, b) => b.created - a.created).map(pub);
+  }
+
+  return { create, read, respond, pendingFor, _invites: invites };
 }

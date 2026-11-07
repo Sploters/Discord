@@ -586,6 +586,7 @@ app.post('/api/call-invites', auth, wrap((req, res) => {
   if (!r.error && !r.repeated) callInvRate.set(req.uid, [...recent, t]);
   callOut(res, r);
 }));
+app.get('/api/call-invites', auth, wrap((req, res) => res.json(callInv.pendingFor(req.uid))));
 app.get('/api/call-invites/:id', auth, wrap((req, res) => callOut(res, callInv.read(req.params.id, req.uid))));
 app.post('/api/call-invites/:id/:action(accept|decline|cancel)', auth, wrap((req, res) => callOut(res, callInv.respond(req.params.id, req.uid, req.params.action))));
 
