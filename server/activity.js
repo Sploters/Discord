@@ -9,6 +9,7 @@
 // loja/jogos, executável conhecido ou janela em tela cheia) e informa. Regra própria, em users.pc_activity:
 //   'servers' (padrão, como o Discord) = amigos aceitos + quem divide um servidor com a pessoa; 'friends' = só amigos; 'off' = nada.
 import { PollError } from './integrations/errors.js';
+import { isLauncher } from './launchers.js';
 
 const LOCAL_STALE_MS = 90000; // o app desktop informa o jogo a cada ~20 s
 const MIN_SECS = 30, MAX_BACKOFF_MS = 15 * 60 * 1000, KEEP_DAYS = 30, KEEP_PER_USER = 200, STALE_X = 3;
@@ -136,7 +137,7 @@ export function createActivityService({ all, get, run, newId, dispatch, isOnline
     });
     const events = all(`SELECT a.* FROM activities a LEFT JOIN linked_accounts la ON la.user_id=a.user_id AND la.platform=a.platform
       WHERE a.user_id IN (${ids.map(() => '?').join(',')}) AND (la.visibility='friends' OR a.user_id=? OR a.platform='pc') AND a.created_at>? ORDER BY a.created_at DESC LIMIT ?`, ...ids, viewer, now0 - 7 * 864e5, limit * 3)
-      .filter(ev => canSee(viewer, ev.user_id, ev.platform) && !hiddenGame(ev.user_id, ev.platform, ev.game_id)).slice(0, limit)
+      .filter(ev => canSee(viewer, ev.user_id, ev.platform) && !hiddenGame(ev.user_id, ev.platform, ev.game_id) && !isLauncher({ id: ev.game_id, title: ev.title })).slice(0, limit)
       .map(ev => ({ id: ev.id, user_id: ev.user_id, platform: ev.platform, kind: ev.kind, game: { id: ev.game_id, title: ev.title }, seconds: ev.data ? JSON.parse(ev.data).seconds : null, at: ev.created_at }));
     return { friends, events };
   }
@@ -154,7 +155,7 @@ export function createActivityService({ all, get, run, newId, dispatch, isOnline
     const since = now() - days * 864e5, ph = fr.map(() => '?').join(',');
     const seeMemo = new Map(), see = (uid, platform) => { const k = uid + ':' + platform; if (!seeMemo.has(k)) seeMemo.set(k, canSee(viewer, uid, platform)); return seeMemo.get(k); };
     const rows = all(`SELECT * FROM activities WHERE user_id IN (${ph}) AND created_at>? ORDER BY created_at DESC`, ...fr, since)
-      .filter(ev => see(ev.user_id, ev.platform) && !hiddenGame(ev.user_id, ev.platform, ev.game_id));
+      .filter(ev => see(ev.user_id, ev.platform) && !hiddenGame(ev.user_id, ev.platform, ev.game_id) && !isLauncher({ id: ev.game_id, title: ev.title })); // launchers registrados antes
     const data = (ev) => { try { return ev.data ? JSON.parse(ev.data) : {}; } catch { return {}; } };
     const game = (ev, d) => ({ id: ev.game_id, title: ev.title, ...(d.icon ? { icon: d.icon } : {}), ...(d.steam ? { steam: d.steam } : {}) });
     const out = [];
@@ -198,7 +199,7 @@ export function createActivityService({ all, get, run, newId, dispatch, isOnline
     // jogo aberto no PC, informado pelo app desktop (game = { id, title } | null). Mesmo fluxo da Steam: publica, troca, encerra.
     reportLocal(uid, game) {
       const k = uid + ':pc', prev = current.get(k);
-      if (!game || pcVis(uid) === 'off' || hiddenGame(uid, 'pc', game.id)) return clear(uid, 'pc');
+      if (!game || isLauncher(game) || pcVis(uid) === 'off' || hiddenGame(uid, 'pc', game.id)) return clear(uid, 'pc'); // launcher (Riot Client, Steam…) não é jogo
       game = { id: game.id, title: game.title, ...(game.icon ? { icon: game.icon } : {}), ...(game.steam ? { steam: game.steam } : {}) };
       if (prev && prev.game.id === game.id) {
         prev.at = now();

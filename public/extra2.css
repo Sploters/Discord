@@ -270,7 +270,8 @@ html:not(.anim) .clipflash { animation: cfFade 2s step-end forwards; }
 
 /* ---------- painel "Ativo agora": em destaque o que os amigos fazem agora; embaixo, os destaques da semana ---------- */
 #home #homebody { position: relative; }
-#active-now { width: 320px; display: flex; flex-direction: column; overflow-y: auto; }
+/* largura como a do Discord: 360 px, crescendo com a janela até 440 px */
+#active-now { width: clamp(360px, 25vw, 440px); padding-left: 16px; padding-right: 16px; box-sizing: border-box; display: flex; flex-direction: column; overflow-y: auto; }
 #active-now .an-body { display: flex; flex-direction: column; gap: 6px; }
 #active-now .an-now { display: flex; flex-direction: column; }
 #active-now .an-cap:first-child { margin-top: 2px; }
@@ -310,7 +311,7 @@ html:not(.anim) .clipflash { animation: cfFade 2s step-end forwards; }
 #home .an-scrim { display: none; }
 @media (max-width: 1100px) {
   #home .an-toggle { display: flex; }
-  #home #active-now { display: flex; position: absolute; top: 0; right: 0; bottom: 0; width: min(340px, 92vw); z-index: 25; background: var(--bg-pri); border-left: 1px solid var(--divider);
+  #home #active-now { display: flex; position: absolute; top: 0; right: 0; bottom: 0; width: min(400px, 92vw); z-index: 25; background: var(--bg-pri); border-left: 1px solid var(--divider);
     box-shadow: -8px 0 24px rgba(0,0,0,.35); transform: translateX(105%); transition: transform .2s ease; }
   #home.an-open #active-now { transform: none; }
   #home.an-open .an-scrim { display: block; position: absolute; inset: 0; z-index: 24; background: rgba(0,0,0,.4); }
